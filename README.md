@@ -22,19 +22,6 @@ public/    Reviewed deployment output: website, signed APT archive and release s
 .github/   GitHub Actions workflows
 ```
 
-Application build commands run inside `desktop/`:
-
-```sh
-cd desktop
-python3 tools/prepare-native-drm.py
-python3 tools/prepare-screen-lock.py
-./tools/build-native-compositor.sh --release --features drm
-./tools/build-core.sh
-python3 tools/prepare-portal-runtime.py
-python3 tools/prepare-qt5-a11y-runtime.py --jobs 1
-python3 tools/build-desktop-package.py --version 0.1.6 --with-desktop
-```
-
-Provision the supported toolchain and dependencies first; see the [source-build baseline](docs/source-build-baseline.md). Application tests live in `desktop/tests/`; run them from `desktop/`. Repository publication commands run from the **repository root**, using `tools/`; see the [release process](docs/update-repository.md).
+For application builds and tests, start in [`desktop/`](desktop/README.md) and follow the [source-build baseline](docs/source-build-baseline.md). Run release and publication commands from the repository root using `tools/`; see the [release process](docs/update-repository.md).
 
 `website/` is the editable site; `public/` is the explicit deployment boundary. Do not deploy the working tree or put private signing keys, user data, VM credentials or build caches there. Bundled-component notices and matching release sources are listed in the [0.1.6 source manifest](public/sources/0.1.6/manifest.json). Those frozen release archives remain unchanged when the working source layout changes.

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Launch the registered Orbit/Sway session, or an isolated nested test desktop."""
+"""Launch an isolated nested Sway QA desktop; native login has its own owner."""
 import argparse,json,os,re,select,shlex,shutil,signal,subprocess,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parent
 
 def session_config(environment=None):
     environment=os.environ if environment is None else environment
-    config='\n'.join(line for line in (ROOT/'session/config').read_text().splitlines() if not re.match(r'bindsym Mod4\+[1-4] workspace',line))
+    config='\n'.join(line for line in (ROOT/'session/configs/sway-qa.conf').read_text().splitlines() if not re.match(r'bindsym Mod4\+[1-4] workspace',line))
     for key,page in [('Ctrl+Mod1+space','launcher'),('Ctrl+Mod1+s','quick'),('Ctrl+Mod1+q','quick')]:config+=f'\nbindsym {key} nop orbit-panel-{page}'
     for key,page in [('Mod1+Tab','switch-next'),('Mod1+Shift+Tab','switch-prev'),('--release Alt_L','switch-accept'),('--release Alt_R','switch-accept')]:config+=f'\nbindsym {key} nop orbit-{page}'
     config+='\nbindsym Print nop orbit-panel-screenshot'
@@ -30,7 +30,7 @@ def preflight():
     runtime=os.environ.get('ORBIT_WAYLAND_RUNTIME','system');missing=[]
     commands={name:shutil.which(name) for name in ('sway','Xwayland','dbus-run-session','swaybg','swayidle','swaylock','grim','slurp')}
     missing.extend(name for name,path in commands.items() if not path)
-    for name in ('run-wayland-native.sh','session/autostart.py','session/config','native/Desktop.qml','backend/target/release/orbit-core'):
+    for name in ('run-wayland-native.sh','session/autostart.py','session/configs/sway-qa.conf','native/Desktop.qml','backend/target/release/orbit-core'):
         if not (ROOT/name).is_file():missing.append(name)
     if (ROOT/'backend/target/release/orbit-core').exists() and not os.access(ROOT/'backend/target/release/orbit-core',os.X_OK):missing.append('orbit-core executable permission')
     interpreter=Path('/usr/bin/python3') if runtime=='system' else ROOT/'.venv/bin/python'
@@ -110,7 +110,7 @@ def main():
             if args.nested or args.headless:return subprocess.run(command,env=env).returncode
             with open_session_log() as log:return run_logged(command,env,log)
         except FileNotFoundError:
-            print('Sway is unavailable. Run tools/install-wayland-session.sh --check for setup details.',file=__import__('sys').stderr);return 1
+            print('Sway is unavailable. Install the distribution Sway QA dependencies; native login uses run-native-session.sh.',file=__import__('sys').stderr);return 1
         except KeyboardInterrupt:return 130
 
 if __name__=='__main__':raise SystemExit(main())

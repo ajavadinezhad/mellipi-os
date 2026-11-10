@@ -1,6 +1,6 @@
 # Abstract website
 
-Framework-free GitHub Pages site. Publish this directory as the root of the Pages artifact; keep its relative paths, and include the generated `apt/` repository alongside it when applicable. No build, external font, analytics, or service worker is required.
+Framework-free website source. Edit files here, then stage them with the signed archive and matching sources in repository-root `public/`. The GitHub Pages workflow deploys only `public/`; do not deploy this source directory or the working tree directly. See [the release guide](../docs/update-repository.md). No build, external font, analytics, or service worker is required.
 
 Set `site-config.json` at release time:
 
@@ -9,7 +9,7 @@ Set `site-config.json` at release time:
 - `release`: published release number, without a leading `v`.
 - `signingFingerprint`: full archive-key fingerprint; compare this to the actual exported key before publishing.
 - `signingKeyPath`: exported public archive-key filename (informational configuration).
-- `installerPath`: setup helper path relative to `aptUrl`; defaults to `install-update-source.sh`.
+- `installerPath`: setup helper path relative to `aptUrl` (currently `install-update-source.sh`).
 
 The page does not show actionable repository setup until a valid HTTPS address and full fingerprint are present. GitHub release and support links appear only after a real repository is configured. The desktop illustration is HTML/CSS and contains no user data; it is explicitly labeled as an illustration for assistive technology.
 

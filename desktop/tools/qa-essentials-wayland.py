@@ -65,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix='orbit-essentials-') as temp,open('/tmp/
         if '--measure' in sys.argv:
             qa.control('system-settings');time.sleep(.3)
             command('output HEADLESS-1 mode 1280x720 scale 1');qa.wait(lambda:status()['screen_geometry']['width']==1280,5);time.sleep(.5)
-            metrics=load('essential_metrics','qa-fold-wayland.py').idle_sample(native)
+            metrics=load('essential_metrics','qa-process-metrics.py').idle_sample(native)
             metrics['scope']='Warm private 1280x720 Economy/Black/compact desktop after Input/Lock/Displays and larger-output display Keep/Revert/timeout. Includes compositor, bus, shell, Rust and helpers. Audio server intentionally unreachable; desktop icons off. Development measurement; not certification on physical 4GB hardware.'
             (ROOT/'essentials-metrics.json').write_text(json.dumps(metrics,indent=2)+'\n');print('METRICS',json.dumps(metrics),flush=True)
         pointer.close();pointer=None;qa.control('quit');session.wait(timeout=15)

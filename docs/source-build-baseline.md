@@ -7,8 +7,8 @@ builder records the target architecture but does not cross-compile it.
 
 Build as an ordinary user. Release helpers use one low-priority compiler for the
 large compositor, locker, portal and Qt compatibility builds. The core helper
-currently allows two jobs. Build-time disk/RAM use is separate from the running
-desktop's2-core/4GB target.
+currently allows two jobs. Build-time disk and memory use are separate from
+running the desktop.
 
 Required host build tools include Python3, a C/C++ compiler, `pkg-config`,
 `dpkg-deb`, `patch`, `readelf`, `nm`, `strip`, `ldd`, and a recent Rust/Cargo
