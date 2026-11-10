@@ -2,7 +2,7 @@
 """Bounded private panel switching, tab resizing and geometry stress checks."""
 import importlib.util,json,os,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 spec=importlib.util.spec_from_file_location('qa_helpers',ROOT/'tools/qa-screenshots-wayland.py');h=importlib.util.module_from_spec(spec);spec.loader.exec_module(h)
 control,wait=h.control,h.wait
 import sway_events

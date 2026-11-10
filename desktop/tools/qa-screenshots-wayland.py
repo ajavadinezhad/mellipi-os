@@ -15,8 +15,8 @@ import tempfile
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
+sys.path.insert(0,str(SOURCE_ROOT))
 from screenshots import PNG
 
 
@@ -37,7 +37,7 @@ def native_process(settings):
     for proc in Path('/proc').iterdir():
         if not proc.name.isdigit():continue
         try:
-            if str(ROOT / 'native_app.py').encode() not in (proc / 'cmdline').read_bytes().split(b'\0'):continue
+            if str(SOURCE_ROOT/'native_app.py').encode() not in (proc / 'cmdline').read_bytes().split(b'\0'):continue
             entries = dict(item.split(b'=', 1) for item in (proc / 'environ').read_bytes().split(b'\0') if b'=' in item)
             if entries.get(b'ORBIT_SETTINGS_FILE') == str(settings).encode() and entries.get(b'ORBIT_NESTED') == b'1' and b'SWAYSOCK' in entries:
                 return int(proc.name), {key.decode(): value.decode() for key, value in entries.items()}

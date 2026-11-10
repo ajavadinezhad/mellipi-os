@@ -1,5 +1,30 @@
 "use strict";
 (() => {
+  const themePicker = document.getElementById("website-theme");
+  fetch("themes.json", {cache: "no-cache"}).then(response => {
+    if (!response.ok) throw new Error("Theme catalog unavailable");
+    return response.json();
+  }).then(catalog => {
+    const api = window.AbstractSiteTheme;
+    if (!api || !Array.isArray(catalog.themes)) throw new Error("Invalid theme catalog");
+    const themes = catalog.themes.filter(row => api.valid(row) && typeof row.name === "string" && row.name.length <= 32);
+    if (!themes.length || new Set(themes.map(row => row.id)).size !== themes.length) throw new Error("Invalid theme list");
+    const current = themes.find(row => row.id === document.documentElement.dataset.theme) || themes.find(row => row.id === catalog.defaultTheme) || themes[0];
+    themePicker.replaceChildren(...themes.map(row => {
+      const option = document.createElement("option"); option.value = row.id; option.textContent = row.name; return option;
+    }));
+    api.apply(current);
+    themePicker.value = current.id;
+    themePicker.disabled = false;
+    themePicker.addEventListener("change", () => {
+      const selected = themes.find(row => row.id === themePicker.value);
+      if (!selected || !api.apply(selected, true)) return;
+      document.getElementById("theme-status").textContent = `${selected.name} theme selected.`;
+    });
+  }).catch(() => {
+    themePicker.disabled = true;
+    themePicker.setAttribute("title", "Themes could not load. Reload to try again.");
+  });
   const webUrl = (value) => {
     if (typeof value !== "string" || !value) return null;
     try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? url : null; } catch { return null; }

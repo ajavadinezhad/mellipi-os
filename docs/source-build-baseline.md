@@ -19,8 +19,10 @@ sufficient. The scripts use `desktop/.toolchain/{cargo,rustup}` relative to the
 repository root for the compositor; the core helper can also use `cargo` from PATH. Provision that trusted toolchain
 explicitly before a fresh source build.
 
-The application source and its build tools live in `desktop/`. From the repository
-root, enter that directory before building:
+Python application code lives in `desktop/src/`, including startup services in
+`desktop/src/session/`. Interface assets, compositor code and build tools remain
+under their named directories in `desktop/`. From the repository root, enter
+`desktop/` before building:
 
 ```sh
 cd desktop
@@ -34,7 +36,7 @@ python3 tools/build-desktop-package.py --version 0.1.6 --with-desktop
 ```
 
 These commands write packages under `desktop/dist/`. Application unit tests also
-run from `desktop/`, for example `python3 -m unittest discover -s tests`. The
+run from `desktop/`, for example `PYTHONPATH=src python3 -m unittest discover -s tests`. The
 repository-level `tools/` directory contains publication tools, not app compilers.
 
 The preparation tools download/extract development inputs into `desktop/`.
@@ -54,7 +56,9 @@ update. That protects runtime compatibility; it does not prove accessibility on
 the new system. Rebuild for the supported updated ABI and repeat real AT-SPI
 acceptance rather than copying another system's Qt library.
 
-The resulting `.deb` contains immutable program files under `/usr/lib/abstract`,
+The builder reads Python code from `src/` and stages it in the stable installed
+layout, without an extra `src/` directory. The resulting `.deb` contains immutable
+program files under `/usr/lib/abstract`,
 a standard Abstract Wayland session entry, private-XDG launchers and narrow
 system integrations. It does not contain this checkout's user database,
 passwords, private build caches or a Linux kernel. Do not use the experimental

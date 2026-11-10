@@ -2,11 +2,11 @@
 """Run a QA command in Orbit's existing physical session, using only session-routing variables."""
 import os,sys
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 for proc in Path('/proc').iterdir():
     if not proc.name.isdigit():continue
     try:
-        if str(ROOT/'native_app.py').encode() not in (proc/'cmdline').read_bytes():continue
+        if str(SOURCE_ROOT/'native_app.py').encode() not in (proc/'cmdline').read_bytes():continue
         entries=dict(item.split(b'=',1) for item in (proc/'environ').read_bytes().split(b'\0') if b'=' in item)
         if entries.get(b'ORBIT_QT')!=b'5' or b'SWAYSOCK' not in entries or entries.get(b'ORBIT_NESTED'):continue
         env=os.environ.copy()

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Session-local environment; system Mint packages are preferred over the dev fallback.
 orbit_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+orbit_source_root="$orbit_root"
+if [[ -d "$orbit_root/src" ]]; then orbit_source_root="$orbit_root/src"; fi
 orbit_runtime="${ORBIT_WAYLAND_RUNTIME:-auto}"
 if [[ "$orbit_runtime" == auto ]]; then
   if [[ -x /usr/bin/sway ]] && /usr/bin/python3 -c 'from PyQt5 import QtCore,QtQuick,QtWidgets; import gi,ctypes;ctypes.CDLL("libLayerShellQtInterface.so.5")' >/dev/null 2>&1; then
@@ -38,4 +40,4 @@ else
   # This variable is a portal test override and bypasses normal config lookup.
   unset XDG_DESKTOP_PORTAL_DIR
 fi
-export XDG_CONFIG_DIRS="$orbit_root/session/configs:${XDG_CONFIG_DIRS:-/etc/xdg}"
+export XDG_CONFIG_DIRS="$orbit_source_root/session/configs:${XDG_CONFIG_DIRS:-/etc/xdg}"

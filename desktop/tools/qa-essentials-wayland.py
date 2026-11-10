@@ -1,7 +1,7 @@
 """Exercise new essentials with private input/output and an unreachable audio server."""
 import importlib.util,json,os,struct,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 def load(name,file):
     spec=importlib.util.spec_from_file_location(name,ROOT/'tools'/file);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 qa=load('essential_qa','qa-screenshots-wayland.py');inputs=load('essential_input','qa_wayland_input.py')

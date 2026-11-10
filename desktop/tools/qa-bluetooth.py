@@ -2,7 +2,7 @@
 """Finite BlueZ protocol QA on a fresh private bus; never accesses real hardware."""
 import json,os,subprocess,sys
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 ADAPTER_PATH='/org/bluez/hci0';DEVICE_PATH=ADAPTER_PATH+'/dev_00_11_22_33_44_55'
 
 
@@ -73,7 +73,7 @@ if '--private' not in sys.argv:
 # Both BlueZ fixture and controller are now confined to this disposable bus.
 os.environ['DBUS_SYSTEM_BUS_ADDRESS']=os.environ['DBUS_SESSION_BUS_ADDRESS']
 os.environ['QT_QPA_PLATFORM']='offscreen'
-sys.path.insert(0,str(ROOT))
+sys.path.insert(0,str(SOURCE_ROOT))
 from qt_compat import QApplication,QTimer
 from bluetooth import BluetoothControls
 service=subprocess.Popen(['/usr/bin/python3',__file__,'--fixture'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)

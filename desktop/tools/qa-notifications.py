@@ -2,11 +2,11 @@
 """Finite production notification protocol test on a fresh private D-Bus only."""
 import json,os,subprocess,sys,threading,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 
 def probe():
     if os.environ.get('ORBIT_PRIVATE_NOTIFICATION_QA')!='1':raise RuntimeError('Run through the private-bus launcher')
-    sys.path[:0]=[str(ROOT),'/usr/lib/python3/dist-packages']
+    sys.path[:0]=[str(SOURCE_ROOT),'/usr/lib/python3/dist-packages']
     from gi.repository import Gio,GLib
     from system_services import BusEvents,NOTIFICATION_XML
     from types import SimpleNamespace

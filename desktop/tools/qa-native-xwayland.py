@@ -6,7 +6,7 @@ not animation counters alone, prove the forward/backward workspace transforms.
 """
 import importlib.util,json,os,subprocess,sys,tempfile,time,struct
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 from qt_compat import QImage
 from native_compositor import NativeCompositor
 sys.path.insert(0,str(ROOT/'tools'))

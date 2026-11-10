@@ -2,7 +2,7 @@
 """Measure the isolated Wayland session tree; never reads user app content."""
 import json,os,time,subprocess,re
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 def proc(pid):
     fields=Path(f'/proc/{pid}/stat').read_text().rsplit(')',1)[1].split()
     rss=int(Path(f'/proc/{pid}/statm').read_text().split()[1])*os.sysconf('SC_PAGE_SIZE')/1048576
@@ -24,7 +24,7 @@ native=None
 for path in Path('/proc').iterdir():
     if not path.name.isdigit():continue
     try:
-        if str(ROOT/'native_app.py').encode() in (path/'cmdline').read_bytes():
+        if str(SOURCE_ROOT/'native_app.py').encode() in (path/'cmdline').read_bytes():
             env=dict(part.split(b'=',1) for part in (path/'environ').read_bytes().split(b'\0') if b'=' in part)
             if env.get(b'ORBIT_QT')==b'5' and env.get(b'ORBIT_NESTED')==b'1' and b'SWAYSOCK' in env and (not os.environ.get('ORBIT_MEASURE_SETTINGS_FILE') or env.get(b'ORBIT_SETTINGS_FILE')==os.environ['ORBIT_MEASURE_SETTINGS_FILE'].encode()):native=int(path.name);bus_address=env[b'DBUS_SESSION_BUS_ADDRESS'];break
     except OSError:pass

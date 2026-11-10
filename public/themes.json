@@ -1,0 +1,181 @@
+{
+  "defaultTheme": "dark",
+  "themes": [
+    {
+      "id": "light",
+      "name": "Light",
+      "mode": "light",
+      "accent": "#a9d9c3",
+      "palette": {
+        "background": "#eaf1f3",
+        "surface": "#fafdfb",
+        "raised": "#dde7eb",
+        "hover": "#d1e1e4",
+        "border": "#b7cbd0",
+        "text": "#15222d",
+        "muted": "#526473",
+        "faint": "#647582"
+      }
+    },
+    {
+      "id": "dark",
+      "name": "Dark",
+      "mode": "dark",
+      "accent": "#a9d9c3",
+      "palette": {
+        "background": "#182428",
+        "surface": "#202e32",
+        "raised": "#2a3d41",
+        "hover": "#3a4f52",
+        "border": "#536b6d",
+        "text": "#e1e8ed",
+        "muted": "#a2b0bb",
+        "faint": "#788b9b"
+      }
+    },
+    {
+      "id": "black",
+      "name": "Black",
+      "mode": "dark",
+      "accent": "#a9d9c3",
+      "palette": {
+        "background": "#07090c",
+        "surface": "#12161b",
+        "raised": "#1d232a",
+        "hover": "#28323b",
+        "border": "#3e4a53",
+        "text": "#e1e8ed",
+        "muted": "#adb7c4",
+        "faint": "#8b97a7"
+      }
+    },
+    {
+      "id": "midnight",
+      "name": "Midnight",
+      "mode": "dark",
+      "accent": "#78b7ff",
+      "palette": {
+        "background": "#080f1c",
+        "surface": "#101c2e",
+        "raised": "#172840",
+        "hover": "#203755",
+        "border": "#3d5574",
+        "text": "#edf4ff",
+        "muted": "#b5c6dd",
+        "faint": "#8ea3c0"
+      }
+    },
+    {
+      "id": "dune",
+      "name": "Dune",
+      "mode": "light",
+      "accent": "#a44825",
+      "palette": {
+        "background": "#f2eadf",
+        "surface": "#fffaf2",
+        "raised": "#e7dac8",
+        "hover": "#dfcfb9",
+        "border": "#a58f76",
+        "text": "#302920",
+        "muted": "#625442",
+        "faint": "#68533e"
+      }
+    },
+    {
+      "id": "forest",
+      "name": "Forest",
+      "mode": "dark",
+      "accent": "#b8d893",
+      "palette": {
+        "background": "#111a14",
+        "surface": "#19251c",
+        "raised": "#243329",
+        "hover": "#2e4032",
+        "border": "#637c64",
+        "text": "#edf3e7",
+        "muted": "#bbcbb3",
+        "faint": "#a0b298"
+      }
+    },
+    {
+      "id": "glacier",
+      "name": "Glacier",
+      "mode": "light",
+      "accent": "#006a99",
+      "palette": {
+        "background": "#edf5fa",
+        "surface": "#f8fcff",
+        "raised": "#dfedf5",
+        "hover": "#d2e5f0",
+        "border": "#7897aa",
+        "text": "#142f42",
+        "muted": "#3c5669",
+        "faint": "#435e70"
+      }
+    },
+    {
+      "id": "ember",
+      "name": "Ember",
+      "mode": "dark",
+      "accent": "#f2b16d",
+      "palette": {
+        "background": "#191411",
+        "surface": "#241d18",
+        "raised": "#30261f",
+        "hover": "#3c2f25",
+        "border": "#80644e",
+        "text": "#fff2e5",
+        "muted": "#dbc4ad",
+        "faint": "#bda78f"
+      }
+    },
+    {
+      "id": "lavender",
+      "name": "Lavender",
+      "mode": "dark",
+      "accent": "#c7b3f2",
+      "palette": {
+        "background": "#17121f",
+        "surface": "#211a2d",
+        "raised": "#2a2238",
+        "hover": "#352b44",
+        "border": "#78668d",
+        "text": "#f3edf9",
+        "muted": "#d3c6e2",
+        "faint": "#b8aacb"
+      }
+    },
+    {
+      "id": "porcelain",
+      "name": "Porcelain",
+      "mode": "light",
+      "accent": "#304e8a",
+      "palette": {
+        "background": "#f2f1f5",
+        "surface": "#fdfcff",
+        "raised": "#e8e7ee",
+        "hover": "#dddce7",
+        "border": "#9295a9",
+        "text": "#25283b",
+        "muted": "#4c5067",
+        "faint": "#555970"
+      }
+    },
+    {
+      "id": "graphite",
+      "name": "Graphite",
+      "mode": "dark",
+      "accent": "#c8cbd0",
+      "palette": {
+        "background": "#0c0c0d",
+        "surface": "#171718",
+        "raised": "#222223",
+        "hover": "#2b2b2d",
+        "border": "#656568",
+        "text": "#f2f2f3",
+        "muted": "#ceced1",
+        "faint": "#adadb2"
+      }
+    }
+  ]
+}

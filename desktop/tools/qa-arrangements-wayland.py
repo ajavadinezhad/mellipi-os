@@ -2,7 +2,7 @@
 """Exercise arrangement undo/layout reuse only in a disposable headless session."""
 import importlib.util,json,os,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 from arrangements import ArrangementEngine
 from window_actions import WindowActions,find_window
 from sway_events import request,command

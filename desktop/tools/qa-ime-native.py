@@ -2,7 +2,7 @@
 """Real installed Fcitx composition on owned native Wayland and D-Bus only."""
 import json,os,signal,struct,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));sys.path.insert(0,str(ROOT/'tools'))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT));sys.path.insert(0,str(ROOT/'tools'))
 from native_compositor import NativeCompositor
 from qa_wayland_input import VirtualPointer
 

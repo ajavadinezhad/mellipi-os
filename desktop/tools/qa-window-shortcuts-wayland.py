@@ -1,7 +1,7 @@
 """Private snap/bounds/shortcut checks with owned windows and no real audio."""
 import importlib.util,json,os,socket,struct,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from qt_compat import QApplication
 from window_actions import WindowActions,find_window

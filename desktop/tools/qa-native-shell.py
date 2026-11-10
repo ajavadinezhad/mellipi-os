@@ -6,7 +6,7 @@ owned QWidget fixture is manipulated. Uses private settings, data, bus, Pictures
 """
 import importlib.util,json,os,signal,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 from native_compositor import NativeCompositor
 spec=importlib.util.spec_from_file_location('native_shell_parent',ROOT/'tools/qa-screenshots-wayland.py');qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 
@@ -15,7 +15,7 @@ def process(settings):
         if not proc.name.isdigit():continue
         try:
             args=(proc/'cmdline').read_bytes().split(b'\0')
-            if str(ROOT/'native_app.py').encode() not in args and not (b'native_app.py' in args and (proc/'cwd').resolve()==ROOT):continue
+            if str(SOURCE_ROOT/'native_app.py').encode() not in args and not (b'native_app.py' in args and (proc/'cwd').resolve()==ROOT):continue
             env=dict(part.split(b'=',1) for part in (proc/'environ').read_bytes().split(b'\0') if b'=' in part)
             if env.get(b'ORBIT_SETTINGS_FILE')==str(settings).encode() and env.get(b'ORBIT_NESTED')==b'1' and b'ORBIT_NATIVE_CONTROL' in env:return int(proc.name),{k.decode():v.decode() for k,v in env.items()}
         except OSError:pass

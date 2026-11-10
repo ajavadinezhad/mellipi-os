@@ -7,8 +7,8 @@ checks protocol state logic, not physical output security. DRM remains untested.
 """
 import importlib.util,json,os,signal,socket,struct,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
+sys.path.insert(0,str(SOURCE_ROOT))
 from native_compositor import NativeCompositor
 spec=importlib.util.spec_from_file_location('lockqa',ROOT/'tools/qa-native-protocols.py');lockqa=importlib.util.module_from_spec(spec);spec.loader.exec_module(lockqa)
 

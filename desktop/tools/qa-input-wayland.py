@@ -2,7 +2,7 @@
 """Actual virtual-device outside-click, Quick-tab, tooltip and menu QA in a private desktop."""
 import importlib.util,json,os,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 spec=importlib.util.spec_from_file_location('qa',ROOT/'tools/qa-screenshots-wayland.py');qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 import sway_events
 session=fixture=None;routed=False

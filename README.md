@@ -13,7 +13,7 @@ Follow the [signed APT setup](https://ajavadinezhad.github.io/abstract-os/#insta
 ## Repository layout
 
 ```text
-desktop/   Desktop application, compositor, themes, packaging and app build/QA tools
+desktop/   Desktop source (src/), compositor, themes, packaging and app build/QA tools
 tools/     Repository, source-publication and release/deployment tools
 tests/     Release-tool tests
 docs/      Build, installation, recovery and maintainer guides

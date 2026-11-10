@@ -6,7 +6,8 @@ apply and rollback so shell death cannot race a parent-side apply command.
 """
 import json,select,sys,time,os
 from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
+sys.path.insert(0,str(SOURCE_ROOT))
 from display_config import catalog,command,persist,persist_native,validated
 from sway_events import request as sway_request
 

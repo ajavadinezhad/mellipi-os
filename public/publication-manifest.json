@@ -407,21 +407,33 @@
       "bytes": 6489124,
       "sha256": "aa1ef4d276acc1b372f6394074527b9ffbaf5f0411794806318d146eebd3dccc"
     },
+    "assets/README.md": {
+      "bytes": 627,
+      "sha256": "8fc7e77e82b4c43dbe57aedda9dde3e917fc5954824e0673f6cc9edd6202c690"
+    },
+    "assets/desktop-launcher.webp": {
+      "bytes": 34472,
+      "sha256": "efea34071380971df42748390f3cbecd39a69e3d8cb5e0559395d56cccb895a7"
+    },
+    "assets/desktop-settings.webp": {
+      "bytes": 32832,
+      "sha256": "b927488fd89e590e6be478a8b56765cc53277ad964190aac005132b687532994"
+    },
     "favicon.svg": {
       "bytes": 267,
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 7829,
-      "sha256": "680d2e1504554bf2c37941c5ef82f68365cd7574ca7033c0e97752a14459dc29"
+      "bytes": 9489,
+      "sha256": "d2fd059bd736c4d49a37d20f317314c0fc0c016ef41c5eb13c9d555c122940d4"
     },
     "site-config.json": {
       "bytes": 322,
       "sha256": "61e45703d33f3330d87ecae2a01a4d4c23387b4767fc7a5cda2bb34b4e2577c6"
     },
     "site.js": {
-      "bytes": 3464,
-      "sha256": "6543f58a3a7a36c38d85e6d06379034c7fe4a48af03a06774d7a2431990d48e3"
+      "bytes": 4960,
+      "sha256": "13eef1d57229a03fd22244c584fc826e25e7dee6d94f07e33303299fca6ce727"
     },
     "sources/0.1.6/SHA256SUMS": {
       "bytes": 35451,
@@ -1796,8 +1808,16 @@
       "sha256": "eec6e4be808e1a445e677dba1e20e5acb2f091825f5ff4c6ac49d5843b2185f9"
     },
     "style.css": {
-      "bytes": 10353,
-      "sha256": "19347c9d7e8b226e9f3015d22a65314505ccd4c7475886768063f23403ab9f10"
+      "bytes": 13337,
+      "sha256": "aba4ea0b60de4782ca282bb09688aea19211b8c5585af215f162ba4381f8f85f"
+    },
+    "theme-init.js": {
+      "bytes": 2515,
+      "sha256": "c217ee25ab2403163413937115ce35ad8b43013d5bbe1d0ec28ff8dc81594df9"
+    },
+    "themes.json": {
+      "bytes": 4083,
+      "sha256": "01ff41141ef2a918917b576f96cb003bb043fc1c43fd5caa577e6625f694044c"
     }
   }
 }

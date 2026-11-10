@@ -6,7 +6,7 @@ session is queried. This exercises the actual DesktopIcons QML and controller.
 """
 import json,os,signal,struct,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));sys.path.insert(0,str(ROOT/'tools'))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT));sys.path.insert(0,str(ROOT/'tools'))
 from native_compositor import NativeCompositor
 from qa_wayland_input import VirtualPointer
 
@@ -24,7 +24,7 @@ def stop(process):
         except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=3)
 SOURCE='''import sys,json
 from pathlib import Path
-sys.path.insert(0,sys.argv[1])
+sys.path.insert(0,str(Path(sys.argv[1])/'src' if (Path(sys.argv[1])/'src').is_dir() else Path(sys.argv[1])))
 from qt_compat import QApplication,QObject,Signal,Property,Slot,QQmlApplicationEngine
 from desktop_icons import DesktopIcons
 from native_app import Icons

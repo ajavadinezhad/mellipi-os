@@ -2,7 +2,7 @@
 """Finite integrated Spine checks, exclusively in a private headless session."""
 import importlib.util,json,os,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 def module(name,file):
     spec=importlib.util.spec_from_file_location(name,ROOT/'tools'/file);loaded=importlib.util.module_from_spec(spec);spec.loader.exec_module(loaded);return loaded
 qa=module('fold_shell_helpers','qa-screenshots-wayland.py');inputs=module('fold_shell_input','qa_wayland_input.py')

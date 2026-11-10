@@ -41,15 +41,18 @@ def stage_file(source, output, relative, rows, origin=None):
  rows.append(dict(path=str(relative),bytes=destination.stat().st_size,sha256=sha(destination),origin=origin or 'local reviewed source'))
 def project_paths():
  root=PROJECT_ROOT
- paths=list(root.glob('*.py'))+[root/'README.md',root/'requirements-native.txt']
- for name in ('native','themes','session','patches','packaging'):
-  paths.extend(path for path in (root/name).rglob('*') if path.is_file() and path.suffix in ('.py','.qml','.js','.svg','.json','.conf','.sh','.h','.patch','.policy','.service','.rules','.desktop','.txt'))
+ source=root/'src' if (root/'src').is_dir() else root
+ paths=list(source.glob('*.py'))+[root/'README.md',root/'requirements-native.txt']
+ paths.extend(path for path in (source/'session').rglob('*') if path.is_file() and path.suffix in ('.py','.conf','.sh','.desktop'))
+ for name in ('native','themes','patches','packaging'):
+  paths.extend(path for path in (root/name).rglob('*') if path.is_file() and (path.suffix in ('.py','.qml','.js','.svg','.json','.conf','.sh','.h','.patch','.policy','.service','.rules','.desktop','.txt') or path.name=='qmldir'))
  for name in ('compositor','backend'):
   paths.extend(path for path in (root/name/'src').rglob('*') if path.is_file())
   paths.extend(path for path in (root/name).glob('Cargo.*') if path.is_file())
   paths.extend(path for path in (root/name).glob('LICENSE*') if path.is_file())
  paths.extend(path for path in (root/'compositor/vendor').rglob('*') if path.is_file() and 'target' not in path.parts and '.git' not in path.parts)
  paths.extend(path for path in (root/'tools').iterdir() if path.is_file() and path.suffix in ('.py','.sh','.json') and path.name!='rustup-init.sh')
+ if (root/'tools/abstract-charge-limit').is_file():paths.append(root/'tools/abstract-charge-limit')
  paths.extend(path for path in root.glob('run-*') if path.is_file() and path.suffix in ('.py','.sh'))
  paths=sorted(set(path for path in paths if path.is_file() and not path.is_symlink() and '__pycache__' not in path.parts and path.suffix not in ('.pyc','.log')))
  result=[(path,(Path('desktop')/path.relative_to(root) if root!=ROOT else path.relative_to(root))) for path in paths]
@@ -67,7 +70,8 @@ def main():
  parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--cache',type=Path,required=True);parser.add_argument('--version',default='0.1.6');parser.add_argument('--fetch',action='store_true');parser.add_argument('--project-root',type=Path,help='Optional application source root (default desktop/ when present)');args=parser.parse_args()
  global PROJECT_ROOT
  if args.project_root:PROJECT_ROOT=args.project_root.resolve()
- if not (PROJECT_ROOT/'native_app.py').is_file():parser.error('Application source root is missing native_app.py')
+ source=PROJECT_ROOT/'src' if (PROJECT_ROOT/'src').is_dir() else PROJECT_ROOT
+ if not (source/'native_app.py').is_file():parser.error('Application source root is missing src/native_app.py (or flat native_app.py)')
  if not re.fullmatch(r'[A-Za-z0-9.+~-]+',args.version):parser.error('Invalid source version')
  output=args.output.resolve();cache=args.cache.resolve();output.mkdir(parents=True,exist_ok=True);cache.mkdir(parents=True,exist_ok=True);rows=[]
  source_archive=cache/f'abstract-{args.version}-project-source.tar.gz'

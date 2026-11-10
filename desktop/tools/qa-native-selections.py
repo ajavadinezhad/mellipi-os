@@ -4,7 +4,7 @@ No physical clipboard, desktop or application is addressed.
 """
 import json,os,signal,subprocess,sys,tempfile,time,importlib.util,struct,socket
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 from native_compositor import NativeCompositor
 
 def wait(check,seconds=15):

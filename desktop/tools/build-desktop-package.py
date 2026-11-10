@@ -71,15 +71,17 @@ def write(path,text,mode=0o644):
 
 def stage_package(stage,version,architecture,root=ROOT):
     root=Path(root);stage=Path(stage);lib=stage/'usr/lib/abstract'
+    source_root=root/'src' if (root/'src').is_dir() else root
     docs_root=root/'docs' if (root/'docs').is_dir() else root.parent/'docs'
     for name in RUNTIME_FILES:
         if not (root/name).is_file():raise ValueError('Build required runtime first: '+name)
     lib.mkdir(parents=True)
-    for p in root.glob('*.py'):shutil.copy2(p,lib/p.name)
+    for p in source_root.glob('*.py'):shutil.copy2(p,lib/p.name)
     for name in ('run-native-session.sh','run-native-shell.sh'):
         shutil.copy2(root/name,lib/name)
     for folder in ('native','themes','session'):
-        shutil.copytree(root/folder,lib/folder,ignore=shutil.ignore_patterns('__pycache__','*.pyc','*.log','*.sqlite3','*.sock'))
+        source=(source_root if folder=='session' else root)/folder
+        shutil.copytree(source,lib/folder,ignore=shutil.ignore_patterns('__pycache__','*.pyc','*.log','*.sqlite3','*.sock'))
     for name in RUNTIME_FILES:
         target=lib/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(root/name,target)
     if (root/'.tray-runtime').is_dir():shutil.copytree(root/'.tray-runtime',lib/'.tray-runtime',symlinks=True)
@@ -108,7 +110,7 @@ def stage_package(stage,version,architecture,root=ROOT):
         if (root/source).is_file():write(stage/target,(root/source).read_text(),mode)
     write(stage/'DEBIAN/postinst','#!/bin/sh\nset -e\nif [ "$1" = configure ]; then\n chmod 0755 /usr/lib/abstract\n if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload || true; fi\n if command -v deb-systemd-helper >/dev/null 2>&1; then deb-systemd-helper enable abstract-charge-limits.service >/dev/null || true; fi\n if command -v udevadm >/dev/null 2>&1; then udevadm control --reload || true; fi\nfi\n',0o755)
     write(stage/'DEBIAN/postrm','#!/bin/sh\nset -e\nif [ "$1" = purge ] && command -v deb-systemd-helper >/dev/null 2>&1; then\n deb-systemd-helper purge abstract-charge-limits.service >/dev/null || true\nfi\nif [ "$1" = remove ] || [ "$1" = purge ]; then\n if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload || true; fi\n if command -v udevadm >/dev/null 2>&1; then udevadm control --reload || true; fi\nfi\n',0o755)
-    portal=root/'session/configs/xdg-desktop-portal/orbit-portals.conf'
+    portal=source_root/'session/configs/xdg-desktop-portal/orbit-portals.conf'
     write(stage/'usr/share/xdg-desktop-portal/orbit-portals.conf',portal.read_text())
     doc=stage/'usr/share/doc/abstract-shell';doc.mkdir(parents=True)
     shutil.copy2(root/'README.md',doc/'README.md')

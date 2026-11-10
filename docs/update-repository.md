@@ -56,14 +56,15 @@ Back up the private key and revocation certificate securely outside GitHub.
 
 Build and verify the package pair from `desktop/` first; the resulting files
 are in `desktop/dist/`. Then return to the **repository root** for all commands
-below. The five release helpers remain in root `tools/`; application build/QA
+below. Release and theme-export helpers remain in root `tools/`; application build/QA
 helpers live in `desktop/tools/`. Stage only the static website's named
 public files, the enrollment helper and the public APT archive:
 
 ```sh
+python3 tools/export-website-themes.py
 mkdir -p public
 cp website/index.html website/style.css website/site.js \
-   website/site-config.json website/favicon.svg public/
+   website/site-config.json website/favicon.svg website/theme-init.js website/themes.json public/
 python3 tools/build-apt-repository.py \
   --output public/apt \
   --packages desktop/dist/abstract-shell_0.1.6_amd64.deb \
@@ -94,7 +95,8 @@ python3 tools/build-public-sources.py \
   --version 0.1.6 --fetch
 ```
 
-The source helper reads the application under `desktop/`, while the signed APT
+The source helper reads Python application modules under `desktop/src/` and
+the other application directories under `desktop/`, while the signed APT
 and site helpers use repository-root `public/` and `website/`. This creates an
 explicit project-source snapshot (including modified Smithay,
 patches and build scripts), exact-version Ubuntu source archives for bundled

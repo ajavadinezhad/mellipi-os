@@ -1,7 +1,7 @@
 """Private titlebar-size and actual pointer-motion QA; never touches the user session."""
 import importlib.util,json,os,subprocess,sys,tempfile,time,struct
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 def load(name,path):
  s=importlib.util.spec_from_file_location(name,path);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
 qa=load('qa',ROOT/'tools/qa-screenshots-wayland.py');inputs=load('inputs',ROOT/'tools/qa_wayland_input.py')

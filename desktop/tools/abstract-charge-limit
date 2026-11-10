@@ -1,0 +1,176 @@
+#!/usr/bin/python3 -I
+"""Root-owned, narrowly scoped Abstract battery charge-limit helper.
+
+Installed at /usr/lib/abstract/abstract-charge-limit. No checkout imports, user
+configuration paths, shell execution, arbitrary sysfs paths, or resident loop.
+Only existing kernel threshold attributes for system batteries are writable.
+"""
+import argparse,hashlib,json,os,re,stat,sys,tempfile,fcntl,time
+from contextlib import contextmanager
+from pathlib import Path
+SYSFS=Path('/sys/class/power_supply')
+DEVICES=Path('/sys/devices')
+CONFIG=Path('/var/lib/abstract')
+END='charge_control_end_threshold'
+START='charge_control_start_threshold'
+NAME=re.compile(r'[A-Za-z0-9_.:-]{1,128}\Z')
+
+def name_ok(name):return isinstance(name,str) and bool(NAME.fullmatch(name)) and name not in ('.','..')
+def bounded_read(path,limit=512):
+    fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    try:
+        value=os.read(fd,limit+1)
+        if len(value)>limit:raise ValueError('Battery attribute is too large')
+        return value.decode('utf-8','strict').strip()
+    finally:os.close(fd)
+def integer(path):
+    value=bounded_read(path)
+    if not re.fullmatch('[0-9]{1,3}',value):raise ValueError('Invalid battery threshold')
+    number=int(value)
+    if not 0<=number<=100:raise ValueError('Invalid battery threshold')
+    return number
+
+class ChargePolicy:
+    def __init__(self,sysfs=SYSFS,devices=DEVICES,config=CONFIG,owner=0):
+        # Alternate roots exist only for imported unit fixtures; CLI never
+        # accepts these as parameters or reads them from the environment.
+        self.sysfs=Path(sysfs);self.devices=Path(devices).resolve();self.config=Path(config);self.owner=owner
+    def describe(self,name):
+        if not name_ok(name):raise ValueError('Invalid battery identifier')
+        source=self.sysfs/name;path=source.resolve(strict=True)
+        if not path.is_relative_to(self.devices):raise ValueError('Battery is outside the kernel device tree')
+        row=path.stat()
+        if not stat.S_ISDIR(row.st_mode) or row.st_uid!=self.owner:raise ValueError('Battery device is not trusted')
+        if bounded_read(path/'type')!='Battery':raise ValueError('Not a system battery')
+        if (path/'scope').exists() and bounded_read(path/'scope')!='System':raise ValueError('Peripheral batteries are not supported')
+        if (path/'present').exists() and bounded_read(path/'present')!='1':raise ValueError('Battery is disconnected')
+        end=integer(path/END);start=integer(path/START) if (path/START).exists() else None
+        metadata=[]
+        for key in ('manufacturer','model_name','serial_number'):
+            try:metadata.append(bounded_read(path/key,256))
+            except FileNotFoundError:metadata.append('')
+        stable=hashlib.sha256(json.dumps([name,str(path),metadata],separators=(',',':')).encode()).hexdigest()
+        identity=hashlib.sha256(json.dumps([stable,row.st_dev,row.st_ino]).encode()).hexdigest()
+        return dict(ok=True,name=name,path=str(path),device=row.st_dev,inode=row.st_ino,identity=identity,fingerprint=stable,percent=end,start=start)
+    def write_attribute(self,path,name,value,directory_identity=None):
+        if name not in (START,END) or type(value) is not int or not 0<=value<=100:raise ValueError('Unsupported battery attribute')
+        directory=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        try:
+            root=os.fstat(directory)
+            if directory_identity is not None and (root.st_dev,root.st_ino)!=directory_identity:raise ValueError('Battery changed before threshold write')
+            fd=os.open(name,os.O_WRONLY|os.O_NOFOLLOW,dir_fd=directory)
+        finally:os.close(directory)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):raise ValueError('Battery attribute is not a regular kernel file')
+            data=(str(value)+'\n').encode()
+            if os.write(fd,data)!=len(data):raise OSError('Incomplete battery threshold write')
+        finally:os.close(fd)
+    def checked_config(self,create=False):
+        if self.config.is_symlink():raise ValueError('Unsafe charge-limit state directory')
+        if create:self.config.mkdir(mode=0o700,parents=False,exist_ok=True)
+        row=self.config.stat()
+        if not stat.S_ISDIR(row.st_mode) or row.st_uid!=self.owner or row.st_mode&0o077:raise ValueError('Charge-limit state must be private and root-owned')
+        return self.config/'charge-limits.json'
+    @contextmanager
+    def operation_lock(self,timeout=3):
+        self.checked_config(True);path=self.config/'.charge-limit.lock'
+        fd=os.open(path,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+        try:
+            row=os.fstat(fd)
+            if not stat.S_ISREG(row.st_mode) or row.st_uid!=self.owner or row.st_mode&0o077:raise ValueError('Unsafe charge-limit operation lock')
+            deadline=time.monotonic()+timeout
+            while True:
+                try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB);break
+                except BlockingIOError:
+                    if time.monotonic()>=deadline:raise TimeoutError('Another battery charge-limit operation is running')
+                    time.sleep(.05)
+            yield
+        finally:os.close(fd)
+    def load(self):
+        try:path=self.checked_config();row=path.lstat()
+        except FileNotFoundError:return {}
+        if not stat.S_ISREG(row.st_mode) or row.st_uid!=self.owner or row.st_mode&0o077 or row.st_size>65536:raise ValueError('Unsafe charge-limit state file')
+        fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+        try:
+            with os.fdopen(fd) as stream:value=json.load(stream)
+        except Exception:raise ValueError('Invalid charge-limit state')
+        if not isinstance(value,dict) or value.get('version')!=1 or not isinstance(value.get('limits'),dict) or len(value['limits'])>16:raise ValueError('Invalid charge-limit state')
+        result={}
+        for name,entry in value['limits'].items():
+            if not name_ok(name) or not isinstance(entry,dict) or set(entry)!=set(('fingerprint','percent')) or not isinstance(entry['fingerprint'],str) or not re.fullmatch('[a-f0-9]{64}',entry['fingerprint']) or type(entry['percent']) is not int or not 40<=entry['percent']<=100:raise ValueError('Invalid saved battery charge limit')
+            result[name]=entry
+        return result
+    def save(self,limits):
+        path=self.checked_config(True)
+        if path.exists() or path.is_symlink():self.load()
+        fd,temporary=tempfile.mkstemp(prefix='.charge-limits-',dir=self.config)
+        try:
+            os.fchmod(fd,0o600)
+            with os.fdopen(fd,'w') as stream:json.dump(dict(version=1,limits=limits),stream,separators=(',',':'));stream.flush();os.fsync(stream.fileno())
+            os.replace(temporary,path)
+            directory=os.open(self.config,os.O_DIRECTORY|os.O_RDONLY)
+            try:os.fsync(directory)
+            finally:os.close(directory)
+        finally:
+            if os.path.exists(temporary):os.unlink(temporary)
+    def set_limit(self,name,percent,expected,persist=False):
+        if type(percent) is not int or not 40<=percent<=100:raise ValueError('Charge limit must be between40% and100%')
+        current=self.describe(name)
+        if current['identity']!=expected:raise ValueError('Battery changed while authorization was pending')
+        limits=self.load() if persist else None
+        if persist and name not in limits and len(limits)>=16:raise ValueError('Too many saved batteries')
+        path=Path(current['path']);old_start=current['start'];new_start=old_start
+        if old_start is not None and old_start>percent-5:
+            new_start=max(0,percent-max(5,current['percent']-old_start))
+            self.write_attribute(path,START,new_start,(current['device'],current['inode']))
+        try:self.write_attribute(path,END,percent,(current['device'],current['inode']))
+        except Exception:
+            if new_start!=old_start:
+                try:
+                    actual=self.describe(name)
+                    if actual['identity']==expected and actual['percent']==current['percent']:self.write_attribute(path,START,old_start,(current['device'],current['inode']))
+                except Exception:pass
+            raise
+        actual=self.describe(name)
+        if actual['identity']!=expected:raise ValueError('Battery disconnected while applying limit')
+        if persist:
+            # Record only an explicitly authorized, read-back supported limit.
+            if not 40<=actual['percent']<=100:raise ValueError('Driver applied an unsupported limit; no startup limit was saved')
+            limits[name]=dict(fingerprint=actual['fingerprint'],percent=actual['percent'])
+            try:self.save(limits)
+            except Exception as error:raise ValueError('Charge limit applied, but startup persistence failed: '+str(error)) from error
+        return dict(ok=True,name=name,percent=actual['percent'],start=actual['start'],persisted=bool(persist))
+    def restore(self):
+        limits=self.load();restored=[];skipped=[]
+        for name,saved in limits.items():
+            try:
+                current=self.describe(name)
+                if current['fingerprint']!=saved['fingerprint']:skipped.append(name);continue
+                self.set_limit(name,saved['percent'],current['identity'],False);restored.append(name)
+            except (OSError,ValueError):skipped.append(name)
+        return dict(ok=True,restored=restored,skipped=skipped)
+    def forget(self,name):
+        if not name_ok(name):raise ValueError('Invalid battery identifier')
+        limits=self.load();limits.pop(name,None);self.save(limits);return dict(ok=True,persisted=False,name=name)
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    group=parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--describe',metavar='BATTERY');group.add_argument('--set',nargs=2,metavar=('BATTERY','PERCENT'));group.add_argument('--restore',action='store_true');group.add_argument('--forget',metavar='BATTERY')
+    parser.add_argument('--identity');parser.add_argument('--persist',action='store_true');args=parser.parse_args()
+    if (args.identity is not None or args.persist) and not args.set:parser.error('Identity and persistence apply only to --set')
+    if not args.describe and os.geteuid()!=0:parser.error('Administrator authorization is required')
+    policy=ChargePolicy()
+    try:
+        if args.describe:value=policy.describe(args.describe)
+        else:
+            with policy.operation_lock():
+                if args.restore:value=policy.restore()
+                elif args.forget:value=policy.forget(args.forget)
+                else:
+                    if not args.identity or not re.fullmatch('[a-f0-9]{64}',args.identity):raise ValueError('A current battery identity is required')
+                    if not re.fullmatch('[0-9]{2,3}',args.set[1]):raise ValueError('Invalid charge percentage')
+                    value=policy.set_limit(args.set[0],int(args.set[1]),args.identity,args.persist)
+        print(json.dumps(value,separators=(',',':')));return 0
+    except (OSError,ValueError) as error:print(str(error),file=sys.stderr);return 1
+if __name__=='__main__':raise SystemExit(main())

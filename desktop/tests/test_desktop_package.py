@@ -21,12 +21,15 @@ class DesktopPackageTest(unittest.TestCase):
    base=Path(directory);root=base/'checkout';root.mkdir()
    for name in builder.RUNTIME_FILES:
     path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'fixture-binary')
-   for folder in ('native','themes','session/configs/xdg-desktop-portal','tools'): (root/folder).mkdir(parents=True,exist_ok=True)
+   for folder in ('native','themes','src/session/configs/xdg-desktop-portal','tools'): (root/folder).mkdir(parents=True,exist_ok=True)
    (root/'native/Test.qml').write_text('import QtQuick 2.15\nItem{}')
-   for name in ('run-native-session.sh','run-native-shell.sh','README.md','installed_launcher.py','tools/wayland-env.sh','tools/qt5-env.sh','tools/native-output-power.py','tools/display-watchdog.py','tools/migrate-user-state.py','session/configs/xdg-desktop-portal/orbit-portals.conf'):
+   for name in ('run-native-session.sh','run-native-shell.sh','README.md','src/installed_launcher.py','tools/wayland-env.sh','tools/qt5-env.sh','tools/native-output-power.py','tools/display-watchdog.py','tools/migrate-user-state.py','src/session/configs/xdg-desktop-portal/orbit-portals.conf'):
     (root/name).write_text('fixture')
    with patch.object(builder,'elf_dependencies',return_value=['libfixture-runtime (>= 1.0)']):stage=builder.stage_package(base/'stage','0.1.0','amd64',root)
    self.assertTrue((stage/'usr/lib/abstract/.native-runtime/bin/orbit-compositor').is_file())
+   self.assertTrue((stage/'usr/lib/abstract/installed_launcher.py').is_file())
+   self.assertTrue((stage/'usr/lib/abstract/session/configs/xdg-desktop-portal/orbit-portals.conf').is_file())
+   self.assertFalse((stage/'usr/lib/abstract/src').exists())
    for name in ('usr/bin/abstract-session','usr/bin/abstractctl','usr/share/wayland-sessions/abstract.desktop','usr/share/applications/orbit-settings.desktop'):
     content=(stage/name).read_text();self.assertNotIn(str(root),content);self.assertIn('/usr/',content)
    self.assertFalse((stage/'etc/pam.d/swaylock').exists())

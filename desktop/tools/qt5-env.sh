@@ -11,8 +11,8 @@ fi
 
 # Scope the compatibility module to this Qt process and recheck after Qt updates.
 # Private fallback runtimes discard any inherited system-only compatibility path.
-if [[ -f "$orbit_root/qt5_a11y_runtime.py" ]]; then
-  orbit_a11y_library_path="$(/usr/bin/python3 "$orbit_root/qt5_a11y_runtime.py" --library-path)"
+if [[ -f "$orbit_source_root/qt5_a11y_runtime.py" ]]; then
+  orbit_a11y_library_path="$(/usr/bin/python3 "$orbit_source_root/qt5_a11y_runtime.py" --library-path)"
   if [[ -n "$orbit_a11y_library_path" ]]; then
     export LD_LIBRARY_PATH="$orbit_a11y_library_path"
   else

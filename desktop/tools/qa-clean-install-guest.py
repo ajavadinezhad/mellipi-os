@@ -2,14 +2,14 @@
 """Disposable VM guest probes. start-tty intentionally configures ONLY a QA VM."""
 import argparse,ctypes,ctypes.util,json,os,shutil,socket,stat,subprocess,sys,tempfile
 from pathlib import Path
-ROOT=Path('/usr/lib/abstract')
+ROOT=Path('/usr/lib/abstract');SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 
 def assert_guest():
  if not Path('/home/abstract/qa-guest.py').is_file() or not Path('/var/lib/cloud/instance').exists() or Path('/etc/hostname').read_text().strip()!='abstract-qa':raise RuntimeError('This action requires the explicitly seeded Abstract QA VM')
 
 def baseline():
- assert_guest();sys.path.insert(0,str(ROOT));checks={}
- for path in (ROOT/'native_app.py',ROOT/'.native-runtime/bin/orbit-compositor',ROOT/'.lock-runtime/bin/swaylock',Path('/usr/share/wayland-sessions/abstract.desktop'),Path('/etc/pam.d/swaylock')):
+ assert_guest();sys.path.insert(0,str(SOURCE_ROOT));checks={}
+ for path in (SOURCE_ROOT/'native_app.py',ROOT/'.native-runtime/bin/orbit-compositor',ROOT/'.lock-runtime/bin/swaylock',Path('/usr/share/wayland-sessions/abstract.desktop'),Path('/etc/pam.d/swaylock')):
   if not path.is_file():raise RuntimeError('Missing prerequisite: '+str(path))
  # Check every packaged ELF, not just entrypoints: private tray/portal/Qt
  # dependencies can otherwise be accidentally supplied by the developer host.
@@ -85,13 +85,13 @@ def start_tty():
  print(json.dumps(dict(guest_getty_configured=True,physical_host_changed=False)))
 
 def session():
- assert_guest();sys.path.insert(0,str(ROOT));found=[]
+ assert_guest();sys.path.insert(0,str(SOURCE_ROOT));found=[]
  for entry in Path('/proc').iterdir():
   if not entry.name.isdigit():continue
   try:
    if entry.stat().st_uid!=os.getuid():continue
    args=(entry/'cmdline').read_bytes().split(b'\0')
-   if str(ROOT/'native_app.py').encode() not in args:continue
+   if str(SOURCE_ROOT/'native_app.py').encode() not in args:continue
    env=dict(row.split(b'=',1) for row in (entry/'environ').read_bytes().split(b'\0') if b'=' in row)
    if env.get(b'ORBIT_NATIVE_CONTROL') and not env.get(b'ORBIT_NESTED'):found.append((entry,env))
   except OSError:continue

@@ -2,8 +2,8 @@
 """Recovery after a forcibly killed supervisor; does not overwrite bindings the user changed."""
 import json,os,subprocess,sys
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
+sys.path.insert(0,str(SOURCE_ROOT))
 from application_theme import restore_application_theme
 restore_application_theme(ROOT)
 from window_theme import restore_xfwm_theme

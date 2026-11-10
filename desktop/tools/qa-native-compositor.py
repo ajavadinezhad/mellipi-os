@@ -6,7 +6,7 @@ not animation counters alone, prove the forward/backward workspace transforms.
 """
 import importlib.util,json,os,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 from qt_compat import QImage
 from native_compositor import NativeCompositor
 spec=importlib.util.spec_from_file_location('private_native_qa',ROOT/'tools/qa-screenshots-wayland.py');qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)

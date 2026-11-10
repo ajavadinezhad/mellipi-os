@@ -2,7 +2,8 @@
 """Typed native DPMS entry for swayidle; never contacts Sway."""
 import os,sys,time
 from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
+sys.path.insert(0,str(SOURCE_ROOT))
 from native_compositor import NativeCompositor
 
 def main():

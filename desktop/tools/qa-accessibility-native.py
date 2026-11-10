@@ -2,7 +2,7 @@
 """Inspect real Qt Quick accessibility on private native Wayland + AT-SPI bus."""
 import json,os,signal,struct,subprocess,sys,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 
 def wait(check,seconds=20):
     end=time.monotonic()+seconds
@@ -19,7 +19,7 @@ def stop(process):
         except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=3)
 FIXTURE='''import sys
 from pathlib import Path
-sys.path.insert(0,sys.argv[1])
+sys.path.insert(0,str(Path(sys.argv[1])/'src' if (Path(sys.argv[1])/'src').is_dir() else Path(sys.argv[1])))
 from qt_compat import QApplication,QObject,Property,Signal,Slot,QQmlApplicationEngine
 class Style(QObject):
  settingsChanged=Signal()

@@ -6,7 +6,7 @@ page/CDP socket. Never connects to existing browser targets or physical devices.
 """
 import asyncio,http.server,importlib.util,json,os,subprocess,sys,tempfile,threading,time,urllib.request
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 spec=importlib.util.spec_from_file_location('private_screencast',ROOT/'tools/qa-screencast-native.py');fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
 PAGE=b'''<!doctype html><title>Abstract private browser capture fixture</title><style>body{background:#05f;color:white}</style><h1>Private browser capture test</h1><video hidden muted></video><canvas hidden></canvas><script>
 let flip=false;setInterval(()=>{flip=!flip;document.body.style.background=flip?'#ff5500':'#0055ff'},170);
@@ -120,7 +120,7 @@ def main():
  with tempfile.TemporaryDirectory(prefix='abstract-browser-capture-',ignore_cleanup_errors=True) as temporary:
   base=Path(temporary);runtime=base/'runtime';runtime.mkdir(mode=0o700)
   env={key:value for key,value in os.environ.items() if key not in ('WAYLAND_DISPLAY','SWAYSOCK','DISPLAY','ORBIT_NATIVE_CONTROL','DBUS_SESSION_BUS_ADDRESS','PIPEWIRE_REMOTE','PIPEWIRE_RUNTIME_DIR','PULSE_SERVER','XDG_DESKTOP_PORTAL_DIR')}
-  env.update(ABSTRACT_PRIVATE_PORTAL_QA='1',XDG_RUNTIME_DIR=str(runtime),PIPEWIRE_RUNTIME_DIR=str(runtime),PIPEWIRE_REMOTE='pipewire-0',XDG_CONFIG_HOME=str(base/'config'),XDG_CONFIG_DIRS=str(ROOT/'session/configs')+':/etc/xdg',XDG_DATA_HOME=str(base/'data'),WLR_BACKENDS='headless',WLR_LIBINPUT_NO_DEVICES='1',WLR_RENDERER='pixman',ORBIT_NESTED='1',LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe',PULSE_SERVER='unix:'+str(runtime/'no-audio'))
+  env.update(ABSTRACT_PRIVATE_PORTAL_QA='1',XDG_RUNTIME_DIR=str(runtime),PIPEWIRE_RUNTIME_DIR=str(runtime),PIPEWIRE_REMOTE='pipewire-0',XDG_CONFIG_HOME=str(base/'config'),XDG_CONFIG_DIRS=str(SOURCE_ROOT/'session/configs')+':/etc/xdg',XDG_DATA_HOME=str(base/'data'),WLR_BACKENDS='headless',WLR_LIBINPUT_NO_DEVICES='1',WLR_RENDERER='pixman',ORBIT_NESTED='1',LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe',PULSE_SERVER='unix:'+str(runtime/'no-audio'))
   try:return subprocess.run(['dbus-run-session','--','/usr/bin/python3',str(Path(__file__).resolve()),'--inside-private-bus',str(base)],cwd=ROOT,env=env,check=True).returncode
   finally:subprocess.run(['fusermount3','-uz',str(runtime/'doc')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 if __name__=='__main__':main()

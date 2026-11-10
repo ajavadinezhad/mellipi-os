@@ -13,10 +13,19 @@ def assemble(output,packages,key_home,fingerprint,sources=()):
     if not re.fullmatch(r'[A-Fa-f0-9]{40}',fingerprint):raise ValueError('A full signing fingerprint is required')
     if output.is_symlink():raise ValueError('Output must not be a symlink')
     output.mkdir(parents=True,exist_ok=True)
-    for name in ('index.html','style.css','site.js','site-config.json','favicon.svg'):
+    subprocess.run(['python3',str(ROOT/'tools/export-website-themes.py'),'--output',str(ROOT/'website/themes.json')],check=True)
+    for name in ('index.html','style.css','theme-init.js','site.js','site-config.json','themes.json','favicon.svg'):
         source=ROOT/'website'/name
         if source.is_file():shutil.copy2(source,output/name)
     if not (output/'index.html').is_file():raise ValueError('Build website/ first')
+    html=output/'index.html'
+    content=html.read_text()
+    for name in ('style.css','theme-init.js','site.js'):
+        asset=output/name
+        if asset.is_file():
+            version=hashlib.sha256(asset.read_bytes()).hexdigest()[:12]
+            content=content.replace('"'+name+'"','"'+name+'?v='+version+'"')
+    html.write_text(content)
     assets=ROOT/'website/assets'
     if assets.is_dir():shutil.copytree(assets,output/'assets',dirs_exist_ok=True)
     subprocess.run(['python3',str(ROOT/'tools/build-apt-repository.py'),'--output',str(output/'apt'),'--packages',*[str(Path(p).resolve()) for p in packages],'--gnupg-home',str(Path(key_home).resolve()),'--signing-key',fingerprint.upper()],check=True)

@@ -7,7 +7,7 @@ WirePlumber or physical audio/video-device manager is started.
 """
 import hashlib,json,os,signal,subprocess,sys,tempfile,time,threading
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 
 def wait(check,seconds=20):
     end=time.monotonic()+seconds
@@ -190,7 +190,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='abstract-screencast-',ignore_cleanup_errors=True) as temp:
         base=Path(temp);runtime=base/'runtime';runtime.mkdir(mode=0o700)
         env={key:value for key,value in os.environ.items() if key not in ('WAYLAND_DISPLAY','SWAYSOCK','DISPLAY','ORBIT_NATIVE_CONTROL','DBUS_SESSION_BUS_ADDRESS','PIPEWIRE_REMOTE','PIPEWIRE_RUNTIME_DIR','PULSE_SERVER','XDG_DESKTOP_PORTAL_DIR')}
-        env.update(ABSTRACT_PRIVATE_PORTAL_QA='1',XDG_RUNTIME_DIR=str(runtime),PIPEWIRE_RUNTIME_DIR=str(runtime),PIPEWIRE_REMOTE='pipewire-0',XDG_CONFIG_HOME=str(base/'config'),XDG_CONFIG_DIRS=str(ROOT/'session/configs')+':/etc/xdg',XDG_DATA_HOME=str(base/'data'),WLR_BACKENDS='headless',WLR_LIBINPUT_NO_DEVICES='1',WLR_RENDERER='pixman',ORBIT_NESTED='1',LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe',PULSE_SERVER='unix:'+str(runtime/'no-audio'))
+        env.update(ABSTRACT_PRIVATE_PORTAL_QA='1',XDG_RUNTIME_DIR=str(runtime),PIPEWIRE_RUNTIME_DIR=str(runtime),PIPEWIRE_REMOTE='pipewire-0',XDG_CONFIG_HOME=str(base/'config'),XDG_CONFIG_DIRS=str(SOURCE_ROOT/'session/configs')+':/etc/xdg',XDG_DATA_HOME=str(base/'data'),WLR_BACKENDS='headless',WLR_LIBINPUT_NO_DEVICES='1',WLR_RENDERER='pixman',ORBIT_NESTED='1',LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe',PULSE_SERVER='unix:'+str(runtime/'no-audio'))
         try:
             return subprocess.run(['dbus-run-session','--','/usr/bin/python3',str(Path(__file__).resolve()),'--inside-private-bus',str(base)],cwd=ROOT,env=env,check=True).returncode
         finally:

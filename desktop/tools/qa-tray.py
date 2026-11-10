@@ -2,7 +2,7 @@
 """Run under dbus-run-session to test registration, menu actions and item removal."""
 import sys,subprocess,os
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));os.environ['QT_QPA_PLATFORM']='offscreen'
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT));os.environ['QT_QPA_PLATFORM']='offscreen'
 from qt_compat import QApplication,QTimer,QObject,Signal
 from tray import TrayHost
 class Bridge(QObject):

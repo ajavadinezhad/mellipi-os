@@ -2,7 +2,8 @@
 """Explicit control of a separately running experimental compositor."""
 import argparse,json,sys
 from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
+sys.path.insert(0,str(SOURCE_ROOT))
 from native_compositor import NativeCompositor
 parser=argparse.ArgumentParser();parser.add_argument('--socket',required=True)
 parser.add_argument('command',choices=('status','windows','workspace','move','maximize','restore','close','quit'))

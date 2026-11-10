@@ -2,12 +2,12 @@
 """Owned disposable-VM service checks; never run on a normal desktop/host."""
 import argparse,json,os,pwd,secrets,subprocess,sys,time
 from pathlib import Path
-ROOT=Path('/usr/lib/abstract')
+ROOT=Path('/usr/lib/abstract');SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 
 def guest():
     if Path('/etc/hostname').read_text().strip()!='abstract-qa' or not Path('/var/lib/cloud/instance').exists() or not Path('/home/abstract/qa-guest.py').is_file() or pwd.getpwuid(os.getuid()).pw_name!='abstract':
         raise RuntimeError('This helper requires the owned Abstract QA VM desktop user')
-    sys.path.insert(0,str(ROOT))
+    sys.path.insert(0,str(SOURCE_ROOT))
 
 def command(args,allow_failure=False):
     result=subprocess.run(args,capture_output=True,text=True,timeout=12)
@@ -21,7 +21,7 @@ def session_environment():
         try:
             if entry.stat().st_uid!=os.getuid():continue
             args=(entry/'cmdline').read_bytes().split(b'\0')
-            if str(ROOT/'native_app.py').encode() not in args:continue
+            if str(SOURCE_ROOT/'native_app.py').encode() not in args:continue
             env=dict(pair.split(b'=',1) for pair in (entry/'environ').read_bytes().split(b'\0') if b'=' in pair)
             if env.get(b'ORBIT_NATIVE_CONTROL') and not env.get(b'ORBIT_NESTED'):sessions.append(env)
         except OSError:continue

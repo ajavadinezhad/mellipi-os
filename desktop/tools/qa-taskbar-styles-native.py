@@ -2,7 +2,7 @@
 """Four-edge taskbar QA on disposable native output. Never physical input/session."""
 import importlib.util,json,os,sys,subprocess,tempfile,time
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 spec=importlib.util.spec_from_file_location('native_shell_qa',ROOT/'tools/qa-native-shell.py');base=importlib.util.module_from_spec(spec);spec.loader.exec_module(base);qa=base.qa
 from native_compositor import NativeCompositor
 from panel_policy import panel_rect,panel_body_origin,taskbar_body_rect
