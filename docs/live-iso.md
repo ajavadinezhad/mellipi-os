@@ -15,7 +15,7 @@ locally and does not require downloading the desktop again.
 
 1. Download the ISO and its matching `.iso.sha256` file into the same directory,
    then run `sha256sum -c mellipi-0.1.8-noble-amd64.iso.sha256`. The release's
-   separate `SHA256SUMS-0.1.8` file covers the desktop packages, not the ISO.
+   signed `mellipi-0.1.8-SHA256SUMS` also covers the ISO and all four packages.
 2. Use a trusted USB image writer to select the ISO and the intended USB drive.
    Review the drive carefully: writing an image replaces that drive's contents.
 3. Boot the USB and choose **Try or install Mellipi**. The live desktop opens
