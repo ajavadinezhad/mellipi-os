@@ -1,0 +1,21 @@
+[package]
+name = "orbit-compositor"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[features]
+drm = ["smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_session_libseat"]
+
+[dependencies]
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+bitflags = "2.2.1"
+tracing = "0.1"
+serde_json = "1"
+winit = {version="=0.30.13",default-features=false,features=["wayland","wayland-dlopen"]}
+smithay = { path = "vendor/smithay", version = "=0.7.0", default-features = false, features = ["backend_winit", "wayland_frontend", "desktop", "xwayland"] }
+
+[profile.release]
+opt-level = 2
+strip = true
+codegen-units = 1

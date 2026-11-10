@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+<defs>
+  <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#111a1e"/><stop offset="1" stop-color="#080e12"/></linearGradient>
+</defs>
+<rect width="1920" height="1080" fill="url(#ground)"/>
+<path d="M0 740L450 1080H0ZM1920 0H1470L1920 340Z" fill="#18262b"/>
+<path d="M0 708L490 1080M1430 0L1920 372" fill="none" stroke="#31464b" stroke-width="1"/>
+<path d="M92 100V92H100M1820 988H1828V980" fill="none" stroke="#769a93" stroke-width="2"/>
+<path d="M960 218L988 246L960 274L932 246Z M944 246L960 230L976 246 M960 230V274" fill="none" stroke="#a9d9c3" stroke-width="2.5" stroke-linejoin="round"/>
+<text x="960" y="332" text-anchor="middle" fill="#e2eae8" font-family="DejaVu Sans,sans-serif" font-size="34" letter-spacing="1">Abstract</text>
+<path d="M904 956H1016" stroke="#a9d9c3" stroke-width="2"/>
+</svg>

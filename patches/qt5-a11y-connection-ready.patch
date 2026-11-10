@@ -1,0 +1,30 @@
+--- a/src/platformsupport/linuxaccessibility/bridge.cpp
++++ b/src/platformsupport/linuxaccessibility/bridge.cpp
+@@ -94,7 +94,7 @@
+ void QSpiAccessibleBridge::updateStatus()
+ {
+     // create the adaptor to handle everything if we are in enabled state
+-    if (!dbusAdaptor && isActive()) {
++    if (!dbusAdaptor && isActive() && dbusConnection->connection().isConnected()) {
+         qSpiInitializeStructTypes();
+         initializeConstantMappings();
+ 
+--- a/src/platformsupport/linuxaccessibility/dbusconnection.cpp
++++ b/src/platformsupport/linuxaccessibility/dbusconnection.cpp
+@@ -77,6 +77,8 @@
+ 
+     dbusWatcher = new QDBusServiceWatcher(A11Y_SERVICE, c, QDBusServiceWatcher::WatchForRegistration, this);
+     connect(dbusWatcher, SIGNAL(serviceRegistered(QString)), this, SLOT(serviceRegistered()));
++    c.connect(A11Y_SERVICE, A11Y_PATH, QLatin1String("org.freedesktop.DBus.Properties"),
++              QLatin1String("PropertiesChanged"), this, SLOT(serviceRegistered()));
+ 
+     // If it is registered already, setup a11y right away
+     if (c.interface()->isServiceRegistered(A11Y_SERVICE))
+@@ -121,6 +123,7 @@
+     static const bool a11yAlwaysOn = qEnvironmentVariableIsSet("QT_LINUX_ACCESSIBILITY_ALWAYS_ON");
+ 
+     bool enabled = a11yAlwaysOn || a11yStatus->screenReaderEnabled() || a11yStatus->isEnabled();
++    a11yStatus->deleteLater();
+ 
+     if (enabled != m_enabled) {
+         m_enabled = enabled;

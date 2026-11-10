@@ -1,0 +1,19 @@
+{
+  "id": "lavender",
+  "name": "Lavender",
+  "description": "Quiet violet surfaces, lavender highlights and soft lilac-white type.",
+  "mode": "dark",
+  "darkLevel": "normal",
+  "accent": "#c7b3f2",
+  "background": "#17121f",
+  "palette": {
+    "background": "#17121f",
+    "surface": "#211a2d",
+    "raised": "#2a2238",
+    "hover": "#352b44",
+    "border": "#78668d",
+    "text": "#f3edf9",
+    "muted": "#d3c6e2",
+    "faint": "#b8aacb"
+  }
+}

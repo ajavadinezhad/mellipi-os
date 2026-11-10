@@ -1,0 +1,19 @@
+{
+  "id": "glacier",
+  "name": "Glacier",
+  "description": "Icy porcelain and pale blue surfaces with a precise cobalt-teal accent.",
+  "mode": "light",
+  "darkLevel": "normal",
+  "accent": "#006a99",
+  "background": "#edf5fa",
+  "palette": {
+    "background": "#edf5fa",
+    "surface": "#f8fcff",
+    "raised": "#dfedf5",
+    "hover": "#d2e5f0",
+    "border": "#7897aa",
+    "text": "#142f42",
+    "muted": "#3c5669",
+    "faint": "#435e70"
+  }
+}

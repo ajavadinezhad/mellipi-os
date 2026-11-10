@@ -1,0 +1,150 @@
+--- a/render.c
++++ b/render.c
+@@ -1,11 +1,16 @@
+ #include <math.h>
+ #include <stdlib.h>
++#include <string.h>
++#include "orbit-lock-textbox.h"
++#include "orbit-lock-status.h"
++#include <time.h>
+ #include <stdio.h>
+ #include <wayland-client.h>
+ #include "cairo.h"
+ #include "background-image.h"
+ #include "swaylock.h"
+ #include "log.h"
++#include "loop.h"
+ 
+ #define M_PI 3.14159265358979323846
+ const float TYPE_INDICATOR_RANGE = M_PI / 3.0f;
+@@ -49,6 +54,31 @@
+ 
+ static bool render_frame(struct swaylock_surface *surface);
+ 
++/* One shared, minute-aligned presentation timer for the locked process.
++ * It never owns a surface: output hotplug can destroy those independently. */
++static struct loop_timer *orbit_clock_timer;
++static void orbit_schedule_clock(struct swaylock_state *state);
++static void orbit_clock_tick(void *data) {
++	struct swaylock_state *state = data;
++	orbit_clock_timer = NULL;
++	if (!state->run_display) return;
++	orbit_schedule_clock(state);
++	orbit_expire_lock_network();
++	damage_state(state);
++}
++static void orbit_schedule_clock(struct swaylock_state *state) {
++	if (orbit_clock_timer || !state->eventloop) return;
++	struct timespec now;
++	int delay = 60000;
++	if (clock_gettime(CLOCK_REALTIME, &now) == 0) {
++		delay = 60000 - (int)(now.tv_sec % 60) * 1000 - (int)(now.tv_nsec / 1000000);
++		if (delay < 1) delay = 1;
++		if (delay > 60000) delay = 60000;
++	}
++	orbit_clock_timer = loop_add_timer(state->eventloop, delay, orbit_clock_tick, state);
++}
++
++
+ void render(struct swaylock_surface *surface) {
+ 	struct swaylock_state *state = surface->state;
+ 
+@@ -133,6 +163,10 @@
+ 
+ static bool render_frame(struct swaylock_surface *surface) {
+ 	struct swaylock_state *state = surface->state;
++	/* ORBIT_LOCK_TEXTBOX_RENDERER: optional presentation only. */
++	const char *textbox_option = getenv("ORBIT_LOCK_TEXTBOX");
++	bool textbox = textbox_option && strcmp(textbox_option, "1") == 0;
++	if (textbox) orbit_schedule_clock(state);
+ 
+ 	// First, compute the text that will be drawn, if any, since this
+ 	// determines the size/positioning of the surface
+@@ -187,6 +221,15 @@
+ 		}
+ 	}
+ 
++    /* Keep the active layout visible during errors/checking too. Read only
++     * the same upstream xkb state; never change input or authentication. */
++    if (textbox && state->xkb.keymap && !state->args.hide_keyboard_layout &&
++            (state->args.show_keyboard_layout || xkb_keymap_num_layouts(state->xkb.keymap) > 1)) {
++        xkb_layout_index_t current=0, count=xkb_keymap_num_layouts(state->xkb.keymap);
++        while (current<count && xkb_state_layout_index_is_active(state->xkb.state,current,XKB_STATE_LAYOUT_EFFECTIVE)!=1) ++current;
++        layout_text=xkb_keymap_layout_get_name(state->xkb.keymap,current);
++    }
++
+ 	// Compute the size of the buffer needed
+ 	int arc_radius = state->args.radius * surface->scale;
+ 	int arc_thickness = state->args.thickness * surface->scale;
+@@ -221,6 +264,14 @@
+ 	buffer_height += surface->scale - (buffer_height % surface->scale);
+ 	buffer_width += surface->scale - (buffer_width % surface->scale);
+ 
++	if (textbox) {
++		int logical_width = surface->width - 32;
++		if (logical_width > 420) logical_width = 420;
++		if (logical_width < 96) logical_width = 96;
++		buffer_width = logical_width * surface->scale;
++		buffer_height = orbit_lock_panel_height(surface->height) * surface->scale;
++	}
++
+ 	int subsurf_xpos;
+ 	int subsurf_ypos;
+ 
+@@ -241,6 +292,11 @@
+ 			(state->args.radius + state->args.thickness);
+ 	}
+ 
++	if (textbox) {
++		subsurf_xpos = surface->width / 2 - buffer_width / (2 * surface->scale);
++		subsurf_ypos = (surface->height - buffer_height / surface->scale) / 2;
++	}
++
+ 	struct pool_buffer *buffer = get_next_buffer(state->shm,
+ 			surface->indicator_buffers, buffer_width, buffer_height);
+ 	if (buffer == NULL) {
+@@ -261,7 +317,43 @@
+ 	cairo_paint(cairo);
+ 	cairo_restore(cairo);
+ 
+-	if (draw_indicator) {
++	if (draw_indicator && textbox) {
++		struct orbit_lock_textbox_visual view = {
++			.password_bytes = state->password.len,
++			.validating = state->auth_state == AUTH_STATE_VALIDATING,
++			.invalid = state->auth_state == AUTH_STATE_INVALID,
++			.caps_lock = state->xkb.caps_lock && state->args.show_caps_lock_text,
++			.font = state->args.font,
++			.font_size = state->args.font_size ? state->args.font_size : 16,
++			.inside = state->args.colors.inside.input,
++			.border = state->args.colors.ring.input,
++			.text = state->args.colors.text.input,
++			.checking = state->args.colors.text.verifying,
++			.wrong = state->args.colors.ring.wrong,
++		};
++		char time_text[48], date_text[128], user_text[192], battery_text[96];
++		char network_text[64], keyboard_text[164], layout_label[180];
++		orbit_collect_lock_network(network_text,sizeof(network_text));
++		orbit_status_clean(keyboard_text,sizeof(keyboard_text),layout_text);
++		snprintf(layout_label,sizeof(layout_label),"%s%s",keyboard_text[0] ? "Keyboard: " : "",keyboard_text);
++		orbit_collect_lock_info(time_text, sizeof(time_text), date_text, sizeof(date_text),
++			user_text, sizeof(user_text), battery_text, sizeof(battery_text));
++		struct orbit_lock_info_visual info = {
++			.time_text = time_text, .date_text = date_text,
++			.user_text = user_text, .battery_text = battery_text,
++			.layout_text = layout_label, .network_text = network_text,
++			.inside = state->args.colors.inside.input,
++			.border = state->args.colors.line.input,
++			.text = state->args.colors.text.input,
++			.muted = state->args.colors.text.input,
++			.accent = state->args.colors.ring.input,
++		};
++		cairo_save(cairo);
++		cairo_scale(cairo, surface->scale, surface->scale);
++		orbit_draw_lock_panel_fit(cairo, buffer_width / surface->scale,
++			buffer_height / surface->scale, &view, &info);
++		cairo_restore(cairo);
++	} else if (draw_indicator) {
+ 		// Fill inner circle
+ 		cairo_set_line_width(cairo, 0);
+ 		cairo_arc(cairo, buffer_width / 2, buffer_diameter / 2,

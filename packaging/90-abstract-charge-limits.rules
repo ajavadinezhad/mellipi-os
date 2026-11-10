@@ -1,0 +1,3 @@
+# Run the bounded oneshot again when a supported system battery appears.
+# No broad sysfs write permissions are granted to desktop users.
+ACTION=="add", SUBSYSTEM=="power_supply", ATTR{type}=="Battery", TEST=="/var/lib/abstract/charge-limits.json", TAG+="systemd", ENV{SYSTEMD_WANTS}+="abstract-charge-limits.service"

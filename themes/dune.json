@@ -1,0 +1,19 @@
+{
+  "id": "dune",
+  "name": "Dune",
+  "description": "Warm ivory and sand with a restrained burnt-orange accent.",
+  "mode": "light",
+  "darkLevel": "normal",
+  "accent": "#a44825",
+  "background": "#f2eadf",
+  "palette": {
+    "background": "#f2eadf",
+    "surface": "#fffaf2",
+    "raised": "#e7dac8",
+    "hover": "#dfcfb9",
+    "border": "#a58f76",
+    "text": "#302920",
+    "muted": "#625442",
+    "faint": "#68533e"
+  }
+}

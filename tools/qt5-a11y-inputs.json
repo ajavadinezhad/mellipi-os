@@ -1,0 +1,223 @@
+{
+  "qt_version": "5.15.13",
+  "downloads": [
+    {
+      "name": "libatspi2.0-dev_2.52.0-1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/at-spi2-core/libatspi2.0-dev_2.52.0-1build1_amd64.deb",
+      "sha256": "3a7b1c81bf8763db10dc8050a9a1feafe5742c9ab7fa7f61a99f08c6e11af41b",
+      "kind": "deb",
+      "package": "libatspi2.0-dev",
+      "version": "2.52.0-1build1"
+    },
+    {
+      "name": "libdbus-1-dev_1.14.10-4ubuntu4.1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/d/dbus/libdbus-1-dev_1.14.10-4ubuntu4.1_amd64.deb",
+      "sha256": "ec30a44d0ae84b15ff5e50c3481b61d21d560626ce52326446135841e4cda1a5",
+      "kind": "deb",
+      "package": "libdbus-1-dev",
+      "version": "1.14.10-4ubuntu4.1"
+    },
+    {
+      "name": "libegl-dev_1.7.0-1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libg/libglvnd/libegl-dev_1.7.0-1build1_amd64.deb",
+      "sha256": "3a0315216bb0d6fc4bbe7f689cf0168c2ffa3e62ac69bff06bbbe49679259990",
+      "kind": "deb",
+      "package": "libegl-dev",
+      "version": "1.7.0-1build1"
+    },
+    {
+      "name": "libffi-dev_3.4.6-1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libf/libffi/libffi-dev_3.4.6-1build1_amd64.deb",
+      "sha256": "7009959b8a3b77206325026917fb45150ac81bf6139468abc0841d5a29c8619d",
+      "kind": "deb",
+      "package": "libffi-dev",
+      "version": "3.4.6-1build1"
+    },
+    {
+      "name": "libfontconfig-dev_2.15.0-1.1ubuntu2_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/f/fontconfig/libfontconfig-dev_2.15.0-1.1ubuntu2_amd64.deb",
+      "sha256": "7948f3037b39d8bc751dc6104ff490c2d2f1b145d2969227ba591ceb917f9f05",
+      "kind": "deb",
+      "package": "libfontconfig-dev",
+      "version": "2.15.0-1.1ubuntu2"
+    },
+    {
+      "name": "libfreetype-dev_2.13.2+dfsg-1ubuntu0.2_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/f/freetype/libfreetype-dev_2.13.2+dfsg-1ubuntu0.2_amd64.deb",
+      "sha256": "dd512109d33b182387be40cfe2b68b912b14f0753ba2a0769ca1950de0713a28",
+      "kind": "deb",
+      "package": "libfreetype-dev",
+      "version": "2.13.2+dfsg-1ubuntu0.2"
+    },
+    {
+      "name": "libgl-dev_1.7.0-1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libg/libglvnd/libgl-dev_1.7.0-1build1_amd64.deb",
+      "sha256": "b7145fd8f8abe20d5cb436d2eae9b3235bd91be6fbddac581620d16763bd9250",
+      "kind": "deb",
+      "package": "libgl-dev",
+      "version": "1.7.0-1build1"
+    },
+    {
+      "name": "libglib2.0-dev_2.80.0-6ubuntu3.10_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/glib2.0/libglib2.0-dev_2.80.0-6ubuntu3.10_amd64.deb",
+      "sha256": "6d1d88d68192256603c0de05d084b8ef06ed9b16753215ec2c1ef9ef5fa15014",
+      "kind": "deb",
+      "package": "libglib2.0-dev",
+      "version": "2.80.0-6ubuntu3.10"
+    },
+    {
+      "name": "libglx-dev_1.7.0-1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libg/libglvnd/libglx-dev_1.7.0-1build1_amd64.deb",
+      "sha256": "0e2654950a881c20b640a3af590add2e0b612b8c0fdd945761fc695e1b6eb797",
+      "kind": "deb",
+      "package": "libglx-dev",
+      "version": "1.7.0-1build1"
+    },
+    {
+      "name": "libopengl-dev_1.7.0-1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libg/libglvnd/libopengl-dev_1.7.0-1build1_amd64.deb",
+      "sha256": "da50e2804e80391e5c3d7f61af70b41ff6d0d20e4862136ceb8828000637c273",
+      "kind": "deb",
+      "package": "libopengl-dev",
+      "version": "1.7.0-1build1"
+    },
+    {
+      "name": "libqt5waylandclient5-dev_5.15.13-1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtwayland-opensource-src/libqt5waylandclient5-dev_5.15.13-1_amd64.deb",
+      "sha256": "98bf8c62aa3b442c6a61782f0eb3cbc48c2a72503e64cd0351d1e5b50337d7de",
+      "kind": "deb",
+      "package": "libqt5waylandclient5-dev",
+      "version": "5.15.13-1"
+    },
+    {
+      "name": "libvulkan-dev_1.3.275.0-1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/v/vulkan-loader/libvulkan-dev_1.3.275.0-1build1_amd64.deb",
+      "sha256": "9577a2c5379372ca8231e700728390fa7d4991a0d8c6484ad83da849c728e76e",
+      "kind": "deb",
+      "package": "libvulkan-dev",
+      "version": "1.3.275.0-1build1"
+    },
+    {
+      "name": "libwayland-bin_1.22.0-2.1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/w/wayland/libwayland-bin_1.22.0-2.1build1_amd64.deb",
+      "sha256": "9562788fd1d795f703bac4c50187b08071521d58c113b18d598df82e0ebe7ff6",
+      "kind": "deb",
+      "package": "libwayland-bin",
+      "version": "1.22.0-2.1build1"
+    },
+    {
+      "name": "libwayland-dev_1.22.0-2.1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/w/wayland/libwayland-dev_1.22.0-2.1build1_amd64.deb",
+      "sha256": "7e03d8f017d364c7e08d3e294f53ec993e9ffd71e4975cbad11ad07f55047ebe",
+      "kind": "deb",
+      "package": "libwayland-dev",
+      "version": "1.22.0-2.1build1"
+    },
+    {
+      "name": "libxkbcommon-dev_1.6.0-1build1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxkbcommon/libxkbcommon-dev_1.6.0-1build1_amd64.deb",
+      "sha256": "e0b2b61efbadc516303d3bf27ee7b397cfbff120a178f938dd6570d5b53bc359",
+      "kind": "deb",
+      "package": "libxkbcommon-dev",
+      "version": "1.6.0-1build1"
+    },
+    {
+      "name": "qt5-qmake-bin_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtbase-opensource-src/qt5-qmake-bin_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "sha256": "77b13ed4b9c1ebdae616fbde6ca23c0cfbd443ae2e963e0eb7c02da118d25716",
+      "kind": "deb",
+      "package": "qt5-qmake-bin",
+      "version": "5.15.13+dfsg-1ubuntu1"
+    },
+    {
+      "name": "qt5-qmake_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtbase-opensource-src/qt5-qmake_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "sha256": "5541ec2b013d36bf9c77c9469d95adb2c4002a5903fb8e309bab2fc0b0bec807",
+      "kind": "deb",
+      "package": "qt5-qmake",
+      "version": "5.15.13+dfsg-1ubuntu1"
+    },
+    {
+      "name": "qtbase5-dev-tools_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtbase-opensource-src/qtbase5-dev-tools_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "sha256": "c87d87a0756668306f89c89296b7f18fab350ca42d414e495ed14431bb4c30f4",
+      "kind": "deb",
+      "package": "qtbase5-dev-tools",
+      "version": "5.15.13+dfsg-1ubuntu1"
+    },
+    {
+      "name": "qtbase5-dev_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtbase-opensource-src/qtbase5-dev_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "sha256": "c026cc27425a82a5bf5f4c4581a51bb29f5b0248bbf724adb65a818be34a18bf",
+      "kind": "deb",
+      "package": "qtbase5-dev",
+      "version": "5.15.13+dfsg-1ubuntu1"
+    },
+    {
+      "name": "qtbase5-private-dev_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtbase-opensource-src/qtbase5-private-dev_5.15.13+dfsg-1ubuntu1_amd64.deb",
+      "sha256": "987578d75772e7d55085095a5ed661c597e02636081658c780c6f150efdc7d89",
+      "kind": "deb",
+      "package": "qtbase5-private-dev",
+      "version": "5.15.13+dfsg-1ubuntu1"
+    },
+    {
+      "name": "qtwayland5-private-dev_5.15.13-1_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtwayland-opensource-src/qtwayland5-private-dev_5.15.13-1_amd64.deb",
+      "sha256": "472085ee150c7e161da3d4d33e77b22541710f2c0e5ec138c4c5dd32efe25060",
+      "kind": "deb",
+      "package": "qtwayland5-private-dev",
+      "version": "5.15.13-1"
+    },
+    {
+      "name": "qtwayland.tar.xz",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtwayland-opensource-src/qtwayland-opensource-src_5.15.13.orig.tar.xz",
+      "sha256": "b6d1a10b65c0679899bb5f71e1046ec7d865f3085299a3a2960ddc8419f0ef6c",
+      "kind": "source"
+    },
+    {
+      "name": "bridge.cpp",
+      "url": "https://raw.githubusercontent.com/qt/qtbase/v5.15.13-lts-lgpl/src/platformsupport/linuxaccessibility/bridge.cpp",
+      "sha256": "76a916480723625649906fe62575cb7d5a3522f8d28ab7ddc00ed57326f19cf4",
+      "kind": "source"
+    },
+    {
+      "name": "DeviceEventController.xml",
+      "url": "https://raw.githubusercontent.com/qt/qtbase/v5.15.13-lts-lgpl/src/platformsupport/linuxaccessibility/dbusxml/DeviceEventController.xml",
+      "sha256": "beb1517eddea30438b9f2aede3ff041c21c19413f4419187deb2bd2ccd214e80",
+      "kind": "source"
+    },
+    {
+      "name": "dbusconnection.cpp",
+      "url": "https://raw.githubusercontent.com/qt/qtbase/v5.15.13-lts-lgpl/src/platformsupport/linuxaccessibility/dbusconnection.cpp",
+      "sha256": "50eb888401e25bbd4a7e65c8f1c8737659860f16975ace8c93b5a791f3ba2730",
+      "kind": "source"
+    },
+    {
+      "name": "Bus.xml",
+      "url": "https://raw.githubusercontent.com/qt/qtbase/v5.15.13-lts-lgpl/src/platformsupport/linuxaccessibility/dbusxml/Bus.xml",
+      "sha256": "e76a6802f3514e6063a3fa095ef5c3b94434207cbd6488505e76e18f16aad58e",
+      "kind": "source"
+    },
+    {
+      "name": "zlib1g-dev_1%3a1.3.dfsg-3.1ubuntu2.3_amd64.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/z/zlib/zlib1g-dev_1.3.dfsg-3.1ubuntu2.3_amd64.deb",
+      "sha256": "419902a649e1078f24596cdf31ced9c839519828790f59888056fcdcd58e8a28",
+      "kind": "deb",
+      "package": "zlib1g-dev",
+      "version": "1:1.3.dfsg-3.1ubuntu2.3"
+    },
+    {
+      "name": "qtwayland-opensource-src_5.15.13-1.debian.tar.xz",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtwayland-opensource-src/qtwayland-opensource-src_5.15.13-1.debian.tar.xz",
+      "sha256": "809d198093c8022c4f5c55a5e5410e5b503be76a926a1ff5586dea789bac3ce2",
+      "kind": "source"
+    },
+    {
+      "name": "qtbase-opensource-src_5.15.13+dfsg-1ubuntu1.debian.tar.xz",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/q/qtbase-opensource-src/qtbase-opensource-src_5.15.13+dfsg-1ubuntu1.debian.tar.xz",
+      "sha256": "5a40418b9398a01967609e5f4b3b4410122ae679e273c6fe319dffebda5b38f4",
+      "kind": "source"
+    }
+  ]
+}

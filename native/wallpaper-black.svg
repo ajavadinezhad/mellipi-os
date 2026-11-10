@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1440" viewBox="0 0 2560 1440">
+  <defs>
+    <linearGradient id="ribbon" x2="0.7" y2="1">
+      <stop stop-color="#242e39"/>
+      <stop offset=".48" stop-color="#141b23"/>
+      <stop offset="1" stop-color="#0b0f15"/>
+    </linearGradient>
+  </defs>
+  <path fill="#07090c" d="M0 0h2560v1440H0z"/>
+  <g transform="translate(1550 820) rotate(-28)">
+    <ellipse rx="850" ry="470" fill="url(#ribbon)" stroke="#303b48" stroke-width="2"/>
+    <ellipse cy="-18" rx="645" ry="298" fill="#07090c"/>
+    <g fill="none" stroke="#65768a" stroke-opacity=".10">
+      <ellipse rx="821" ry="445"/><ellipse rx="765" ry="399"/>
+      <ellipse rx="709" ry="353"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,19 @@
+{
+  "id": "midnight",
+  "name": "Midnight",
+  "description": "Deep navy surfaces, cool blue accents and clear silver-blue type.",
+  "mode": "dark",
+  "darkLevel": "black",
+  "accent": "#78b7ff",
+  "background": "#080f1c",
+  "palette": {
+    "background": "#080f1c",
+    "surface": "#101c2e",
+    "raised": "#172840",
+    "hover": "#203755",
+    "border": "#3d5574",
+    "text": "#edf4ff",
+    "muted": "#b5c6dd",
+    "faint": "#8ea3c0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "porcelain",
+  "name": "Porcelain",
+  "description": "Cool chalk-white surfaces, soft graphite text and a crisp ink-blue accent.",
+  "mode": "light",
+  "darkLevel": "normal",
+  "accent": "#304e8a",
+  "background": "#f2f1f5",
+  "palette": {
+    "background": "#f2f1f5",
+    "surface": "#fdfcff",
+    "raised": "#e8e7ee",
+    "hover": "#dddce7",
+    "border": "#9295a9",
+    "text": "#25283b",
+    "muted": "#4c5067",
+    "faint": "#555970"
+  }
+}

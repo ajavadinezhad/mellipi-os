@@ -1,0 +1,122 @@
+name: Publish Abstract website and signed APT archive
+
+# Signing and package builds happen locally. Only reviewed public files are deployed.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: abstract-pages
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out reviewed publication files
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: public
+      - name: Validate publication boundary and APT signature
+        env:
+          EXPECTED_FINGERPRINT: 7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          root = Path('public')
+          required = ('index.html', 'apt/abstract-archive-keyring.gpg',
+                      'apt/dists/noble/InRelease', 'apt/dists/noble/Release',
+                      'apt/dists/noble/Release.gpg',
+                      'apt/dists/noble/main/binary-amd64/Packages.gz')
+          assert root.is_dir() and all((root / name).is_file() for name in required), 'Incomplete staged site/archive'
+          fingerprint = os.environ.get('EXPECTED_FINGERPRINT', '').strip().upper()
+          assert re.fullmatch(r'[0-9A-F]{40}|[0-9A-F]{64}', fingerprint), 'The reviewed signing fingerprint must be complete'
+          blocked = {'.git', '.gnupg', 'private-keys-v1.d', 'openpgp-revocs.d',
+                     'data', '.venv', '.toolchain', '.clean-install-cache',
+                     'credentials.json', 'id_ed25519', 'id_rsa'}
+          total = 0
+          for path in root.rglob('*'):
+              assert not path.is_symlink(), f'Symlink cannot be deployed: {path}'
+              assert not blocked.intersection(path.relative_to(root).parts), f'Private/build path in publication: {path}'
+              if not path.is_file():
+                  continue
+              assert path.stat().st_nlink == 1, f'Hard link cannot be deployed: {path}'
+              size = path.stat().st_size
+              total += size
+              with path.open('rb') as stream:
+                  while chunk := stream.read(1024 * 1024):
+                      assert b'-----BEGIN PGP PRIVATE KEY BLOCK-----' not in chunk, f'Private key in publication: {path}'
+                      assert b'-----BEGIN OPENSSH PRIVATE KEY-----' not in chunk, f'Private SSH key in publication: {path}'
+          assert total < 900_000_000, 'Publication exceeds the project budget below the 1GB Pages limit'
+          PY
+          export GNUPGHOME
+          GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          trap 'rm -rf "$GNUPGHOME"' EXIT
+          actual="$(gpg --batch --show-keys --with-colons public/apt/abstract-archive-keyring.gpg | awk -F: '$1=="fpr" {print $10; exit}')"
+          test "$actual" = "${EXPECTED_FINGERPRINT^^}"
+          test "$(gpg --batch --show-keys --with-colons public/apt/abstract-archive-keyring.gpg | awk -F: '$1=="pub" {n++} END {print n+0}')" = 1
+          gpgv --keyring "$PWD/public/apt/abstract-archive-keyring.gpg" public/apt/dists/noble/InRelease
+          gpgv --keyring "$PWD/public/apt/abstract-archive-keyring.gpg" public/apt/dists/noble/Release.gpg public/apt/dists/noble/Release
+      - name: Verify signed indexes and package payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import gzip, hashlib, re
+          from datetime import datetime, timezone
+          from email.utils import parsedate_to_datetime
+          from pathlib import Path
+          archive = Path('public/apt')
+          release_root = archive / 'dists/noble'
+          release = (release_root / 'Release').read_text()
+          validity = re.search(r'^Valid-Until: (.+)$', release, re.M)
+          assert validity and parsedate_to_datetime(validity[1]) > datetime.now(timezone.utc), 'Archive metadata expired'
+          def check(root, relative, size, expected):
+              assert not relative.startswith('/') and '..' not in Path(relative).parts
+              path = root / relative
+              assert path.is_file() and not path.is_symlink()
+              assert path.stat().st_size == int(size), f'Size mismatch: {path}'
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == expected, f'SHA256 mismatch: {path}'
+          hashes = re.search(r'^SHA256:\n((?: .+\n)+)', release, re.M)
+          assert hashes, 'Signed Release has no SHA256 indexes'
+          for line in hashes[1].splitlines():
+              expected, size, relative = line.split()
+              check(release_root, relative, size, expected)
+          paragraphs = gzip.decompress((release_root / 'main/binary-amd64/Packages.gz').read_bytes()).decode().strip().split('\n\n')
+          assert paragraphs and paragraphs[0], 'Empty package archive'
+          for paragraph in paragraphs:
+              fields = dict(line.split(': ', 1) for line in paragraph.splitlines() if ': ' in line and not line[0].isspace())
+              assert fields['Package'].startswith('abstract-') and fields['Architecture'] in ('amd64', 'all')
+              check(archive, fields['Filename'], fields['Size'], fields['SHA256'])
+          PY
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload only the public staging directory
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: public
+          retention-days: 1
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy reviewed static files
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,3 @@
+# Qt Quick, Widgets, SVG and the native image plugins, without WebEngine/Addons.
+PySide6_Essentials==6.10.2
+python-xlib==0.33

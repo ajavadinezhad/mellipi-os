@@ -1,0 +1,19 @@
+{
+  "id": "graphite",
+  "name": "Graphite",
+  "description": "Near-black graphite planes, quiet silver accents and neutral high-clarity text.",
+  "mode": "dark",
+  "darkLevel": "black",
+  "accent": "#c8cbd0",
+  "background": "#0c0c0d",
+  "palette": {
+    "background": "#0c0c0d",
+    "surface": "#171718",
+    "raised": "#222223",
+    "hover": "#2b2b2d",
+    "border": "#656568",
+    "text": "#f2f2f3",
+    "muted": "#ceced1",
+    "faint": "#adadb2"
+  }
+}

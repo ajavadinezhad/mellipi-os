@@ -1,0 +1,8 @@
+{
+  "repositoryUrl": "https://github.com/ajavadinezhad/abstract-os",
+  "aptUrl": "https://ajavadinezhad.github.io/abstract-os/apt",
+  "release": "0.1.6",
+  "signingFingerprint": "7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF",
+  "signingKeyPath": "abstract-archive-keyring.asc",
+  "installerPath": "install-update-source.sh"
+}

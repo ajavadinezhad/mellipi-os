@@ -1,0 +1,28 @@
+[Unit]
+Description=Restore approved Abstract battery charging limits
+After=systemd-udev-settle.service
+RequiresMountsFor=/var/lib/abstract
+ConditionPathExists=/var/lib/abstract/charge-limits.json
+
+[Service]
+Type=oneshot
+TimeoutStartSec=15s
+TimeoutStopSec=2s
+ExecStart=/usr/lib/abstract/abstract-charge-limit --restore
+User=root
+Group=root
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/
+ReadWritePaths=/sys/devices /var/lib/abstract
+InaccessiblePaths=/home /root /run/user
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

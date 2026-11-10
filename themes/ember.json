@@ -1,0 +1,19 @@
+{
+  "id": "ember",
+  "name": "Ember",
+  "description": "Warm charcoal surfaces, copper light and soft parchment type.",
+  "mode": "dark",
+  "darkLevel": "normal",
+  "accent": "#f2b16d",
+  "background": "#191411",
+  "palette": {
+    "background": "#191411",
+    "surface": "#241d18",
+    "raised": "#30261f",
+    "hover": "#3c2f25",
+    "border": "#80644e",
+    "text": "#fff2e5",
+    "muted": "#dbc4ad",
+    "faint": "#bda78f"
+  }
+}

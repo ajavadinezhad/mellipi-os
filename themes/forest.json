@@ -1,0 +1,19 @@
+{
+  "id": "forest",
+  "name": "Forest",
+  "description": "Deep woodland greens with olive undertones and a soft sage accent.",
+  "mode": "dark",
+  "darkLevel": "normal",
+  "accent": "#b8d893",
+  "background": "#111a14",
+  "palette": {
+    "background": "#111a14",
+    "surface": "#19251c",
+    "raised": "#243329",
+    "hover": "#2e4032",
+    "border": "#637c64",
+    "text": "#edf3e7",
+    "muted": "#bbcbb3",
+    "faint": "#a0b298"
+  }
+}

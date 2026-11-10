@@ -1,0 +1,8 @@
+{
+  "architecture": "amd64",
+  "packages": [
+    {"name":"plasma-workspace","version":"4:5.27.12-0ubuntu0.1","sha256":"a7d424042dfaf0b4e755066e5ec3ad8bd113c8c46e3adc40414dffce533db406"},
+    {"name":"libkf5windowsystem5","version":"5.115.0-0ubuntu4","sha256":"ef5bb24ced76343cbf59edaa9edf1d4ca534553c956f850b076038fee738dcbb"},
+    {"name":"libqt5x11extras5","version":"5.15.13-1","sha256":"2a6013a82155fa0825737ea115e64dd13f554cf06f1fb636a9dc052245103c2b"}
+  ]
+}
