@@ -759,6 +759,10 @@
       "bytes": 1964,
       "sha256": "df3baef1f785dae5aaf1e593ac5eb2f6a25fbe25945fbbc9062d1a522e132e82"
     },
+    "apt/install-update-source.sh": {
+      "bytes": 3708,
+      "sha256": "1ac87eab30e31ebaca8bcb7dc567c5ebdc5768dd2dc094c77586c6501bc0f7e1"
+    },
     "apt/mellipi-archive-keyring.asc": {
       "bytes": 656,
       "sha256": "f04879aea4f794d09655d877d9e754c90c5d094272172e1c9ef007ccd1e6b5da"
