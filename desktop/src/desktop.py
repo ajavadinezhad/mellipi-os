@@ -199,6 +199,16 @@ def dock_groups(apps,windows,pins=None):
     return list(groups.values())
 
 
+def application_launch_path(app,environment):
+    """Route only the distro Synaptic entry through the native auth bridge."""
+    bridge=Path('/usr/lib/abstract/synaptic-native.desktop')
+    if (app.get('id')=='synaptic.desktop' and app.get('path')=='/usr/share/applications/synaptic.desktop'
+            and environment.get('ORBIT_NATIVE_CONTROL') and environment.get('WAYLAND_DISPLAY')
+            and bridge.is_file() and shutil.which('abstract-package-manager') and shutil.which('synaptic')):
+        return str(bridge)
+    return app['path']
+
+
 def application_environment():
     """Never turn a launched Qt app into a shell panel or force Orbit's private renderer."""
     env={k:v for k,v in os.environ.items() if not k.startswith('ORBIT_') or k=='ORBIT_NATIVE_CONTROL'};root=PROJECT_ROOT

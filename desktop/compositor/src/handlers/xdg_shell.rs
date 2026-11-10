@@ -45,16 +45,11 @@ impl XdgShellHandler for OrbitCompositor {
         self.windows.push((self.next_window_id, window.clone()));
         self.queue_window_open(self.next_window_id);
         self.next_window_id += 1;
-        let focus = window.toplevel().unwrap().wl_surface().clone();
+        self.pending_initial_focus.insert(self.next_window_id - 1);
         self.space.map_element(window, (80, 80), true);
-        if !self.protocols.is_locked() {
-            self.seat.get_keyboard().unwrap().set_focus(
-                self,
-                Some(focus),
-                smithay::utils::SERIAL_COUNTER.next_serial(),
-            );
-            self.sync_layer_focus();
-        }
+        // Keyboard enter is only legal/useful once the configured toplevel has
+        // committed its first buffer. Some clients initialize keyboard state
+        // using that configure and cannot handle focus during role creation.
         self.request_redraw();
     }
 
@@ -148,6 +143,7 @@ impl XdgShellHandler for OrbitCompositor {
                 space.unmap_elem(&window);
             }
             self.refocus_after_unmap(&window);
+            self.pending_initial_focus.remove(&id);
             self.normal_geometry.remove(&id);
             self.window_motions.active.remove(&id);
             self.window_motions.pending_open.remove(&id);

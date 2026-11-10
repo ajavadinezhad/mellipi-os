@@ -7,8 +7,8 @@ from system_tools_data import add_startup_application,DEFAULT_TYPES,startup_rows
 # Existing installed services/frontends own privileged operations and package work.
 CANDIDATES={
  'files':('Files',(('gio','open',Path.home().as_uri()),('xdg-open',str(Path.home())),('thunar',),('nautilus',),('dolphin',),('nemo',),('pcmanfm-qt',),('pcmanfm',))),
- 'software':('Install applications',(('gnome-software',),('plasma-discover',),('mintinstall',),('pamac-manager',),('synaptic-pkexec',),('synaptic',))),
- 'updates':('Software updates',(('mintupdate',),('gnome-software','--mode=updates'),('plasma-discover','--mode','Update'),('pamac-manager','--updates'),('synaptic-pkexec',),('synaptic',))),
+ 'software':('Install applications',(('gnome-software',),('plasma-discover',),('mintinstall',),('pamac-manager',),('abstract-package-manager',),('synaptic-pkexec',),('synaptic',))),
+ 'updates':('Software updates',(('mintupdate',),('gnome-software','--mode=updates'),('plasma-discover','--mode','Update'),('pamac-manager','--updates'),('abstract-package-manager',),('synaptic-pkexec',),('synaptic',))),
  'users':('Users and passwords',(('cinnamon-settings','users'),('gnome-control-center','user-accounts'),('systemsettings','kcm_users'),('mate-user-admin',),('users-admin',))),
  'datetime':('Date and time',(('cinnamon-settings','calendar'),('gnome-control-center','datetime'),('systemsettings','kcm_clock'),('time-admin',))),
  'printers':('Printers',(('system-config-printer',),('gnome-control-center','printers'),('systemsettings','kcm_printer_manager'))),
@@ -43,7 +43,7 @@ def discover_tools(environment,which=shutil.which):
     for key,(label,commands) in CANDIDATES.items():
         if key=='keyboard' and environment.get('WAYLAND_DISPLAY'):
             commands=(('wvkbd-mobintl',),('wvkbd-desktop',),('squeekboard',))
-        command=next((list(row) for row in commands if which(row[0])),[])
+        command=next((list(row) for row in commands if which(row[0]) and (row[0]!='abstract-package-manager' or (environment.get('ORBIT_NATIVE_CONTROL') and environment.get('WAYLAND_DISPLAY') and which('synaptic')))),[])
         reason='' if command else ('Install a compatible Wayland keyboard such as wvkbd or Squeekboard.' if key=='keyboard' and environment.get('WAYLAND_DISPLAY') else 'No compatible '+label.lower()+' tool is installed. Use your distribution’s package manager to install one.')
         rows[key]=dict(label=label,command=command,available=bool(command),reason=reason,builtin=False)
     return rows

@@ -33,19 +33,27 @@ def arrow(mode,accent=None):
     from application_theme import cursor_name
     name=cursor_name(mode);key=(name,accent)
     if key not in _CACHE:
-        image,x,y=read_arrow(name)
-        color=QColor(accent or '')
-        if accent and color.isValid():
-            light=mode=='light'
-            for iy in range(image.height()):
-                for ix in range(image.width()):
-                    pixel=image.pixelColor(ix,iy);gray=(pixel.red()+pixel.green()+pixel.blue())/3
-                    # Preserve the contrasting outline and antialiased edges.
-                    if pixel.alpha()>220 and ((light and gray<85) or (not light and gray>180)):
-                        ratio=.40 if light else .45 if (color.red()+color.green()+color.blue())/3<96 else .76;base=0 if light else 255
-                        image.setPixelColor(ix,iy,QColor(round(color.red()*ratio+base*(1-ratio)),round(color.green()*ratio+base*(1-ratio)),round(color.blue()*ratio+base*(1-ratio)),pixel.alpha()))
+        try:
+            image,x,y=read_arrow(name)
+            if image.isNull():raise ValueError('Cursor image is empty')
+        except (OSError,ValueError,struct.error):
+            # Optional system artwork must never escape a Qt event callback.
+            # Cache failures too, so hovering does not repeatedly hit the disk.
+            cursor=QCursor(Qt.ArrowCursor)
+        else:
+            color=QColor(accent or '')
+            if accent and color.isValid():
+                light=mode=='light'
+                for iy in range(image.height()):
+                    for ix in range(image.width()):
+                        pixel=image.pixelColor(ix,iy);gray=(pixel.red()+pixel.green()+pixel.blue())/3
+                        # Preserve the contrasting outline and antialiased edges.
+                        if pixel.alpha()>220 and ((light and gray<85) or (not light and gray>180)):
+                            ratio=.40 if light else .45 if (color.red()+color.green()+color.blue())/3<96 else .76;base=0 if light else 255
+                            image.setPixelColor(ix,iy,QColor(round(color.red()*ratio+base*(1-ratio)),round(color.green()*ratio+base*(1-ratio)),round(color.blue()*ratio+base*(1-ratio)),pixel.alpha()))
+            cursor=QCursor(QPixmap.fromImage(image),x,y)
         if len(_CACHE)>=12:_CACHE.pop(next(iter(_CACHE)))
-        _CACHE[key]=QCursor(QPixmap.fromImage(image),x,y)
+        _CACHE[key]=cursor
     return _CACHE[key]
 
 from qt_compat import QObject,QTimer,QEvent,Qt,QApplication

@@ -1,0 +1,14 @@
+#!/usr/bin/python3 -I
+"""Open Synaptic, retaining the unprivileged parent needed by pkexec."""
+import os,subprocess,sys
+
+def main(environment=None):
+    env=os.environ if environment is None else environment
+    if not os.path.isfile('/usr/sbin/synaptic'):
+        print('Install Synaptic to use this package manager.',file=sys.stderr);return 1
+    if env.get('WAYLAND_DISPLAY') and env.get('XDG_RUNTIME_DIR'):
+        # GIO's short-lived activation process may already have exited. Keep
+        # this unprivileged wrapper alive throughout authorization and the GUI.
+        return subprocess.run(['/usr/bin/pkexec','/usr/lib/abstract/abstract-synaptic-root',env['XDG_RUNTIME_DIR'],env['WAYLAND_DISPLAY']],check=False).returncode
+    return subprocess.run(['/usr/bin/synaptic-pkexec'],check=False).returncode
+if __name__=='__main__':raise SystemExit(main())

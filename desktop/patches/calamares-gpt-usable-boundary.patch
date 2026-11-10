@@ -1,0 +1,43 @@
+--- a/src/modules/partition/core/PartitionActions.cpp
++++ b/src/modules/partition/core/PartitionActions.cpp
+@@ -149,10 +149,12 @@
+     bool shouldCreateSwap = false;
+     quint64 suggestedSwapSizeB = 0;
+ 
++    // Respect the table boundary: GPT reserves its backup header and entries.
++    const qint64 lastUsableSector = dev->partitionTable()->lastUsable();
+     const quint64 sectorSize = quint64( dev->logicalSize() );
+     if ( mayCreateSwap )
+     {
+-        quint64 availableSpaceB = quint64( dev->totalLogical() - firstFreeSector ) * sectorSize;
++        quint64 availableSpaceB = quint64( lastUsableSector - firstFreeSector + 1 ) * sectorSize;
+         suggestedSwapSizeB = swapSuggestion( availableSpaceB, o.swap );
+         // Space required by this installation is what the distro claims is needed
+         // (via global configuration) plus the swap size plus a fudge factor of
+@@ -163,7 +165,7 @@
+         shouldCreateSwap = availableSpaceB > requiredSpaceB;
+     }
+ 
+-    qint64 lastSectorForRoot = dev->totalLogical() - 1;  //last sector of the device
++    qint64 lastSectorForRoot = lastUsableSector;
+     if ( shouldCreateSwap )
+     {
+         lastSectorForRoot -= suggestedSwapSizeB / sectorSize + 1;
+@@ -182,7 +184,7 @@
+                                                             FileSystem::LinuxSwap,
+                                                             QStringLiteral( "swap" ),
+                                                             lastSectorForRoot + 1,
+-                                                            dev->totalLogical() - 1,
++                                                            lastUsableSector,
+                                                             KPM_PARTITION_FLAG( None ) );
+         }
+         else
+@@ -193,7 +195,7 @@
+                                                                      FileSystem::LinuxSwap,
+                                                                      QStringLiteral( "swap" ),
+                                                                      lastSectorForRoot + 1,
+-                                                                     dev->totalLogical() - 1,
++                                                                     lastUsableSector,
+                                                                      o.luksFsType,
+                                                                      o.luksPassphrase,
+                                                                      KPM_PARTITION_FLAG( None ) );

@@ -1,0 +1,11 @@
+--- a/src/modules/partition/core/PartitionLayout.h
++++ b/src/modules/partition/core/PartitionLayout.h
+@@ -38,7 +38,7 @@
+         QString partMountPoint;
+         FileSystem::Type partFileSystem = FileSystem::Unknown;
+         bool partNoEncrypt = false;
+-        bool partOnlyPresentWithEncryption;
++        bool partOnlyPresentWithEncryption = false;
+         QVariantMap partFeatures;
+         Calamares::Partition::PartitionSize partSize;
+         Calamares::Partition::PartitionSize partMinSize;

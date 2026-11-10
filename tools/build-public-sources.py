@@ -13,6 +13,7 @@ UPSTREAM_RUNTIME_SOURCES = (
  ('.screen-lock-build', '.lock-runtime/manifest.json', 'swaylock-1.8.6.tar.gz', 'https://github.com/swaywm/swaylock/releases/download/v1.8.6/swaylock-1.8.6.tar.gz', 'a15154348fef852fdb224112d137c393c826478b777f63479beb15e8d3812eaf'),
 )
 DISTRO_SOURCES = (
+ ('calamares', '3.3.5-0ubuntu4', 'c/calamares/calamares_3.3.5-0ubuntu4.dsc'),
  ('plasma-workspace', '4:5.27.12-0ubuntu0.1', 'p/plasma-workspace/plasma-workspace_5.27.12-0ubuntu0.1.dsc'),
  ('kwindowsystem', '5.115.0-0ubuntu4', 'k/kwindowsystem/kwindowsystem_5.115.0-0ubuntu4.dsc'),
  ('qtx11extras-opensource-src', '5.15.13-1', 'q/qtx11extras-opensource-src/qtx11extras-opensource-src_5.15.13-1.dsc'),
@@ -53,12 +54,18 @@ def project_paths():
  paths.extend(path for path in (root/'compositor/vendor').rglob('*') if path.is_file() and 'target' not in path.parts and '.git' not in path.parts)
  paths.extend(path for path in (root/'tools').iterdir() if path.is_file() and path.suffix in ('.py','.sh','.json') and path.name!='rustup-init.sh')
  if (root/'tools/abstract-charge-limit').is_file():paths.append(root/'tools/abstract-charge-limit')
+ for name in ('abstract-synaptic-root','abstract-package-manager'):
+  if (root/'packaging'/name).is_file():paths.append(root/'packaging'/name)
  paths.extend(path for path in root.glob('run-*') if path.is_file() and path.suffix in ('.py','.sh'))
+ for name in ('test_package_manager_bridge.py','test_package_manager_discovery.py','test_package_manager_launcher.py','test_permission_agent_backend.py'):
+  if (root/'tests'/name).is_file():paths.append(root/'tests'/name)
  paths=sorted(set(path for path in paths if path.is_file() and not path.is_symlink() and '__pycache__' not in path.parts and path.suffix not in ('.pyc','.log')))
  result=[(path,(Path('desktop')/path.relative_to(root) if root!=ROOT else path.relative_to(root))) for path in paths]
  if root!=ROOT:
   result.extend((path,Path('tools')/path.name) for path in sorted((ROOT/'tools').glob('*')) if path.is_file() and not path.is_symlink() and path.suffix in ('.py','.sh','.json'))
+  result.extend((path,Path('tests/fixtures')/path.name) for path in sorted((ROOT/'tests/fixtures').glob('*.cpp')) if path.is_file() and not path.is_symlink())
   if (ROOT/'README.md').is_file():result.append((ROOT/'README.md',Path('README.md')))
+  if (ROOT/'docs/live-iso.md').is_file():result.append((ROOT/'docs/live-iso.md',Path('docs/live-iso.md')))
  return sorted(result,key=lambda item:str(item[1]))
 def local_source(cache,name,expected=None):
  candidates=[cache/name]

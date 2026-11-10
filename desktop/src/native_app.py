@@ -1101,7 +1101,7 @@ class Bridge(QObject):
         try:
             # Keep application processes independent of shell recovery. gio parses
             # desktop field codes and returns when activation is accepted.
-            process=subprocess.Popen(['gio','launch',app['path']],env=environment,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            process=subprocess.Popen(['gio','launch',desktop.application_launch_path(app,environment)],env=environment,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         except OSError as error:return self.notify('Could not start '+app['name']+': '+str(error)[:120])
         pending.add(ident)
         def accepted(_):

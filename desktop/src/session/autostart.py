@@ -103,7 +103,8 @@ def launch_optional_services(launch):
         elif name in existing:continue
         try:
             from desktop import application_environment
-            launch(command,environment=application_environment())
+            from session.assistive import service_environment
+            launch(command,environment=service_environment(command,application_environment()))
             if name in POLKIT_EXECUTABLES:polkit_running=True
         except OSError as error:
             print('Orbit: optional session service unavailable: '+str(error),file=sys.stderr,flush=True)

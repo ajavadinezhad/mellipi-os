@@ -54,6 +54,7 @@ pub struct OrbitCompositor {
     pub window_motion_enabled: bool,
     pub windows: Vec<(u64, Window)>,
     pub next_window_id: u64,
+    pub pending_initial_focus: std::collections::HashSet<u64>,
     pub normal_geometry: std::collections::HashMap<u64, smithay::utils::Rectangle<i32, Logical>>,
     pub control_path: std::path::PathBuf,
     pub layer_shell_state: smithay::wayland::shell::wlr_layer::WlrLayerShellState,
@@ -140,6 +141,7 @@ impl OrbitCompositor {
             window_motion_enabled: std::env::var("ORBIT_NATIVE_REDUCED_MOTION").unwrap_or_default() != "1",
             windows: vec![],
             next_window_id: 1,
+            pending_initial_focus: std::collections::HashSet::new(),
             normal_geometry: Default::default(),
             control_path: Default::default(),
             layer_shell_state: smithay::wayland::shell::wlr_layer::WlrLayerShellState::new::<Self>(

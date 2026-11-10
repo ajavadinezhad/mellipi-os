@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Synaptic Package Manager
+Exec=/usr/bin/abstract-package-manager
+Icon=synaptic
+Terminal=false
+NoDisplay=true

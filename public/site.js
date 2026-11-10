@@ -29,6 +29,23 @@
     if (typeof value !== "string" || !value) return null;
     try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? url : null; } catch { return null; }
   };
+  const officialUrl = value => {
+    const url = webUrl(value);
+    if (!url || url.port || url.search || url.hash) return null;
+    return url;
+  };
+  const releaseAsset = value => {
+    const url = officialUrl(value);
+    return url && url.hostname === "github.com" && /^\/ajavadinezhad\/abstract-os\/releases\/download\/[A-Za-z0-9._~+-]+\/[A-Za-z0-9._~+-]+$/.test(url.pathname) ? url : null;
+  };
+  const liveImage = value => {
+    if (!value || Array.isArray(value) || typeof value !== "object" || value.secureBoot !== false || !Number.isSafeInteger(value.bytes) || value.bytes <= 0 || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(value.sha256)) return null;
+    const url = releaseAsset(value.url), checksum = releaseAsset(value.checksumUrl), guide = officialUrl(value.guideUrl);
+    if (!url || !/\.iso$/i.test(url.pathname) || !checksum || checksum.href === url.href || /\.iso$/i.test(checksum.pathname) || checksum.href.slice(0, checksum.href.lastIndexOf("/")) !== url.href.slice(0, url.href.lastIndexOf("/")) || !guide) return null;
+    const githubGuide = guide.hostname === "github.com" && /^\/ajavadinezhad\/abstract-os\/blob\/[A-Za-z0-9._~+-]+\/docs\/[A-Za-z0-9/._~-]+\.md$/.test(guide.pathname);
+    const pagesGuide = guide.hostname === "ajavadinezhad.github.io" && /^\/abstract-os\/[A-Za-z0-9/._~-]+$/.test(guide.pathname);
+    return githubGuide || pagesGuide ? {url, checksum, guide, bytes: value.bytes, sha256: value.sha256.toLowerCase()} : null;
+  };
   const reveal = (selector, href) => document.querySelectorAll(selector).forEach(element => { element.href = href; element.hidden = false; });
   const pathUrl = (base, path) => {
     if (typeof path !== "string" || !/^[a-zA-Z0-9_./-]+$/.test(path) || path.startsWith("/") || path.split("/").includes("..")) return null;
@@ -40,7 +57,7 @@
   }).then(config => {
     const repository = webUrl(config.repositoryUrl);
     const apt = webUrl(config.aptUrl);
-    const release = typeof config.release === "string" && /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(config.release) ? config.release : "0.1.6";
+    const release = typeof config.release === "string" && /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(config.release) ? config.release : "0.1.7";
     document.querySelectorAll("[data-release]").forEach(element => {element.textContent = release;});
     reveal("[data-sources]", `sources/${encodeURIComponent(release)}/manifest.json`);
     if (repository && repository.hostname === "github.com" && /^\/[^/]+\/[^/]+\/?$/.test(repository.pathname)) {
@@ -49,6 +66,21 @@
       reveal("[data-download]", `${url}/releases/tag/v${encodeURIComponent(release)}`);
       reveal("[data-guide]", `${url}/blob/main/docs/clean-install-acceptance.md`);
       reveal("[data-issues]", `${url}/issues`);
+    }
+    // Only a completed, reviewed release is configured here. Missing or invalid
+    // image metadata leaves the USB option hidden and APT remains available.
+    const image = liveImage(config.liveImage);
+    if (image) {
+      document.getElementById("install-heading").textContent = "Try Abstract. Make it yours.";
+      document.getElementById("install-overview").textContent = "A minimal Ubuntu 24.04 base with Abstract as the only desktop. Try the live USB, then choose when and where to install.";
+      const size = image.bytes >= 1073741824 ? `${(image.bytes / 1073741824).toFixed(1)} GiB` : `${Math.ceil(image.bytes / 1048576)} MiB`;
+      document.getElementById("live-image-meta").textContent = `Ubuntu 24.04 · amd64 · ${size}`;
+      const download = document.getElementById("live-image-download");
+      download.href = image.url.href;
+      download.dataset.sha256 = image.sha256;
+      document.getElementById("live-image-checksums").href = image.checksum.href;
+      document.getElementById("live-image-guide").href = image.guide.href;
+      document.getElementById("live-image").hidden = false;
     }
     const fingerprint = typeof config.signingFingerprint === "string" ? config.signingFingerprint.replace(/\s/g, "").toUpperCase() : "";
     const installer = apt && pathUrl(apt, config.installerPath);

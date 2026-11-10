@@ -28,3 +28,18 @@ def configured_input_method(environment=None):
         if lowered in ('ibus','@im=ibus'):
             binary=shutil.which('ibus-daemon');return [binary,'--xim'] if binary else None
     return None
+
+def service_environment(command, environment):
+    """Keep Noble's X11-only polkit timestamp call off native GTK Wayland.
+
+    Ubuntu's policykit-1-gnome patch calls gdk_x11_get_server_time without a
+    backend check. Scope compatibility to that agent in our native session;
+    other GTK applications, input engines and caller state keep their backend.
+    """
+    import re
+    env=dict(environment)
+    if (command and Path(command[0]).name=='polkit-gnome-authentication-agent-1'
+            and env.get('ORBIT_NATIVE_CONTROL')
+            and re.fullmatch(r':[0-9]+(?:\.[0-9]+)?',env.get('DISPLAY',''))):
+        env['GDK_BACKEND']='x11'
+    return env
