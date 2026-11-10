@@ -20,4 +20,4 @@ This repository contains the reviewed desktop source, build tools, static websit
 - [Repository maintenance and release process](docs/update-repository.md)
 - [Report a reproducible issue](https://github.com/ajavadinezhad/abstract-os/issues)
 
-The desktop targets modest hardware, including two-core machines with 4 GB RAM. Hardware compatibility and performance depend on the underlying distribution, graphics driver and applications.
+Hardware compatibility and performance depend on the underlying distribution, graphics driver and applications.

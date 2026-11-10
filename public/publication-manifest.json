@@ -412,8 +412,8 @@
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 7912,
-      "sha256": "82479af686d686fdfc09f585169fea3d563107a2812c41f27d6f768982c28db8"
+      "bytes": 7829,
+      "sha256": "680d2e1504554bf2c37941c5ef82f68365cd7574ca7033c0e97752a14459dc29"
     },
     "site-config.json": {
       "bytes": 322,

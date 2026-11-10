@@ -1,0 +1,47 @@
+{
+  "verified_at": "2026-11-10T02:04:21.088703+00:00",
+  "repository": "https://github.com/ajavadinezhad/abstract-os",
+  "website": "https://ajavadinezhad.github.io/abstract-os/",
+  "release": "https://github.com/ajavadinezhad/abstract-os/releases/tag/v0.1.6",
+  "successful_deployment": "https://github.com/ajavadinezhad/abstract-os/actions/runs/42739487417",
+  "archive": {
+    "archive": "https://ajavadinezhad.github.io/abstract-os/apt",
+    "fingerprint": "7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF",
+    "apt_signature_and_payload_verification": true,
+    "packages": {
+      "abstract-shell": {
+        "candidate": "0.1.6",
+        "sha256": "aa1ef4d276acc1b372f6394074527b9ffbaf5f0411794806318d146eebd3dccc",
+        "bytes": 6489124
+      },
+      "abstract-desktop": {
+        "candidate": "0.1.6",
+        "sha256": "974bb00eecc70ba315ff374c31a9395656dd73d2e015952b6315967136a43155",
+        "bytes": 2256
+      }
+    },
+    "host_apt_configuration_changed": false,
+    "packages_installed": false
+  },
+  "host_enrolled": true,
+  "host_source": "Types: deb\nURIs: https://ajavadinezhad.github.io/abstract-os/apt\nSuites: noble\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/abstract-archive-keyring.gpg\n",
+  "installed_core_version": "0.1.6",
+  "desktop_profile_installed": false,
+  "apps_closed": false,
+  "background_updater_added": false,
+  "signing_private_key_uploaded": false,
+  "metadata_valid_until": "Mon, 08 Feb 2027 01:54:20 GMT",
+  "repository_tests": {
+    "passed": 6,
+    "coverage": [
+      "signature verification",
+      "package download hashes",
+      "modified metadata rejected",
+      "modified package rejected",
+      "expired metadata rejected",
+      "retained immutable versions"
+    ]
+  },
+  "public_source_files": 341,
+  "hardware_target_marketing_removed": true
+}
