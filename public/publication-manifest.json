@@ -1,5 +1,5 @@
 {
-  "release": "0.1.7",
+  "release": "0.1.8",
   "signing_fingerprint": "7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF",
   "sources": [
     "sources/0.1.6/SHA256SUMS",
@@ -704,36 +704,40 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "apt/abstract-archive-keyring.asc": {
-      "bytes": 404,
-      "sha256": "1c8ec07d50afa3217f4bce601782e542040a762aa67641c786903a530d1dafc7"
+      "bytes": 656,
+      "sha256": "f04879aea4f794d09655d877d9e754c90c5d094272172e1c9ef007ccd1e6b5da"
     },
     "apt/abstract-archive-keyring.gpg": {
-      "bytes": 238,
-      "sha256": "7040116fcc8c5806dd7f876860c94026135c8a54bde83572e08f8dc47b8fa49f"
+      "bytes": 425,
+      "sha256": "cf758d179c1f56b78fd878f630917a9faf74b729795480f3f3d6a5e8a660b538"
     },
     "apt/archive-key.json": {
       "bytes": 172,
-      "sha256": "4fdf19cb1c2bf541d62e0fb3afa501d5352230914d03d89cb85140ea8b91edd7"
+      "sha256": "7fc3d7f5c7558e0de19427fd0c0f133374dc1bd2043f786a7ecdf8ef26533ba0"
     },
     "apt/dists/noble/InRelease": {
       "bytes": 722,
-      "sha256": "9c4e607ccf601453bcd80a07145f5b840950d8d3f243e79b0f149540b89d6741"
+      "sha256": "c988450b0d310ea771d38231e1009cb585d00b7da9570cde7a2d9232df9c5803"
     },
     "apt/dists/noble/Release": {
       "bytes": 445,
-      "sha256": "22856f46a535843deecaa43669e23558f9a7cafdceda74d4f6227c496584bfba"
+      "sha256": "d5485d30a81b8e1ed84f1cb3138de24ed997ff4c45f3fcd0e511e1ec6fa2393c"
     },
     "apt/dists/noble/Release.gpg": {
       "bytes": 228,
-      "sha256": "ebd3fd6feb430fc78903ebf0c6b85960c7862e81e39aa3de1fb452139ec55280"
+      "sha256": "8ebba24e2fe621511f8990a9cebcf61fd21a9de9bd34d7ddbe06a7ab42db0171"
     },
     "apt/dists/noble/main/binary-amd64/Packages": {
-      "bytes": 7616,
-      "sha256": "5423ed83680d446f6d83b60fa90a360566ad935e63debe39747665688e878078"
+      "bytes": 12786,
+      "sha256": "2c897c7f206366af8bd1faabbece4483c0f5f3c97426cb7a6abb8eb86313f91f"
     },
     "apt/dists/noble/main/binary-amd64/Packages.gz": {
-      "bytes": 1964,
-      "sha256": "df3baef1f785dae5aaf1e593ac5eb2f6a25fbe25945fbbc9062d1a522e132e82"
+      "bytes": 2652,
+      "sha256": "6794cc2d614fd6875ff652e1e2d7864fbed22d16e56b2b5b4a9cdfe484142f86"
+    },
+    "apt/dists/noble/main/binary-amd64/by-hash/SHA256/2c897c7f206366af8bd1faabbece4483c0f5f3c97426cb7a6abb8eb86313f91f": {
+      "bytes": 12786,
+      "sha256": "2c897c7f206366af8bd1faabbece4483c0f5f3c97426cb7a6abb8eb86313f91f"
     },
     "apt/dists/noble/main/binary-amd64/by-hash/SHA256/5423ed83680d446f6d83b60fa90a360566ad935e63debe39747665688e878078": {
       "bytes": 7616,
@@ -743,6 +747,10 @@
       "bytes": 3790,
       "sha256": "57acdcf33e623072fd3741b2bf1533808168dfe6703251bef816b7d2f71ba29b"
     },
+    "apt/dists/noble/main/binary-amd64/by-hash/SHA256/6794cc2d614fd6875ff652e1e2d7864fbed22d16e56b2b5b4a9cdfe484142f86": {
+      "bytes": 2652,
+      "sha256": "6794cc2d614fd6875ff652e1e2d7864fbed22d16e56b2b5b4a9cdfe484142f86"
+    },
     "apt/dists/noble/main/binary-amd64/by-hash/SHA256/995f77c5dafcb35e6f4b9c40373ea4334484f415b586707f6b73f73de19043c6": {
       "bytes": 1672,
       "sha256": "995f77c5dafcb35e6f4b9c40373ea4334484f415b586707f6b73f73de19043c6"
@@ -751,9 +759,13 @@
       "bytes": 1964,
       "sha256": "df3baef1f785dae5aaf1e593ac5eb2f6a25fbe25945fbbc9062d1a522e132e82"
     },
-    "apt/install-update-source.sh": {
-      "bytes": 3708,
-      "sha256": "1ac87eab30e31ebaca8bcb7dc567c5ebdc5768dd2dc094c77586c6501bc0f7e1"
+    "apt/mellipi-archive-keyring.asc": {
+      "bytes": 656,
+      "sha256": "f04879aea4f794d09655d877d9e754c90c5d094272172e1c9ef007ccd1e6b5da"
+    },
+    "apt/mellipi-archive-keyring.gpg": {
+      "bytes": 425,
+      "sha256": "cf758d179c1f56b78fd878f630917a9faf74b729795480f3f3d6a5e8a660b538"
     },
     "apt/pool/main/a/abstract-desktop/abstract-desktop_0.1.6_all.deb": {
       "bytes": 2256,
@@ -763,6 +775,10 @@
       "bytes": 2268,
       "sha256": "85799174923086332e2dd4056924f545b4bf217eba201c20585eff9934e6a21f"
     },
+    "apt/pool/main/a/abstract-desktop/abstract-desktop_0.1.8_all.deb": {
+      "bytes": 960,
+      "sha256": "5d947ada8a0ce07f91e9823972343674a472331bc6b52082cffc72b768d2e39a"
+    },
     "apt/pool/main/a/abstract-shell/abstract-shell_0.1.6_amd64.deb": {
       "bytes": 6489124,
       "sha256": "aa1ef4d276acc1b372f6394074527b9ffbaf5f0411794806318d146eebd3dccc"
@@ -770,6 +786,18 @@
     "apt/pool/main/a/abstract-shell/abstract-shell_0.1.7_amd64.deb": {
       "bytes": 4470712,
       "sha256": "d0cf6dfb561ac0f50cd64739c862baf9cbb2ed8af34c0766fc5ad599f390fb26"
+    },
+    "apt/pool/main/a/abstract-shell/abstract-shell_0.1.8_all.deb": {
+      "bytes": 960,
+      "sha256": "79b79600d19145f936541a84d261fd9ace26a93091c4d532161f28191cc1cc61"
+    },
+    "apt/pool/main/m/mellipi-desktop/mellipi-desktop_0.1.8_all.deb": {
+      "bytes": 2302,
+      "sha256": "602e81ec33c5afde0399ac9633b3db702a27ba8b1680d7ee5d63ed4f2794cc9d"
+    },
+    "apt/pool/main/m/mellipi-shell/mellipi-shell_0.1.8_amd64.deb": {
+      "bytes": 4475976,
+      "sha256": "99d8bcb8cf4c7ad34cf4f04ad0009ba012326199f625e2305cc94344860190e6"
     },
     "assets/README.md": {
       "bytes": 627,
@@ -788,8 +816,8 @@
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 10225,
-      "sha256": "9c81a364825645fe108056fb48ddf5c185416cd7e3b3f5c97643c4d7bfbea119"
+      "bytes": 541,
+      "sha256": "6b18a7d172fbce9540ac7cb1809d464d1ef5a159f29ab485b5c2b498aeba3b0c"
     },
     "site-config.json": {
       "bytes": 811,

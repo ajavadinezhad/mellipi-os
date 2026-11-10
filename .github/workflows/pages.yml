@@ -95,7 +95,7 @@ jobs:
           assert paragraphs and paragraphs[0], 'Empty package archive'
           for paragraph in paragraphs:
               fields = dict(line.split(': ', 1) for line in paragraph.splitlines() if ': ' in line and not line[0].isspace())
-              assert fields['Package'].startswith('abstract-') and fields['Architecture'] in ('amd64', 'all')
+              assert fields['Package'].startswith(('abstract-','mellipi-')) and fields['Architecture'] in ('amd64', 'all')
               check(archive, fields['Filename'], fields['Size'], fields['SHA256'])
           PY
       - name: Configure GitHub Pages

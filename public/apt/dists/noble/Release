@@ -4,10 +4,10 @@ Suite: noble
 Codename: noble
 Architectures: amd64
 Components: main
-Description: Abstract desktop updates
-Date: Tue, 10 Nov 2026 06:58:22 GMT
-Valid-Until: Mon, 08 Feb 2027 06:58:22 GMT
+Description: Mellipi desktop updates
+Date: Tue, 10 Nov 2026 16:23:06 GMT
+Valid-Until: Mon, 08 Feb 2027 16:23:06 GMT
 Acquire-By-Hash: yes
 SHA256:
- 5423ed83680d446f6d83b60fa90a360566ad935e63debe39747665688e878078 7616 main/binary-amd64/Packages
- df3baef1f785dae5aaf1e593ac5eb2f6a25fbe25945fbbc9062d1a522e132e82 1964 main/binary-amd64/Packages.gz
+ 2c897c7f206366af8bd1faabbece4483c0f5f3c97426cb7a6abb8eb86313f91f 12786 main/binary-amd64/Packages
+ 6794cc2d614fd6875ff652e1e2d7864fbed22d16e56b2b5b4a9cdfe484142f86 2652 main/binary-amd64/Packages.gz
