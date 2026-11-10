@@ -39,12 +39,12 @@
     return url && url.hostname === "github.com" && /^\/ajavadinezhad\/mellipi-os\/releases\/download\/[A-Za-z0-9._~+-]+\/[A-Za-z0-9._~+-]+$/.test(url.pathname) ? url : null;
   };
   const liveImage = value => {
-    if (!value || Array.isArray(value) || typeof value !== "object" || value.secureBoot !== false || !Number.isSafeInteger(value.bytes) || value.bytes <= 0 || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(value.sha256)) return null;
+    if (!value || Array.isArray(value) || typeof value !== "object" || typeof value.secureBoot !== "boolean" || !Number.isSafeInteger(value.bytes) || value.bytes <= 0 || typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(value.sha256)) return null;
     const url = releaseAsset(value.url), checksum = releaseAsset(value.checksumUrl), guide = officialUrl(value.guideUrl);
     if (!url || !/\.iso$/i.test(url.pathname) || !checksum || checksum.href === url.href || /\.iso$/i.test(checksum.pathname) || checksum.href.slice(0, checksum.href.lastIndexOf("/")) !== url.href.slice(0, url.href.lastIndexOf("/")) || !guide) return null;
     const githubGuide = guide.hostname === "github.com" && /^\/ajavadinezhad\/mellipi-os\/blob\/[A-Za-z0-9._~+-]+\/docs\/[A-Za-z0-9/._~-]+\.md$/.test(guide.pathname);
     const pagesGuide = guide.hostname === "ajavadinezhad.github.io" && /^\/mellipi-os\/[A-Za-z0-9/._~-]+$/.test(guide.pathname);
-    return githubGuide || pagesGuide ? {url, checksum, guide, bytes: value.bytes, sha256: value.sha256.toLowerCase()} : null;
+    return githubGuide || pagesGuide ? {url, checksum, guide, bytes: value.bytes, sha256: value.sha256.toLowerCase(), secureBoot: value.secureBoot} : null;
   };
   const reveal = (selector, href) => document.querySelectorAll(selector).forEach(element => { element.href = href; element.hidden = false; });
   const pathUrl = (base, path) => {
@@ -75,6 +75,7 @@
       document.getElementById("install-overview").textContent = "A minimal Ubuntu 24.04 base with Mellipi as the only desktop. Try the live USB, then choose when and where to install.";
       const size = image.bytes >= 1073741824 ? `${(image.bytes / 1073741824).toFixed(1)} GiB` : `${Math.ceil(image.bytes / 1048576)} MiB`;
       document.getElementById("live-image-meta").textContent = `Ubuntu 24.04 · amd64 · ${size}`;
+      document.getElementById("live-image-boot").textContent = image.secureBoot ? "Signed Ubuntu boot chain, tested with UEFI Secure Boot. Firmware compatibility varies." : "Secure Boot must be disabled for this unsigned image.";
       const download = document.getElementById("live-image-download");
       download.href = image.url.href;
       download.dataset.sha256 = image.sha256;

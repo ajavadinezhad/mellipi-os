@@ -46,6 +46,22 @@ Description: Transitional package for mellipi-desktop
  Abstract is now Mellipi. This package keeps existing installations on the
  signed update path without changing user settings or restarting sessions.
 
+Package: abstract-desktop
+Version: 0.1.9
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-desktop (>= 0.1.9)
+Filename: pool/main/a/abstract-desktop/abstract-desktop_0.1.9_all.deb
+Size: 956
+MD5sum: e952365befe6de987040d46986cf60df
+SHA1: 1cfc549ce3e97dc732d5a8929e1d9bbd1f793b77
+SHA256: 0238674460b7175b3d5ff7ba0cca134d6ad7c1b5f1960ce79d9d376c680d7a8f
+Section: oldlibs
+Priority: optional
+Description: Transitional package for mellipi-desktop
+ Abstract is now Mellipi. This package keeps existing installations on the
+ signed update path without changing user settings or restarting sessions.
+
 Package: abstract-shell
 Version: 0.1.6
 Architecture: amd64
@@ -96,6 +112,22 @@ Description: Transitional package for mellipi-shell
  Abstract is now Mellipi. This package keeps existing installations on the
  signed update path without changing user settings or restarting sessions.
 
+Package: abstract-shell
+Version: 0.1.9
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-shell (>= 0.1.9)
+Filename: pool/main/a/abstract-shell/abstract-shell_0.1.9_all.deb
+Size: 956
+MD5sum: fcc4db84dc8f41bc58a5896e5907cc18
+SHA1: 1d7ca4b90b9db9c27a40162d92d2baeefec70876
+SHA256: db5906e59e48005c59d17b511507a3176924af8c4aa362f973ff53a4ee459ad2
+Section: oldlibs
+Priority: optional
+Description: Transitional package for mellipi-shell
+ Abstract is now Mellipi. This package keeps existing installations on the
+ signed update path without changing user settings or restarting sessions.
+
 Package: mellipi-desktop
 Version: 0.1.8
 Architecture: all
@@ -108,6 +140,24 @@ Size: 2302
 MD5sum: 02deabb9c3067c7d708c7a3d2283f92d
 SHA1: c17f91c62098b0c37d348a48553b78ce9da09a6f
 SHA256: 602e81ec33c5afde0399ac9633b3db702a27ba8b1680d7ee5d63ed4f2794cc9d
+Section: metapackages
+Priority: optional
+Description: Complete Mellipi desktop for an Ubuntu 24.04 systemd base
+ Opt-in login greeter, hardware services, browser, editor and package tools.
+ Uses distribution display-manager selection and PAM configuration.
+
+Package: mellipi-desktop
+Version: 0.1.9
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-shell (= 0.1.9), systemd-sysv, libpam-systemd, dbus-user-session, lightdm, lightdm-gtk-greeter, xserver-xorg, xterm, network-manager, network-manager-gnome, bluez, upower, power-profiles-daemon, gnome-keyring, libpam-gnome-keyring, gvfs, gvfs-backends, udisks2, thunar, foot, mousepad, epiphany-browser | firefox-esr, synaptic, system-config-printer, fonts-dejavu-core, dmz-cursor-theme, wvkbd, orca, fcitx5, fcitx5-config-qt, fcitx5-frontend-qt5, fcitx5-frontend-gtk3, ddcutil, accountsservice, systemd-timesyncd | time-daemon, gnome-themes-extra
+Breaks: abstract-desktop (<< 0.1.8)
+Replaces: abstract-desktop (<< 0.1.8)
+Filename: pool/main/m/mellipi-desktop/mellipi-desktop_0.1.9_all.deb
+Size: 3570
+MD5sum: aa2fc4920c7b7aea6a77d66546ab993a
+SHA1: 81ee2651548ddd6e2e9fb9f1350276690a740031
+SHA256: 5218ce21d81ed0dafc8f62af68381bfec4bcfe4c0545c859005ec08cc0248322
 Section: metapackages
 Priority: optional
 Description: Complete Mellipi desktop for an Ubuntu 24.04 systemd base
@@ -127,6 +177,25 @@ Size: 4475976
 MD5sum: 6c36aa177f355de410e46c9e476f7c86
 SHA1: 2e34b3fecec970925744e6db655521ee608bb3b8
 SHA256: 99d8bcb8cf4c7ad34cf4f04ad0009ba012326199f625e2305cc94344860190e6
+Section: x11
+Priority: optional
+Description: Mellipi lightweight native Wayland desktop
+ Native compositor, desktop shell and system integrations. Uses standard
+ Linux services and stores user data in private XDG directories.
+
+Package: mellipi-shell
+Version: 0.1.9
+Architecture: amd64
+Maintainer: Mellipi OS project
+Depends: python3, gpg, python3-pyqt5, python3-pyqt5.qtquick, python3-gi, python3-cairo, gir1.2-gtk-3.0, gir1.2-rsvg-2.0, librsvg2-common, libqt5svg5, libxcb-damage0, libxcb-composite0, liblayershellqtinterface5, layer-shell-qt, qtwayland5, qml-module-qtquick2, qml-module-qtquick-controls2, qml-module-qtquick-layouts, qml-module-qtquick-window2, qml-module-qtquick-dialogs, dbus-user-session, libc6 (>= 2.38), libegl1, libgles2, libgbm1, libinput10, libseat1, libudev1, libxkbcommon0, libwayland-client0, libwayland-server0, libcairo2, libpam0g, swaylock, swayidle, xwayland, grim, slurp, util-linux, xdg-utils, xdg-desktop-portal, xdg-desktop-portal-gtk, xdg-desktop-portal-wlr, pipewire, libpipewire-0.3-0t64 | libpipewire-0.3-0, libinih1, libglib2.0-bin, polkitd, pkexec, policykit-1-gnome | mate-polkit | lxqt-policykit | lxpolkit, pulseaudio-utils, pipewire-pulse | pulseaudio, wireplumber | pipewire-media-session, thunar | pcmanfm-qt | pcmanfm | nautilus, x-terminal-emulator, adwaita-icon-theme, dmz-cursor-theme, libc6 (>= 2.39), libcairo2 (>= 1.2.4), libdrm2 (>= 2.4.109), libfontconfig1 (>= 2.12.6), libfreetype6 (>= 2.6), libgbm1 (>= 21.3.0~rc1), libgcc-s1 (>= 4.2), libglib2.0-0t64 (>= 2.12.0), libinih1 (>= 40), libinput10 (>= 1.19.1), libpam0g (>= 0.99.7.1), libpipewire-0.3-0t64 (>= 0.3.1), libqt5core5t64 (>= 5.15.1), libqt5dbus5t64 (>= 5.14.1), libqt5gui5t64 (>= 5.15.1) | libqt5gui5-gles (>= 5.15.1), libqt5widgets5t64 (>= 5.0.2), libseat1 (>= 0.5.0), libsqlite3-0 (>= 3.20.0), libstdc++6 (>= 11), libsystemd0 (>= 243), libudev1 (>= 183), libwayland-client0 (>= 1.20.0), libwayland-cursor0 (>= 1.8.1), libx11-6, libxcb-image0 (>= 0.2), libxcb-keysyms1 (>= 0.4.0), libxcb-res0 (>= 1.10), libxcb-shape0, libxcb-util1 (>= 0.4.0), libxcb1 (>= 1.6), libxfixes3, libxkbcommon0 (>= 1.0.0), libxtst6, qtbase-abi-5-15-13
+Recommends: network-manager, network-manager-gnome, bluez, upower, power-profiles-daemon, gnome-keyring, gvfs, udisks2, system-config-printer, ddcutil, wvkbd, fcitx5, fcitx5-config-qt, fcitx5-frontend-qt5, fcitx5-frontend-gtk3, orca, gnome-system-tools | mate-user-admin, gnome-software | plasma-discover | synaptic
+Breaks: abstract-shell (<< 0.1.8)
+Replaces: abstract-shell (<< 0.1.8)
+Filename: pool/main/m/mellipi-shell/mellipi-shell_0.1.9_amd64.deb
+Size: 4527124
+MD5sum: 8c6582c84feb9919555e2f8ff5acc387
+SHA1: a6fba4fd40a822179b685c57bc784dd964c25d2a
+SHA256: b9c29cda212e19294011aaf4140d2aa3bf7f3596da568d08b7a062c5396ff096
 Section: x11
 Priority: optional
 Description: Mellipi lightweight native Wayland desktop

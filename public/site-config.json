@@ -1,16 +1,16 @@
 {
   "repositoryUrl": "https://github.com/ajavadinezhad/mellipi-os",
   "aptUrl": "https://ajavadinezhad.github.io/mellipi-os/apt",
-  "release": "0.1.8",
+  "release": "0.1.9",
   "signingFingerprint": "7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF",
   "signingKeyPath": "mellipi-archive-keyring.asc",
   "installerPath": "install-update-source.sh",
   "liveImage": {
-    "url": "https://github.com/ajavadinezhad/mellipi-os/releases/download/v0.1.8/mellipi-0.1.8-noble-amd64.iso",
-    "sha256": "a8ac4d6e4867caf7183b56b26308f2c16586ed96e4a954f9ec7895e22077d1c1",
-    "bytes": 1418801152,
-    "checksumUrl": "https://github.com/ajavadinezhad/mellipi-os/releases/download/v0.1.8/mellipi-0.1.8-noble-amd64.iso.sha256",
+    "url": "https://github.com/ajavadinezhad/mellipi-os/releases/download/v0.1.9/mellipi-0.1.9-noble-amd64.iso",
+    "sha256": "81830ae5660898873678effd24fd7615905ff1b26552268b9037490917be867c",
+    "bytes": 1444886528,
+    "checksumUrl": "https://github.com/ajavadinezhad/mellipi-os/releases/download/v0.1.9/mellipi-0.1.9-noble-amd64.iso.sha256",
     "guideUrl": "https://github.com/ajavadinezhad/mellipi-os/blob/main/docs/live-iso.md",
-    "secureBoot": false
+    "secureBoot": true
   }
 }

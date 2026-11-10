@@ -8,16 +8,16 @@ Codename: noble
 Architectures: amd64
 Components: main
 Description: Mellipi desktop updates
-Date: Tue, 10 Nov 2026 16:17:04 GMT
-Valid-Until: Mon, 08 Feb 2027 16:17:04 GMT
+Date: Tue, 10 Nov 2026 18:38:38 GMT
+Valid-Until: Mon, 08 Feb 2027 18:38:38 GMT
 Acquire-By-Hash: yes
 SHA256:
- 2c897c7f206366af8bd1faabbece4483c0f5f3c97426cb7a6abb8eb86313f91f 12786 main/binary-amd64/Packages
- 6794cc2d614fd6875ff652e1e2d7864fbed22d16e56b2b5b4a9cdfe484142f86 2652 main/binary-amd64/Packages.gz
+ d3512ddd5a5aee8ff56367022bcbc7620c2a569942441989eab380e8aa6fb296 17993 main/binary-amd64/Packages
+ 81512634a517665e17c87c731f07b1e7faac15d443f0746de6969b12e732f020 3152 main/binary-amd64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYIAB0WIQR9D8MKnyuZV7KXDju2sdb+akaCrwUCavNDgQAKCRC2sdb+akaC
-r3J/AQDWLlA0o9r7IXRQDtruEZP/r34KQSSO75TLL146dvzlMAEA5/0vqEXT2axZ
-kGMOPyx7YL4INSp1R13Ok0lhrTiNDQk=
-=GaoW
+iHUEARYIAB0WIQR9D8MKnyuZV7KXDju2sdb+akaCrwUCavNksAAKCRC2sdb+akaC
+ryiWAQD8eShYg+X/U8eRkuiBBueGnK38iFmvTPQ/SAIbez2PjgD8DT7TBSyN9JYh
+oihAwtIF7svw/srzboAC2Fzp1be9FQw=
+=NLxQ
 -----END PGP SIGNATURE-----
