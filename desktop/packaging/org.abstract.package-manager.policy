@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
-  <vendor>Abstract</vendor>
+  <vendor>Mellipi</vendor>
   <action id="org.abstract.package-manager">
     <description>Manage software packages</description>
     <message>Authentication is required to manage software packages</message>

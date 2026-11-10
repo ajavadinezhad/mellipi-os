@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a signed, static Abstract APT archive; the signing key stays external.
+"""Build a signed, static Mellipi APT archive; the signing key stays external.
 
 The output directory is dedicated to the archive. Existing pool versions are
 retained and immutable. Publish the complete resulting directory atomically.
@@ -34,8 +34,8 @@ def package_fields(path):
         if line and not line[0].isspace() and ':' in line:
             name, value = line.split(':', 1)
             fields[name] = value.strip()
-    if not re.fullmatch(r'abstract-[a-z0-9][a-z0-9+.-]*', fields.get('Package', '')):
-        raise ValueError('Only Abstract packages may be published in this archive')
+    if not re.fullmatch(r'(?:mellipi|abstract)-[a-z0-9][a-z0-9+.-]*', fields.get('Package', '')):
+        raise ValueError('Only Mellipi packages may be published in this archive')
     if fields.get('Architecture') not in ('amd64', 'all'):
         raise ValueError('Only amd64 and architecture-independent packages are supported')
     if not re.fullmatch(r'[0-9][A-Za-z0-9.+:~\-]*', fields.get('Version', '')):
@@ -54,7 +54,8 @@ def fingerprint(home, key):
     return key.upper()
 
 
-def build(output, packages, home, key, suite='noble', valid_days=90, now=None):
+def build(output, packages, home, key, suite='noble', valid_days=90, now=None, origin='Mellipi'):
+    if origin not in ('Mellipi','Abstract'):raise ValueError('Unsupported archive identity')
     output, home = Path(output).absolute(), Path(home).resolve()
     if output.is_symlink():
         raise ValueError('Archive output must not be a symbolic link')
@@ -105,10 +106,10 @@ def build(output, packages, home, key, suite='noble', valid_days=90, now=None):
         (directory / 'Packages.gz').write_bytes(gzip.compress(scan.encode(), mtime=0))
         release_root = stage / 'dists' / suite
         indices = sorted(path for path in release_root.rglob('*') if path.is_file())
-        release = ('Origin: Abstract\nLabel: Abstract\nSuite: {suite}\nCodename: {suite}\n'
-                   'Architectures: amd64\nComponents: main\nDescription: Abstract desktop updates\n'
+        release = ('Origin: {origin}\nLabel: {origin}\nSuite: {suite}\nCodename: {suite}\n'
+                   'Architectures: amd64\nComponents: main\nDescription: Mellipi desktop updates\n'
                    'Date: {date}\nValid-Until: {expiry}\nAcquire-By-Hash: yes\nSHA256:\n').format(
-                       suite=suite, date=format_datetime(now, usegmt=True),
+                       origin=origin, suite=suite, date=format_datetime(now, usegmt=True),
                        expiry=format_datetime(now + timedelta(days=valid_days), usegmt=True))
         for path in indices:
             sha = digest(path)
@@ -129,10 +130,12 @@ def build(output, packages, home, key, suite='noble', valid_days=90, now=None):
         command = ['gpg', '--homedir', home, '--batch', '--yes', '--local-user', key, '--digest-algo', 'SHA256']
         run([*command, '--output', release_root / 'InRelease', '--clearsign', release_root / 'Release'])
         run([*command, '--output', release_root / 'Release.gpg', '--armor', '--detach-sign', release_root / 'Release'])
-        with (stage / 'abstract-archive-keyring.gpg').open('wb') as target:
+        with (stage / 'mellipi-archive-keyring.gpg').open('wb') as target:
             run(['gpg', '--homedir', home, '--batch', '--export-options', 'export-minimal', '--export', key], stdout=target)
-        with (stage / 'abstract-archive-keyring.asc').open('wb') as target:
+        with (stage / 'mellipi-archive-keyring.asc').open('wb') as target:
             run(['gpg', '--homedir', home, '--batch', '--armor', '--export-options', 'export-minimal', '--export', key], stdout=target)
+        # The old filenames remain trust-compatible for installed 0.1.7 clients.
+        for suffix in ('gpg','asc'):shutil.copyfile(stage/('mellipi-archive-keyring.'+suffix),stage/('abstract-archive-keyring.'+suffix))
         metadata = {'fingerprint': key, 'suite': suite, 'architectures': ['amd64'], 'valid_until': format_datetime(now + timedelta(days=valid_days), usegmt=True)}
         (stage / 'archive-key.json').write_text(json.dumps(metadata, indent=2) + '\n')
         (stage / '.nojekyll').touch()
@@ -166,8 +169,9 @@ def main():
     parser.add_argument('--signing-key', required=True)
     parser.add_argument('--suite', default='noble', choices=['noble'])
     parser.add_argument('--valid-days', type=int, default=90)
+    parser.add_argument('--legacy-origin',action='store_true',help='Preserve the original APT Origin only at the compatibility endpoint')
     args = parser.parse_args()
-    print(json.dumps(build(args.output, args.packages, args.gnupg_home, args.signing_key, args.suite, args.valid_days)))
+    print(json.dumps(build(args.output, args.packages, args.gnupg_home, args.signing_key, args.suite, args.valid_days, origin='Abstract' if args.legacy_origin else 'Mellipi')))
 
 
 if __name__ == '__main__':

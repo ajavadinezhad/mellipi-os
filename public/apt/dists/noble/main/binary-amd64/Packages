@@ -30,6 +30,22 @@ Description: Complete Abstract desktop for an Ubuntu 24.04 systemd base
  Opt-in login greeter, hardware services, browser, editor and package tools.
  Uses distribution display-manager selection and PAM configuration.
 
+Package: abstract-desktop
+Version: 0.1.8
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-desktop (>= 0.1.8)
+Filename: pool/main/a/abstract-desktop/abstract-desktop_0.1.8_all.deb
+Size: 960
+MD5sum: 3eadeb19af848f7012b8fcb30ce33db2
+SHA1: 6483b2251c7c8340c8f03fe8f237df634508d992
+SHA256: 5d947ada8a0ce07f91e9823972343674a472331bc6b52082cffc72b768d2e39a
+Section: oldlibs
+Priority: optional
+Description: Transitional package for mellipi-desktop
+ Abstract is now Mellipi. This package keeps existing installations on the
+ signed update path without changing user settings or restarting sessions.
+
 Package: abstract-shell
 Version: 0.1.6
 Architecture: amd64
@@ -61,6 +77,59 @@ SHA256: d0cf6dfb561ac0f50cd64739c862baf9cbb2ed8af34c0766fc5ad599f390fb26
 Section: x11
 Priority: optional
 Description: Abstract lightweight native Wayland desktop
+ Native compositor, desktop shell and system integrations. Uses standard
+ Linux services and stores user data in private XDG directories.
+
+Package: abstract-shell
+Version: 0.1.8
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-shell (>= 0.1.8)
+Filename: pool/main/a/abstract-shell/abstract-shell_0.1.8_all.deb
+Size: 960
+MD5sum: 59b43d52aafc8944988c21adcadd0b9b
+SHA1: 4b8a87368776ffeeb35328cb492858546348f022
+SHA256: 79b79600d19145f936541a84d261fd9ace26a93091c4d532161f28191cc1cc61
+Section: oldlibs
+Priority: optional
+Description: Transitional package for mellipi-shell
+ Abstract is now Mellipi. This package keeps existing installations on the
+ signed update path without changing user settings or restarting sessions.
+
+Package: mellipi-desktop
+Version: 0.1.8
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-shell (= 0.1.8), systemd-sysv, libpam-systemd, dbus-user-session, lightdm, lightdm-gtk-greeter, xserver-xorg, network-manager, network-manager-gnome, bluez, upower, power-profiles-daemon, gnome-keyring, libpam-gnome-keyring, gvfs, gvfs-backends, udisks2, thunar, foot, mousepad, epiphany-browser | firefox-esr, synaptic, system-config-printer, fonts-dejavu-core, dmz-cursor-theme, wvkbd, orca, fcitx5, fcitx5-config-qt, fcitx5-frontend-qt5, fcitx5-frontend-gtk3, ddcutil, gnome-system-tools, gnome-themes-extra
+Breaks: abstract-desktop (<< 0.1.8)
+Replaces: abstract-desktop (<< 0.1.8)
+Filename: pool/main/m/mellipi-desktop/mellipi-desktop_0.1.8_all.deb
+Size: 2302
+MD5sum: 02deabb9c3067c7d708c7a3d2283f92d
+SHA1: c17f91c62098b0c37d348a48553b78ce9da09a6f
+SHA256: 602e81ec33c5afde0399ac9633b3db702a27ba8b1680d7ee5d63ed4f2794cc9d
+Section: metapackages
+Priority: optional
+Description: Complete Mellipi desktop for an Ubuntu 24.04 systemd base
+ Opt-in login greeter, hardware services, browser, editor and package tools.
+ Uses distribution display-manager selection and PAM configuration.
+
+Package: mellipi-shell
+Version: 0.1.8
+Architecture: amd64
+Maintainer: Mellipi OS project
+Depends: python3, gpg, python3-pyqt5, python3-pyqt5.qtquick, python3-gi, python3-cairo, gir1.2-gtk-3.0, gir1.2-rsvg-2.0, librsvg2-common, libqt5svg5, libxcb-damage0, libxcb-composite0, liblayershellqtinterface5, layer-shell-qt, qtwayland5, qml-module-qtquick2, qml-module-qtquick-controls2, qml-module-qtquick-layouts, qml-module-qtquick-window2, qml-module-qtquick-dialogs, dbus-user-session, libc6 (>= 2.38), libegl1, libgles2, libgbm1, libinput10, libseat1, libudev1, libxkbcommon0, libwayland-client0, libwayland-server0, libcairo2, libpam0g, swaylock, swayidle, xwayland, grim, slurp, util-linux, xdg-utils, xdg-desktop-portal, xdg-desktop-portal-gtk, xdg-desktop-portal-wlr, pipewire, libpipewire-0.3-0t64 | libpipewire-0.3-0, libinih1, libglib2.0-bin, polkitd, pkexec, policykit-1-gnome | mate-polkit | lxqt-policykit | lxpolkit, pulseaudio-utils, pipewire-pulse | pulseaudio, wireplumber | pipewire-media-session, thunar | pcmanfm-qt | pcmanfm | nautilus, x-terminal-emulator, adwaita-icon-theme, dmz-cursor-theme, libc6 (>= 2.39), libcairo2 (>= 1.2.4), libdrm2 (>= 2.4.109), libfontconfig1 (>= 2.12.6), libfreetype6 (>= 2.6), libgbm1 (>= 21.3.0~rc1), libgcc-s1 (>= 4.2), libglib2.0-0t64 (>= 2.12.0), libinih1 (>= 40), libinput10 (>= 1.19.1), libpam0g (>= 0.99.7.1), libpipewire-0.3-0t64 (>= 0.3.1), libqt5core5t64 (>= 5.15.1), libqt5dbus5t64 (>= 5.14.1), libqt5gui5t64 (>= 5.15.1) | libqt5gui5-gles (>= 5.15.1), libqt5widgets5t64 (>= 5.0.2), libseat1 (>= 0.5.0), libsqlite3-0 (>= 3.20.0), libstdc++6 (>= 11), libsystemd0 (>= 243), libudev1 (>= 183), libwayland-client0 (>= 1.20.0), libwayland-cursor0 (>= 1.8.1), libx11-6, libxcb-image0 (>= 0.2), libxcb-keysyms1 (>= 0.4.0), libxcb-res0 (>= 1.10), libxcb-shape0, libxcb-util1 (>= 0.4.0), libxcb1 (>= 1.6), libxfixes3, libxkbcommon0 (>= 0.5.0), libxtst6, qtbase-abi-5-15-13
+Recommends: network-manager, network-manager-gnome, bluez, upower, power-profiles-daemon, gnome-keyring, gvfs, udisks2, system-config-printer, ddcutil, wvkbd, fcitx5, fcitx5-config-qt, fcitx5-frontend-qt5, fcitx5-frontend-gtk3, orca, gnome-system-tools | mate-user-admin, gnome-software | plasma-discover | synaptic
+Breaks: abstract-shell (<< 0.1.8)
+Replaces: abstract-shell (<< 0.1.8)
+Filename: pool/main/m/mellipi-shell/mellipi-shell_0.1.8_amd64.deb
+Size: 4475976
+MD5sum: 6c36aa177f355de410e46c9e476f7c86
+SHA1: 2e34b3fecec970925744e6db655521ee608bb3b8
+SHA256: 99d8bcb8cf4c7ad34cf4f04ad0009ba012326199f625e2305cc94344860190e6
+Section: x11
+Priority: optional
+Description: Mellipi lightweight native Wayland desktop
  Native compositor, desktop shell and system integrations. Uses standard
  Linux services and stores user data in private XDG directories.
 

@@ -50,10 +50,10 @@ Item {
     Rectangle {visible: frame.inset===0 && Orbit.appearance.taskbarLength!=="fit";x: spine.edge==="right" ? spine.width-3 : 0;y: Theme.corner(12);width: 3;height: spine.horizontal ? spine.height-2*Theme.corner(12) : 32;color: Theme.accent}
     IconButton {
         id: home;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? (Theme.extraCompact ? 2 : 4) : 7;width: 38;height: Theme.extraCompact ? 26 : Theme.compact ? 32 : 38;iconName: "fold"
-        hint: "Apps, windows and actions · Super";accessibleLabel: "Open Abstract apps, windows and actions"
+        hint: "Apps, windows and actions · Super";accessibleLabel: "Open Mellipi apps, windows and actions"
         onClicked: spine.openPanel("launcher")
     }
-    Text {x: spine.horizontal ? 3 : Math.round((spine.width-50)/2);y: spine.horizontal ? (Theme.extraCompact ? 28 : Theme.compact ? 35 : 43) : 45;width: 50;height: 16;text: "Abstract";font.pixelSize: Theme.fontSize(8);font.letterSpacing: 0;fontSizeMode: Text.HorizontalFit;minimumPixelSize: 7;horizontalAlignment: Text.AlignHCenter;color: Theme.muted;elide: Text.ElideRight}
+    Text {x: spine.horizontal ? 3 : Math.round((spine.width-50)/2);y: spine.horizontal ? (Theme.extraCompact ? 28 : Theme.compact ? 35 : 43) : 45;width: 50;height: 16;text: "Mellipi";font.pixelSize: Theme.fontSize(8);font.letterSpacing: 0;fontSizeMode: Text.HorizontalFit;minimumPixelSize: 7;horizontalAlignment: Text.AlignHCenter;color: Theme.muted;elide: Text.ElideRight}
 
     Item {
         id: workspaceColumn

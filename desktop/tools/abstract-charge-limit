@@ -1,5 +1,5 @@
 #!/usr/bin/python3 -I
-"""Root-owned, narrowly scoped Abstract battery charge-limit helper.
+"""Root-owned, narrowly scoped Mellipi battery charge-limit helper.
 
 Installed at /usr/lib/abstract/abstract-charge-limit. No checkout imports, user
 configuration paths, shell execution, arbitrary sysfs paths, or resident loop.

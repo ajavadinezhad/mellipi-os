@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Boot and inspect an Abstract installer ISO in an owned disposable QEMU VM.
+"""Boot and inspect an Mellipi installer ISO in an owned disposable QEMU VM.
 
 Only a private qcow2 target is writable. No host disks, USB/GPU passthrough,
 shared folders, host display, public listening sockets, or guest SSH setup.
@@ -44,7 +44,7 @@ def load(work):
  if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode&0o077 or info.st_size>32768:raise ValueError('Unsafe QA metadata file')
  fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
  with os.fdopen(fd) as source:state=json.load(source)
- if state.get('kind')!=KIND or not re.fullmatch(r'abstract-live-qa-[0-9a-f]{16}',state.get('name','')):raise ValueError('Not an owned Abstract live-ISO QA VM')
+ if state.get('kind')!=KIND or not re.fullmatch(r'abstract-live-qa-[0-9a-f]{16}',state.get('name','')):raise ValueError('Not an owned Mellipi live-ISO QA VM')
  if state.get('workdir')!=str(work):raise ValueError('QA metadata work directory mismatch')
  return work,state
 

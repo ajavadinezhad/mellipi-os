@@ -1,23 +1,23 @@
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA256
 
-Origin: Abstract
-Label: Abstract
+Origin: Mellipi
+Label: Mellipi
 Suite: noble
 Codename: noble
 Architectures: amd64
 Components: main
-Description: Abstract desktop updates
-Date: Tue, 10 Nov 2026 06:58:22 GMT
-Valid-Until: Mon, 08 Feb 2027 06:58:22 GMT
+Description: Mellipi desktop updates
+Date: Tue, 10 Nov 2026 16:17:04 GMT
+Valid-Until: Mon, 08 Feb 2027 16:17:04 GMT
 Acquire-By-Hash: yes
 SHA256:
- 5423ed83680d446f6d83b60fa90a360566ad935e63debe39747665688e878078 7616 main/binary-amd64/Packages
- df3baef1f785dae5aaf1e593ac5eb2f6a25fbe25945fbbc9062d1a522e132e82 1964 main/binary-amd64/Packages.gz
+ 2c897c7f206366af8bd1faabbece4483c0f5f3c97426cb7a6abb8eb86313f91f 12786 main/binary-amd64/Packages
+ 6794cc2d614fd6875ff652e1e2d7864fbed22d16e56b2b5b4a9cdfe484142f86 2652 main/binary-amd64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYIAB0WIQR9D8MKnyuZV7KXDju2sdb+akaCrwUCavLAjgAKCRC2sdb+akaC
-r8NzAQCsChdEtrohNiiMgcG9FO4lNurgNd/zgDxl4Zg7w+5ocAD9E98uf1L0hH25
-U8vVZ4n0hSmWsl8EgetpnpOR5WLkzw0=
-=Y805
+iHUEARYIAB0WIQR9D8MKnyuZV7KXDju2sdb+akaCrwUCavNDgQAKCRC2sdb+akaC
+r3J/AQDWLlA0o9r7IXRQDtruEZP/r34KQSSO75TLL146dvzlMAEA5/0vqEXT2axZ
+kGMOPyx7YL4INSp1R13Ok0lhrTiNDQk=
+=GaoW
 -----END PGP SIGNATURE-----

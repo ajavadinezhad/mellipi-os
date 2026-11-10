@@ -42,7 +42,7 @@ class Style(QObject):
 app=QApplication([]);app.setApplicationName('abstract-file-source');app.setDesktopFileName('abstract-file-source')
 style=Style();files=DesktopIcons(enabled=True,directory=sys.argv[2],places=False)
 engine=QQmlApplicationEngine();engine.addImageProvider('icons',Icons());engine.rootContext().setContextProperty('Orbit',style);engine.rootContext().setContextProperty('DesktopFiles',files)
-qml='import QtQuick 2.15\\nimport QtQuick.Window 2.15\\nimport "'+(Path(sys.argv[1])/'native').as_uri()+'" as Ui\\nWindow {visible:true;width:400;height:500;flags:Qt.FramelessWindowHint;title:"Abstract owned file source";Ui.DesktopIcons{anchors.fill:parent;controller:DesktopFiles;outputId:"fixture"}}'
+qml='import QtQuick 2.15\\nimport QtQuick.Window 2.15\\nimport "'+(Path(sys.argv[1])/'native').as_uri()+'" as Ui\\nWindow {visible:true;width:400;height:500;flags:Qt.FramelessWindowHint;title:"Mellipi owned file source";Ui.DesktopIcons{anchors.fill:parent;controller:DesktopFiles;outputId:"fixture"}}'
 engine.loadData(qml.encode());assert engine.rootObjects();app.aboutToQuit.connect(files.close);app.exec()
 '''
 RECEIVER='''import sys,json
@@ -54,7 +54,7 @@ class Receiver(QLabel):
   if event.mimeData().hasUrls():event.acceptProposedAction()
  def dropEvent(self,event):
   Path(sys.argv[1]).write_text(json.dumps([url.toLocalFile() for url in event.mimeData().urls()]));event.acceptProposedAction()
-a=QApplication([]);a.setApplicationName('abstract-file-receiver');a.setDesktopFileName('abstract-file-receiver');w=Receiver('Drop a file');w.setWindowFlags(Qt.FramelessWindowHint);w.setWindowTitle('Abstract owned file receiver');w.resize(380,500);w.setAcceptDrops(True);w.show();a.exec()
+a=QApplication([]);a.setApplicationName('abstract-file-receiver');a.setDesktopFileName('abstract-file-receiver');w=Receiver('Drop a file');w.setWindowFlags(Qt.FramelessWindowHint);w.setWindowTitle('Mellipi owned file receiver');w.resize(380,500);w.setAcceptDrops(True);w.show();a.exec()
 '''
 def main():
     parent=native=source=receiver=None;pointer=None
@@ -91,7 +91,7 @@ def main():
             source=subprocess.Popen(['/usr/bin/python3','-c',SOURCE,str(ROOT),str(files)],cwd=ROOT,env=child,stdout=log,stderr=log,start_new_session=True)
             receiver=subprocess.Popen(['/usr/bin/python3','-c',RECEIVER,str(received)],cwd=ROOT,env=child,stdout=log,stderr=log,start_new_session=True)
             def app_row(title):return next((row for row in client.windows() if row['title']==title and row['rect']['width']>1),None)
-            first=wait(lambda:app_row('Abstract owned file source'));second=wait(lambda:app_row('Abstract owned file receiver'))
+            first=wait(lambda:app_row('Mellipi owned file source'));second=wait(lambda:app_row('Mellipi owned file receiver'))
             client.request('resize',id=int(first['id']),rect=dict(x=20,y=40,width=400,height=500));client.request('resize',id=int(second['id']),rect=dict(x=580,y=40,width=380,height=500));time.sleep(.3)
             pointer=VirtualPointer(outer);bounds=request(3)[0]['rect'];view=host_view();rect=view['rect'];inner=view.get('window_rect',{});output=client.snapshot()['outputs'][0]['rect'];target=(output['width']//2,output['height']//2)
             pointer.move(rect['x']+inner.get('x',0)+target[0],rect['y']+inner.get('y',0)+target[1],bounds['width'],bounds['height']);time.sleep(.1);actual=client.status()['pointer'];offset=(target[0]-actual['x'],target[1]-actual['y'])

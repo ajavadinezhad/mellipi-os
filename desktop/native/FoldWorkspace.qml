@@ -25,7 +25,7 @@ Item {
         anchors.fill: parent;spacing: Theme.compact ? 10 : 12
         SheetHeader {
             Layout.fillWidth: true;Layout.preferredHeight: implicitHeight
-            section: "Abstract / "+fold.workspaceName
+            section: "Mellipi / "+fold.workspaceName
             title: fold.view==="work" ? "Files & notes" : "Apps & windows"
             subtitle: fold.view==="work" ? "Files and local notes." : "Find an app or return to an open window."
             onCloseRequested: Orbit.dismiss()

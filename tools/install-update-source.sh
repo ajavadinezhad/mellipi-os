@@ -1,5 +1,5 @@
 #!/bin/sh
-# Enroll only the Abstract archive, using a separately verified key fingerprint.
+# Enroll only the Mellipi archive, using a separately verified key fingerprint.
 set -eu
 url= fingerprint=
 usage() { printf '%s\n' 'Usage: sudo sh install-update-source.sh --url https://OWNER.github.io/REPO/apt --fingerprint FULL_PRIMARY_FINGERPRINT' 'Adds an amd64 noble deb822 source with its own Signed-By key, then runs apt-get update.'; }
@@ -31,7 +31,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 mkdir "$tmp/gnupg"
 chmod 700 "$tmp/gnupg"
-curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 60 --output "$tmp/archive.gpg" "$url/abstract-archive-keyring.gpg"
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 60 --output "$tmp/archive.gpg" "$url/mellipi-archive-keyring.gpg"
 gpg --homedir "$tmp/gnupg" --batch --with-colons --show-keys "$tmp/archive.gpg" > "$tmp/key-info"
 actual=$(awk -F: '$1=="fpr" {print $10;exit}' "$tmp/key-info")
 count=$(awk -F: '$1=="pub" {n++} END {print n+0}' "$tmp/key-info")
@@ -39,17 +39,17 @@ count=$(awk -F: '$1=="pub" {n++} END {print n+0}' "$tmp/key-info")
 # Fetch and verify the current signed metadata before enrolling the key.
 curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 60 --output "$tmp/InRelease" "$url/dists/noble/InRelease"
 gpg --homedir "$tmp/gnupg" --batch --no-default-keyring --keyring "$tmp/archive.gpg" --verify "$tmp/InRelease"
-key=/etc/apt/keyrings/abstract-archive-keyring.gpg
-source=/etc/apt/sources.list.d/abstract.sources
-printf 'Types: deb\nURIs: %s\nSuites: noble\nComponents: main\nArchitectures: amd64\nSigned-By: %s\n' "$url" "$key" > "$tmp/abstract.sources"
-if [ -e "$source" ] && ! cmp -s "$source" "$tmp/abstract.sources"; then
-    echo 'A different Abstract source already exists; review it before replacing it.' >&2
+key=/etc/apt/keyrings/mellipi-archive-keyring.gpg
+source=/etc/apt/sources.list.d/mellipi.sources
+printf 'Types: deb\nURIs: %s\nSuites: noble\nComponents: main\nArchitectures: amd64\nSigned-By: %s\n' "$url" "$key" > "$tmp/mellipi.sources"
+if [ -e "$source" ] && ! cmp -s "$source" "$tmp/mellipi.sources"; then
+    echo 'A different Mellipi source already exists; review it before replacing it.' >&2
     exit 1
 fi
 install -d -m 0755 /etc/apt/keyrings /etc/apt/sources.list.d
 install -m 0644 "$tmp/archive.gpg" "$key.tmp"
 mv -f "$key.tmp" "$key"
-install -m 0644 "$tmp/abstract.sources" "$source.tmp"
+install -m 0644 "$tmp/mellipi.sources" "$source.tmp"
 mv -f "$source.tmp" "$source"
-printf '%s\n' 'Abstract update source enrolled. Checking package indexes...'
+printf '%s\n' 'Mellipi update source enrolled. Checking package indexes...'
 apt-get update

@@ -27,7 +27,7 @@ def verify_signature(sums,signature,keyring='/usr/share/keyrings/ubuntu-cloudima
 
 def fetch(cache):
  cache=Path(cache).resolve();cache.mkdir(parents=True,exist_ok=True)
- request=urllib.request.Request(OFFICIAL+'SHA256SUMS',headers={'User-Agent':'Abstract-clean-install-QA/1'})
+ request=urllib.request.Request(OFFICIAL+'SHA256SUMS',headers={'User-Agent':'Mellipi-clean-install-QA/1'})
  with urllib.request.urlopen(request,timeout=45) as incoming:sums=incoming.read(1024*1024).decode()
  (cache/'SHA256SUMS').write_text(sums)
  with urllib.request.urlopen(OFFICIAL+'SHA256SUMS.gpg',timeout=45) as incoming:signature=incoming.read(1024*1024)
@@ -59,7 +59,7 @@ def tools_status():
 
 def vm_command(work,image,port,accel):
  work=Path(work)
- return ['qemu-system-x86_64','-name','Abstract-clean-install-QA','-machine','q35,accel='+accel,'-cpu','host' if accel=='kvm' else 'max','-smp','2','-m','4096','-device','virtio-vga','-display','none','-vnc','unix:'+str(work/'vnc.sock'),'-qmp','unix:'+str(work/'qmp.sock')+',server=on,wait=off','-serial','file:'+str(work/'serial.log'),'-drive','file='+str(image)+',if=virtio,format=qcow2','-drive','file='+str(work/'seed.iso')+',if=virtio,format=raw,readonly=on','-smbios','type=1,serial=ds=nocloud','-netdev','user,id=net0,hostfwd=tcp:127.0.0.1:'+str(port)+'-:22','-device','virtio-net-pci,netdev=net0']
+ return ['qemu-system-x86_64','-name','Mellipi-clean-install-QA','-machine','q35,accel='+accel,'-cpu','host' if accel=='kvm' else 'max','-smp','2','-m','4096','-device','virtio-vga','-display','none','-vnc','unix:'+str(work/'vnc.sock'),'-qmp','unix:'+str(work/'qmp.sock')+',server=on,wait=off','-serial','file:'+str(work/'serial.log'),'-drive','file='+str(image)+',if=virtio,format=qcow2','-drive','file='+str(work/'seed.iso')+',if=virtio,format=raw,readonly=on','-smbios','type=1,serial=ds=nocloud','-netdev','user,id=net0,hostfwd=tcp:127.0.0.1:'+str(port)+'-:22','-device','virtio-net-pci,netdev=net0']
 
 def check_display_pixels(path):
  """Reject cursor-only/black startup frames; this is not full visual acceptance."""
@@ -98,7 +98,7 @@ def validate_work(work):
  work=Path(work).resolve();info=work.stat()
  if not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or info.st_mode&0o077:raise ValueError('VM work directory must be private and owned by this user')
  state=json.loads((work/'vm.json').read_text())
- if state.get('kind')!='abstract-clean-install-vm':raise ValueError('Not an Abstract QA VM directory')
+ if state.get('kind')!='abstract-clean-install-vm':raise ValueError('Not an Mellipi QA VM directory')
  return work,state
 
 class Qmp:
@@ -160,7 +160,7 @@ def boot(args):
  run(['ssh-keygen','-q','-t','ed25519','-N','','-f',work/'id_ed25519'])
  password=secrets.token_hex(10);password_hash=subprocess.check_output(['openssl','passwd','-6','-stdin'],input=password+'\n',text=True).strip()
  key=(work/'id_ed25519.pub').read_text().strip()
- userdata='#cloud-config\n'+json.dumps(dict(hostname='abstract-qa',manage_etc_hosts=True,users=[dict(name='abstract',groups=['sudo'],shell='/bin/bash',sudo='ALL=(ALL) NOPASSWD:ALL',lock_passwd=False,passwd=password_hash,ssh_authorized_keys=[key])],ssh_pwauth=False,disable_root=True,package_update=False,write_files=[dict(path='/etc/motd',content='Disposable Abstract QA VM; no host desktop changes.\n')]))+'\n'
+ userdata='#cloud-config\n'+json.dumps(dict(hostname='abstract-qa',manage_etc_hosts=True,users=[dict(name='abstract',groups=['sudo'],shell='/bin/bash',sudo='ALL=(ALL) NOPASSWD:ALL',lock_passwd=False,passwd=password_hash,ssh_authorized_keys=[key])],ssh_pwauth=False,disable_root=True,package_update=False,write_files=[dict(path='/etc/motd',content='Disposable Mellipi QA VM; no host desktop changes.\n')]))+'\n'
  private_write(work/'user-data',userdata);private_write(work/'meta-data','instance-id: abstract-qa-'+secrets.token_hex(8)+'\nlocal-hostname: abstract-qa\n');private_write(work/'credentials.json',json.dumps(dict(user='abstract',password=password))+'\n')
  run(['genisoimage','-quiet','-output',work/'seed.iso','-volid','cidata','-joliet','-rock',work/'user-data',work/'meta-data'])
  fmt=json.loads(subprocess.check_output(['qemu-img','info','--output=json',str(image)],text=True))['format']

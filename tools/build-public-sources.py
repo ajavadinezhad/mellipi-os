@@ -46,7 +46,7 @@ def project_paths():
  paths=list(source.glob('*.py'))+[root/'README.md',root/'requirements-native.txt']
  paths.extend(path for path in (source/'session').rglob('*') if path.is_file() and path.suffix in ('.py','.conf','.sh','.desktop'))
  for name in ('native','themes','patches','packaging'):
-  paths.extend(path for path in (root/name).rglob('*') if path.is_file() and (path.suffix in ('.py','.qml','.js','.svg','.json','.conf','.sh','.h','.patch','.policy','.service','.rules','.desktop','.txt') or path.name=='qmldir'))
+  paths.extend(path for path in (root/name).rglob('*') if path.is_file() and (path.suffix in ('.py','.qml','.js','.svg','.json','.conf','.sh','.h','.c','.patch','.policy','.service','.rules','.desktop','.txt','.gpg','.asc') or path.name=='qmldir'))
  for name in ('compositor','backend'):
   paths.extend(path for path in (root/name/'src').rglob('*') if path.is_file())
   paths.extend(path for path in (root/name).glob('Cargo.*') if path.is_file())
@@ -57,7 +57,7 @@ def project_paths():
  for name in ('abstract-synaptic-root','abstract-package-manager'):
   if (root/'packaging'/name).is_file():paths.append(root/'packaging'/name)
  paths.extend(path for path in root.glob('run-*') if path.is_file() and path.suffix in ('.py','.sh'))
- for name in ('test_package_manager_bridge.py','test_package_manager_discovery.py','test_package_manager_launcher.py','test_permission_agent_backend.py'):
+ for name in ('test_package_manager_bridge.py','test_package_manager_discovery.py','test_package_manager_launcher.py','test_permission_agent_backend.py','test_mellipi_rename.py'):
   if (root/'tests'/name).is_file():paths.append(root/'tests'/name)
  paths=sorted(set(path for path in paths if path.is_file() and not path.is_symlink() and '__pycache__' not in path.parts and path.suffix not in ('.pyc','.log')))
  result=[(path,(Path('desktop')/path.relative_to(root) if root!=ROOT else path.relative_to(root))) for path in paths]
@@ -74,18 +74,18 @@ def local_source(cache,name,expected=None):
   candidates.extend(sorted((ROOT/'public/sources').glob('*/'+section+'/'+name)))
  return next((path for path in candidates if path.is_file() and not path.is_symlink() and (expected is None or sha(path)==expected)),cache/name)
 def main():
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--cache',type=Path,required=True);parser.add_argument('--version',default='0.1.6');parser.add_argument('--fetch',action='store_true');parser.add_argument('--project-root',type=Path,help='Optional application source root (default desktop/ when present)');args=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--cache',type=Path,required=True);parser.add_argument('--version',default='0.1.8');parser.add_argument('--fetch',action='store_true');parser.add_argument('--project-root',type=Path,help='Optional application source root (default desktop/ when present)');args=parser.parse_args()
  global PROJECT_ROOT
  if args.project_root:PROJECT_ROOT=args.project_root.resolve()
  source=PROJECT_ROOT/'src' if (PROJECT_ROOT/'src').is_dir() else PROJECT_ROOT
  if not (source/'native_app.py').is_file():parser.error('Application source root is missing src/native_app.py (or flat native_app.py)')
  if not re.fullmatch(r'[A-Za-z0-9.+~-]+',args.version):parser.error('Invalid source version')
  output=args.output.resolve();cache=args.cache.resolve();output.mkdir(parents=True,exist_ok=True);cache.mkdir(parents=True,exist_ok=True);rows=[]
- source_archive=cache/f'abstract-{args.version}-project-source.tar.gz'
+ source_archive=cache/f'mellipi-{args.version}-project-source.tar.gz'
  buffer=io.BytesIO()
  with tarfile.open(fileobj=buffer,mode='w') as archive:
   for path,relative in project_paths():
-   info=archive.gettarinfo(str(path),arcname=f'abstract-{args.version}/'+str(relative));info.uid=info.gid=0;info.uname=info.gname='';info.mtime=0;info.mode=0o755 if path.stat().st_mode&0o111 else 0o644
+   info=archive.gettarinfo(str(path),arcname=f'mellipi-{args.version}/'+str(relative));info.uid=info.gid=0;info.uname=info.gname='';info.mtime=0;info.mode=0o755 if path.stat().st_mode&0o111 else 0o644
    with path.open('rb') as stream:archive.addfile(info,stream)
  source_archive.write_bytes(gzip.compress(buffer.getvalue(),mtime=0))
  stage_file(source_archive,output,Path(source_archive.name),rows)
@@ -123,7 +123,7 @@ def main():
   if source is None:
    source=local_source(cache,filename,expected);obtain('https://static.crates.io/crates/'+crate_name+'/'+filename,source,expected,args.fetch)
   stage_file(source,output,Path('rust-crates')/filename,rows,'Cargo.lock SHA256-pinned crate')
- (output/'manifest.json').write_text(json.dumps({'version':args.version,'files':rows,'private_state_included':False,'note':'Third-party terms remain as supplied. No new license is assigned to Abstract source by this archive.'},indent=2)+'\n')
+ (output/'manifest.json').write_text(json.dumps({'version':args.version,'files':rows,'private_state_included':False,'note':'Third-party terms remain as supplied. No new license is assigned to Mellipi source by this archive.'},indent=2)+'\n')
  (output/'SHA256SUMS').write_text(''.join(row['sha256']+'  '+row['path']+'\n' for row in rows))
  print(json.dumps({'files':len(rows),'bytes':sum(row['bytes'] for row in rows),'output':str(output)}))
 if __name__=='__main__':main()

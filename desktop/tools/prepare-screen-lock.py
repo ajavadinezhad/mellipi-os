@@ -74,6 +74,8 @@ def main():
     for path in sysroot.rglob('*.pc'):
         text=path.read_text().replace('=/usr','='+str(sysroot)+'/usr').replace('=/lib','='+str(sysroot)+'/lib');path.write_text(text)
     env=os.environ.copy();env.pop('LD_LIBRARY_PATH',None)
+    # Upstream's version probe must not discover this desktop repository's Git.
+    env['GIT_CEILING_DIRECTORIES']=str(BASE.resolve())
     env.update(PYTHONPATH=str(sysroot/'usr/lib/python3/dist-packages'),PATH=str(sysroot/'usr/bin')+':'+env.get('PATH',''),PKG_CONFIG_LIBDIR=':'.join(str(p) for p in (library_dir/'pkgconfig',sysroot/'usr/share/pkgconfig',sysroot/'usr/lib/pkgconfig')),LIBRARY_PATH=str(library_dir))
     meson=['/usr/bin/python3',sysroot/'usr/bin/meson']
     setup=[*meson,'setup']
@@ -102,7 +104,7 @@ def main():
     finally:
         if temporary.exists():temporary.unlink()
     destination=installed
-    manifest=dict(presentationPatch=dict(environment='ORBIT_LOCK_TEXTBOX=1',renderPatchSha256=sha(render_patch),renderHeaderSha256=sha(ROOT/'native/lock-textbox-render.h'),statusHeaderSha256=sha(ROOT/'native/lock-status.h'),liveUpdateSeconds=60,branding='Abstract',keyboardLayout=True,adaptiveHeight=True,networkStatus='bounded read-only carrier, no Internet claim or network identifiers',authenticationSources=auth_hashes),version=VERSION,source=SOURCE,sourceSha256=SOURCE_SHA256,pamEnabled=True,binary=str(destination),binarySha256=sha(destination),binaryBytes=destination.stat().st_size,buildPackages=package_info,linkedLibraries=libraries.splitlines(),versionOutput=version,systemFilesChanged=False)
+    manifest=dict(presentationPatch=dict(environment='ORBIT_LOCK_TEXTBOX=1',renderPatchSha256=sha(render_patch),renderHeaderSha256=sha(ROOT/'native/lock-textbox-render.h'),statusHeaderSha256=sha(ROOT/'native/lock-status.h'),liveUpdateSeconds=60,branding='Mellipi',keyboardLayout=True,adaptiveHeight=True,networkStatus='bounded read-only carrier, no Internet claim or network identifiers',authenticationSources=auth_hashes),version=VERSION,source=SOURCE,sourceSha256=SOURCE_SHA256,pamEnabled=True,binary=str(destination),binarySha256=sha(destination),binaryBytes=destination.stat().st_size,buildPackages=package_info,linkedLibraries=libraries.splitlines(),versionOutput=version,systemFilesChanged=False)
     (RUNTIME/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     print(json.dumps({key:manifest[key] for key in ('version','pamEnabled','binary','binaryBytes','sourceSha256','systemFilesChanged')},indent=2))
 

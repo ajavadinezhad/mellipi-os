@@ -60,7 +60,7 @@ class DesktopTools(QObject):
                 status=NativeCompositor(self.environment['ORBIT_NATIVE_CONTROL']).status()
                 supported=status.get('capabilities',{}).get('trusted_virtual_keyboard') is True
             except (KeyError,OSError,ValueError,RuntimeError):pass
-            if not supported:self._tools['keyboard'].update(available=False,reason='This session does not provide a trusted Wayland keyboard endpoint. Start an updated Abstract native session to enable it.')
+            if not supported:self._tools['keyboard'].update(available=False,reason='This session does not provide a trusted Wayland keyboard endpoint. Start an updated Mellipi native session to enable it.')
         try:
             import gi;gi.require_version('Gio','2.0');from gi.repository import Gio
             self.gioAvailable=True

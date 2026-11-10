@@ -1,4 +1,4 @@
-name: Publish Abstract website and signed APT archive
+name: Publish Mellipi website and signed APT archive
 
 # Signing and package builds happen locally. Only reviewed public files are deployed.
 on:
@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: abstract-pages
+  group: mellipi-pages
   cancel-in-progress: false
 
 jobs:
@@ -32,7 +32,7 @@ jobs:
           import os, re
           from pathlib import Path
           root = Path('public')
-          required = ('index.html', 'apt/abstract-archive-keyring.gpg',
+          required = ('index.html', 'apt/mellipi-archive-keyring.gpg',
                       'apt/dists/noble/InRelease', 'apt/dists/noble/Release',
                       'apt/dists/noble/Release.gpg',
                       'apt/dists/noble/main/binary-amd64/Packages.gz')
@@ -61,11 +61,11 @@ jobs:
           GNUPGHOME="$(mktemp -d)"
           chmod 700 "$GNUPGHOME"
           trap 'rm -rf "$GNUPGHOME"' EXIT
-          actual="$(gpg --batch --show-keys --with-colons public/apt/abstract-archive-keyring.gpg | awk -F: '$1=="fpr" {print $10; exit}')"
+          actual="$(gpg --batch --show-keys --with-colons public/apt/mellipi-archive-keyring.gpg | awk -F: '$1=="fpr" {print $10; exit}')"
           test "$actual" = "${EXPECTED_FINGERPRINT^^}"
-          test "$(gpg --batch --show-keys --with-colons public/apt/abstract-archive-keyring.gpg | awk -F: '$1=="pub" {n++} END {print n+0}')" = 1
-          gpgv --keyring "$PWD/public/apt/abstract-archive-keyring.gpg" public/apt/dists/noble/InRelease
-          gpgv --keyring "$PWD/public/apt/abstract-archive-keyring.gpg" public/apt/dists/noble/Release.gpg public/apt/dists/noble/Release
+          test "$(gpg --batch --show-keys --with-colons public/apt/mellipi-archive-keyring.gpg | awk -F: '$1=="pub" {n++} END {print n+0}')" = 1
+          gpgv --keyring "$PWD/public/apt/mellipi-archive-keyring.gpg" public/apt/dists/noble/InRelease
+          gpgv --keyring "$PWD/public/apt/mellipi-archive-keyring.gpg" public/apt/dists/noble/Release.gpg public/apt/dists/noble/Release
       - name: Verify signed indexes and package payloads
         shell: bash
         run: |
@@ -95,7 +95,7 @@ jobs:
           assert paragraphs and paragraphs[0], 'Empty package archive'
           for paragraph in paragraphs:
               fields = dict(line.split(': ', 1) for line in paragraph.splitlines() if ': ' in line and not line[0].isspace())
-              assert fields['Package'].startswith('abstract-') and fields['Architecture'] in ('amd64', 'all')
+              assert fields['Package'].startswith(('mellipi-','abstract-')) and fields['Architecture'] in ('amd64', 'all')
               check(archive, fields['Filename'], fields['Size'], fields['SHA256'])
           PY
       - name: Configure GitHub Pages

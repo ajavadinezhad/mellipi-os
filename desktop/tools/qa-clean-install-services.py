@@ -6,7 +6,7 @@ ROOT=Path('/usr/lib/abstract');SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() e
 
 def guest():
     if Path('/etc/hostname').read_text().strip()!='abstract-qa' or not Path('/var/lib/cloud/instance').exists() or not Path('/home/abstract/qa-guest.py').is_file() or pwd.getpwuid(os.getuid()).pw_name!='abstract':
-        raise RuntimeError('This helper requires the owned Abstract QA VM desktop user')
+        raise RuntimeError('This helper requires the owned Mellipi QA VM desktop user')
     sys.path.insert(0,str(SOURCE_ROOT))
 
 def command(args,allow_failure=False):

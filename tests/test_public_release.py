@@ -25,7 +25,7 @@ class SiteOnlyTest(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(prefix='abstract-site-tests-')
         cls.base = Path(cls.temp.name); cls.home = cls.base / 'signer'; cls.home.mkdir(mode=0o700)
-        subprocess.run(['gpg', '--homedir', str(cls.home), '--batch', '--passphrase', '', '--quick-generate-key', 'Abstract Site Test <site@example.invalid>', 'ed25519', 'sign', '0'], check=True, capture_output=True)
+        subprocess.run(['gpg', '--homedir', str(cls.home), '--batch', '--passphrase', '', '--quick-generate-key', 'Mellipi Site Test <site@example.invalid>', 'ed25519', 'sign', '0'], check=True, capture_output=True)
         info = subprocess.check_output(['gpg', '--homedir', str(cls.home), '--with-colons', '--list-keys'], text=True)
         cls.key = next(line.split(':')[9] for line in info.splitlines() if line.startswith('fpr:'))
         stage = cls.base / 'package'; (stage / 'DEBIAN').mkdir(parents=True)

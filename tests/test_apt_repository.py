@@ -22,7 +22,7 @@ class AptRepositoryTest(unittest.TestCase):
         cls.private = tempfile.TemporaryDirectory(prefix='abstract-apt-tests-')
         cls.base = Path(cls.private.name)
         cls.home = cls.base / 'gnupg'; cls.home.mkdir(mode=0o700)
-        subprocess.run(['gpg', '--homedir', str(cls.home), '--batch', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-generate-key', 'Abstract Test <test@example.invalid>', 'ed25519', 'sign', '0'], check=True, capture_output=True)
+        subprocess.run(['gpg', '--homedir', str(cls.home), '--batch', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-generate-key', 'Mellipi Test <test@example.invalid>', 'ed25519', 'sign', '0'], check=True, capture_output=True)
         result = subprocess.check_output(['gpg', '--homedir', str(cls.home), '--batch', '--with-colons', '--list-keys'], text=True)
         cls.key = next(line.split(':')[9] for line in result.splitlines() if line.startswith('fpr:'))
     @classmethod
@@ -35,7 +35,7 @@ class AptRepositoryTest(unittest.TestCase):
         self.work = Path(self.temp.name); self.output = self.work / 'archive'
     def package(self, version='0.1.6', payload='fixture', arch='amd64'):
         path = self.work / ('stage-' + version + '-' + arch); (path / 'DEBIAN').mkdir(parents=True, exist_ok=True)
-        (path / 'DEBIAN/control').write_text(f'Package: abstract-fixture\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Test <test@example.invalid>\nDescription: Abstract APT fixture\n')
+        (path / 'DEBIAN/control').write_text(f'Package: abstract-fixture\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Test <test@example.invalid>\nDescription: Mellipi APT fixture\n')
         (path / 'fixture').write_text(payload)
         package = self.work / f'abstract-fixture_{version}_{arch}.deb'
         subprocess.run(['dpkg-deb', '--build', '--root-owner-group', str(path), str(package)], check=True, capture_output=True)
@@ -68,7 +68,7 @@ class AptRepositoryTest(unittest.TestCase):
     def test_modified_signed_metadata_is_rejected_by_apt(self):
         self.build([self.package()])
         path = self.output / 'dists/noble/InRelease'
-        path.write_bytes(path.read_bytes().replace(b'Origin: Abstract', b'Origin: Tampered'))
+        path.write_bytes(path.read_bytes().replace(b'Origin: Mellipi', b'Origin: Tampered'))
         result = subprocess.run(['apt-get', *self.apt_options(), 'update'], capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('BADSIG', result.stdout + result.stderr)

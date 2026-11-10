@@ -2,7 +2,7 @@
 SETTING_ACTIONS=(
     dict(id='microphone',name='Microphone',description='Choose microphone input and recording level',icon='audio-input-microphone',words='mic microphone input wired headset usb recording mute unmute volume level',section=8,tab=0,target='inputDevicePickerToggle'),
     dict(id='density',name='Interface density',description='Comfortable, compact or extra compact controls',icon='preferences-desktop',words='density compact extra compact comfortable spacing smaller interface',section=10,tab=0,target='densitySegments'),
-    dict(id='pointer',name='Mouse pointer',description='Use the theme accent for Abstract’s arrow pointer',icon='input-mouse',words='pointer cursor mouse arrow theme accent',section=10,tab=0,target='cursorAccentToggle'),
+    dict(id='pointer',name='Mouse pointer',description='Use the theme accent for Mellipi’s arrow pointer',icon='input-mouse',words='pointer cursor mouse arrow theme accent',section=10,tab=0,target='cursorAccentToggle'),
     dict(id='brightness',name='Display brightness',description='Adjust display brightness and external monitor controls',icon='display-brightness',words='brightness dim hdmi ddc monitor screen light',section=15,tab=0,target='brightnessSlider'),
     dict(id='battery-health',name='Battery health',description='Battery condition and supported charging limits',icon='battery',words='battery health charge charging limit 80 60 percent lifespan',section=7,tab=0,target='chargeLimitOptions'),
     dict(id='wallpaper',name='Desktop wallpaper',description='Choose the desktop background',icon='preferences-desktop-wallpaper',words='wallpaper background solid dusk picture',section=10,tab=1,target='wallpaperStyleSegments'),

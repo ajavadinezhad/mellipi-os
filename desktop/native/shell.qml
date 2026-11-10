@@ -9,7 +9,7 @@ ShellRoot {
     property var links: []
     property var workspaces: []
     property string workspace: "personal"
-    property string message: "Connecting to Abstract core…"
+    property string message: "Connecting to Mellipi core…"
     property bool providerReady: false
     property var attached: []
     property string answer: ""
@@ -52,7 +52,7 @@ ShellRoot {
     }
     FloatingWindow {
         id: window
-        title: "Abstract · Connected workspace"
+        title: "Mellipi · Connected workspace"
         width: 1180; height: 760
         color: "#101815"
         RowLayout {
@@ -125,7 +125,7 @@ ShellRoot {
                 Layout.preferredWidth: 300; Layout.fillHeight: true; color: "#18231b"
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: 22; spacing: 18
-                    Label { text: "✧ Abstract intelligence"; color: "#d2e6d1"; font.pixelSize: 19 }
+                    Label { text: "✧ Mellipi intelligence"; color: "#d2e6d1"; font.pixelSize: 19 }
                     Label { text: "A little context.\nA clearer next step."; color: "#e0ecdd"; font.pixelSize: 26; Layout.topMargin: 24 }
                     Label { text: "Attached items: " + root.attached.length; color: "#a8c0aa" }
                     Label { text: root.message; color: "#9bb79c"; wrapMode: Text.Wrap; Layout.fillWidth: true }
@@ -135,7 +135,7 @@ ShellRoot {
                     }
                     TextArea { id: prompt; placeholderText: "What would you like to work on?"; wrapMode: TextEdit.Wrap; Layout.fillWidth: true; Layout.preferredHeight: 100 }
                     Button {
-                        text: root.busy ? "Working…" : "Ask Abstract →"; enabled: root.providerReady && !root.busy; Layout.fillWidth: true
+                        text: root.busy ? "Working…" : "Ask Mellipi →"; enabled: root.providerReady && !root.busy; Layout.fillWidth: true
                         onClicked: {
                             if (!prompt.text.trim()) return;
                             root.busy = true;

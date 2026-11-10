@@ -25,4 +25,4 @@ class GreeterProfilePackageTest(unittest.TestCase):
             for asset in (config,wallpaper):self.assertEqual(stat.S_IMODE(asset.stat().st_mode),0o644)
             root=ET.parse(wallpaper).getroot();self.assertEqual(root.tag,'{http://www.w3.org/2000/svg}svg')
             for item in root.iter():self.assertNotIn(item.tag.rsplit('}',1)[-1],('script','animate','animateTransform','filter','image','foreignObject'))
-            self.assertIn('Abstract',wallpaper.read_text())
+            self.assertIn('Mellipi',wallpaper.read_text())

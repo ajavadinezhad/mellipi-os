@@ -1,12 +1,12 @@
-# Abstract live USB and installer image
+# Mellipi live USB and installer image
 
 The image is built from a **fresh Ubuntu 24.04 (noble) amd64 minbase** using
-Ubuntu's signed package repositories. Abstract is the only desktop session.
+Ubuntu's signed package repositories. Mellipi is the only desktop session.
 It is not a remastered Mint, Xfce, GNOME or Plasma desktop image. LightDM is the
 login greeter; the included file manager and other applications do not install
 another desktop environment.
 
-The image contains the Linux kernel and firmware, Abstract, Foot terminal,
+The image contains the Linux kernel and firmware, Mellipi, Foot terminal,
 Thunar, Mousepad, Epiphany, package management and hardware services, plus the
 Calamares graphical installer. Installation copies the packaged filesystem
 locally and does not require downloading the desktop again.
@@ -14,14 +14,14 @@ locally and does not require downloading the desktop again.
 ## Try and install
 
 1. Download the ISO and its matching `.iso.sha256` file into the same directory,
-   then run `sha256sum -c abstract-0.1.7-noble-amd64.iso.sha256`. The release's
-   separate `SHA256SUMS-0.1.7` file covers the desktop packages, not the ISO.
+   then run `sha256sum -c mellipi-0.1.8-noble-amd64.iso.sha256`. The release's
+   separate `SHA256SUMS-0.1.8` file covers the desktop packages, not the ISO.
 2. Use a trusted USB image writer to select the ISO and the intended USB drive.
    Review the drive carefully: writing an image replaces that drive's contents.
-3. Boot the USB and choose **Try or install Abstract**. The live desktop opens
+3. Boot the USB and choose **Try or install Mellipi**. The live desktop opens
    automatically. It is temporary; changes are lost when the machine restarts.
    Press **Super+Enter** to open the included Foot terminal.
-4. Open **Install Abstract** from the desktop or launcher. Choose language,
+4. Open **Install Mellipi** from the desktop or launcher. Choose language,
    keyboard, target disk/partitioning, user name and password. For manual
    partitioning, use ext4 for the root (`/`) partition. No disk operation
    begins until the summary and final installation confirmation are accepted.
@@ -49,16 +49,16 @@ Required guest build tools include `debootstrap`, `squashfs-tools`, `xorriso`,
 fresh target by the builder. A larger build disk and sufficient free space are
 needed for the target filesystem, package downloads and compressed image.
 
-After transferring the verified Abstract `.deb` pair and **public** archive
+After transferring the verified Mellipi `.deb` pair and **public** archive
 keyring into the guest, run inside that VM:
 
 ```sh
 sudo python3 build-live-iso.py \
-  --version 0.1.7 \
+  --version 0.1.8 \
   --workdir /home/abstract/abstract-iso/build \
-  --core-deb /path/to/abstract-shell_0.1.7_amd64.deb \
-  --desktop-deb /path/to/abstract-desktop_0.1.7_all.deb \
-  --keyring /path/to/abstract-archive-keyring.gpg \
+  --core-deb /path/to/mellipi-shell_0.1.8_amd64.deb \
+  --desktop-deb /path/to/mellipi-desktop_0.1.8_all.deb \
+  --keyring /path/to/mellipi-archive-keyring.gpg \
   --calamares-partition-module /path/to/reviewed-partition.so \
   --calamares-partition-sha256 SHA256_FROM_REVIEWED_MODULE_REPORT \
   --calamares-partition-provenance /path/to/reviewed-partition.so.json
@@ -113,7 +113,7 @@ sources. This regression does not replace a real UEFI installation test.
 
 Keep candidate ISOs private until a disposable VM demonstrates:
 
-- BIOS boot and a visible Abstract desktop;
+- BIOS boot and a visible Mellipi desktop;
 - UEFI boot tested separately;
 - working terminal, installer entry and ordinary application launch;
 - GUI installation to a **private virtual disk**, with explicit disk selection;

@@ -1,6 +1,6 @@
-# Abstract desktop captures
+# Mellipi desktop captures
 
-These images show the actual Abstract interface rendered by its native
+These images show the actual Mellipi interface rendered by its native
 compositor in an isolated Wayland session with a fresh private profile.
 They are not mockups or captures of a personal desktop.
 

@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT=Path('/usr/lib/abstract');SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 
 def assert_guest():
- if not Path('/home/abstract/qa-guest.py').is_file() or not Path('/var/lib/cloud/instance').exists() or Path('/etc/hostname').read_text().strip()!='abstract-qa':raise RuntimeError('This action requires the explicitly seeded Abstract QA VM')
+ if not Path('/home/abstract/qa-guest.py').is_file() or not Path('/var/lib/cloud/instance').exists() or Path('/etc/hostname').read_text().strip()!='abstract-qa':raise RuntimeError('This action requires the explicitly seeded Mellipi QA VM')
 
 def baseline():
  assert_guest();sys.path.insert(0,str(SOURCE_ROOT));checks={}

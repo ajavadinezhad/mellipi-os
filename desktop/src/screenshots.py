@@ -322,7 +322,7 @@ class ScreenshotController(QObject):
                             owner=publish_png(path)
                             if getattr(self,'_clipboardOwner',None):self._clipboardOwner.poll()
                             self._clipboardOwner=owner;result['clipboardCopied']=True
-                            if client:result['clipboardWarning']='Copied for X11 apps; native Wayland clipboard support activates after your next Abstract login'
+                            if client:result['clipboardWarning']='Copied for X11 apps; native Wayland clipboard support activates after your next Mellipi login'
                     except Exception as error:result['clipboardError']=str(error)
                 return result
             except Exception as error:return dict(job=job, error=' '.join(str(error).split())[:240])

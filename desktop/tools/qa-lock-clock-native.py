@@ -81,7 +81,7 @@ def main():
                 crop=image.copy(image.width()//2-180,image.height()//2-160,360,110)
                 return bytes(crop.constBits().asstring(crop.sizeInBytes()))
             before=capture('before');minute=int(time.time()//60);frames=client.status()['rendered_frames']
-            print('PASS real Abstract locker ready in private native fixture; no password input',flush=True)
+            print('PASS real Mellipi locker ready in private native fixture; no password input',flush=True)
             wait(lambda:int(time.time()//60)>minute and client.status()['rendered_frames']>frames,65)
             time.sleep(.15);after=capture('after')
             assert before!=after,'Clock pixels did not change across the minute boundary'

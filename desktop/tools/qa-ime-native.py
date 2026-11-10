@@ -22,7 +22,7 @@ def stop(process):
 FIXTURE='''import gi,sys
 from pathlib import Path
 gi.require_version('Gtk','3.0');from gi.repository import Gtk
-w=Gtk.Window(title='Abstract private IME field');w.set_default_size(420,180)
+w=Gtk.Window(title='Mellipi private IME field');w.set_default_size(420,180)
 e=Gtk.Entry();w.add(e);e.connect('changed',lambda e:Path(sys.argv[1]).write_text(e.get_text()));w.connect('destroy',Gtk.main_quit);w.show_all();e.grab_focus();Gtk.main()
 '''
 def inside(base):
@@ -55,7 +55,7 @@ def inside(base):
    ime=launch(['/usr/bin/fcitx5','--disable=notificationitem,notifications,xcb,xim,kimpanel,clipboard'],dict(child,WAYLAND_DEBUG='1'))
    wait(lambda:'get_input_method(' in Path('/tmp/abstract-ime-native.log').read_text(),12);assert ime.poll() is None,'Installed Fcitx failed to start'
    result=base/'text';result.write_text('');app=launch(['/usr/bin/python3','-c',FIXTURE,str(result)],dict(child,GDK_BACKEND='wayland',GTK_IM_MODULE='wayland',WAYLAND_DEBUG='1'))
-   row=wait(lambda:next((w for w in client.windows() if w['title']=='Abstract private IME field' and w['rect']['width']>0),None));client.request('focus',id=int(row['id']));time.sleep(.4)
+   row=wait(lambda:next((w for w in client.windows() if w['title']=='Mellipi private IME field' and w['rect']['width']>0),None));client.request('focus',id=int(row['id']));time.sleep(.4)
    control=wait(lambda:next(runtime.glob('sway-ipc*.sock'),None));outerenv=dict(env,WAYLAND_DISPLAY=outer.name,SWAYSOCK=str(control));pointer=VirtualPointer(outerenv)
    from sway_events import command as sway_command,request as sway_request
    os.environ['SWAYSOCK']=str(control)

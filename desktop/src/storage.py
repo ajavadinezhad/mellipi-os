@@ -24,7 +24,7 @@ class RustStore:
                     else: future.set_result(value.get('result'))
         finally:
             with self._lock:
-                for future in self._pending.values(): future.set_exception(RuntimeError('Abstract core disconnected'))
+                for future in self._pending.values(): future.set_exception(RuntimeError('Mellipi core disconnected'))
                 self._pending.clear()
     def call(self,op,args=None):
         future=concurrent.futures.Future()
@@ -33,11 +33,11 @@ class RustStore:
             try:
                 self.process.stdin.write(json.dumps({'id':ident,'op':op,'args':args or {}},ensure_ascii=False)+'\n'); self.process.stdin.flush()
             except (OSError,ValueError) as e:
-                self._pending.pop(ident,None);raise RuntimeError('Abstract core is unavailable') from e
+                self._pending.pop(ident,None);raise RuntimeError('Mellipi core is unavailable') from e
         try: return future.result(timeout=5)
         except concurrent.futures.TimeoutError:
             with self._lock:self._pending.pop(ident,None)
-            raise RuntimeError('Abstract core timed out')
+            raise RuntimeError('Mellipi core timed out')
     def state(self,workspace='',offset=0,query=''):return self.call('state',{'workspace':workspace,'offset':offset,'query':query})
     def load(self,ident):return self.call('load',{'id':ident})
     def create(self,data):return self.call('create',data)['id']
@@ -67,7 +67,7 @@ class LazyRustStore:
         self._closed=False
     def _get(self):
         with self._start_lock:
-            if self._closed:raise RuntimeError('Abstract store is closed')
+            if self._closed:raise RuntimeError('Mellipi store is closed')
             if self._instance is None:self._instance=RustStore(lambda event:self.on_event(event))
             return self._instance
     def __getattr__(self,name):

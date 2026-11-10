@@ -67,7 +67,7 @@ def validate_existing(output):
         raise ValueError('Invalid existing archive identity')
     if previous.get('signing_fingerprint', '').upper() != fingerprint.upper():
         raise ValueError('Existing publication/archive fingerprint mismatch')
-    key = archive / 'abstract-archive-keyring.gpg'
+    key = archive / ('mellipi-archive-keyring.gpg' if (archive/'mellipi-archive-keyring.gpg').is_file() else 'abstract-archive-keyring.gpg')
     release_root = archive / 'dists/noble'
     release = (release_root / 'Release').read_bytes()
     with tempfile.TemporaryDirectory(prefix='abstract-public-verify-') as directory:
@@ -97,8 +97,8 @@ def validate_existing(output):
         raise ValueError('Existing package archive is empty')
     for paragraph in paragraphs:
         fields = dict(line.split(': ', 1) for line in paragraph.splitlines() if ': ' in line and not line[0].isspace())
-        if not fields.get('Package', '').startswith('abstract-') or fields.get('Architecture') not in ('amd64', 'all'):
-            raise ValueError('Unexpected package in existing Abstract archive')
+        if not fields.get('Package', '').startswith(('mellipi-','abstract-')) or fields.get('Architecture') not in ('amd64', 'all'):
+            raise ValueError('Unexpected package in existing Mellipi archive')
         checked_file(archive, fields['Filename'], fields['Size'], fields['SHA256'])
     return fingerprint.upper(), current
 

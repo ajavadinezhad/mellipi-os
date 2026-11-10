@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regression for native xdg configure/focus ordering and real terminal input.
 
-Runs a headless Sway parent and a private nested installed Abstract session.
+Runs a headless Sway parent and a private nested installed Mellipi session.
 Requires Foot (or an extracted official package), Sway, and installed app files.
 For an extracted Foot, pass its private dependency directory via --library-path.
 Example:
@@ -75,7 +75,7 @@ def main():
    native=NativeCompositor(info['control'])
    before=native.snapshot()
    with open(args.report_dir/'wayland.log','w') as protocol:
-    foot=subprocess.Popen([str(args.foot.resolve()),'--title','Abstract Foot Probe','--app-id','abstract-foot-probe','--term','xterm-256color','/bin/sh','-c','read -r line; printf %s "$line" > "$HOME/typed-result"; sleep 18'],env=dict(env,WAYLAND_DISPLAY=display,WAYLAND_DEBUG='client',LD_LIBRARY_PATH=args.library_path),stdout=protocol,stderr=protocol,start_new_session=True)
+    foot=subprocess.Popen([str(args.foot.resolve()),'--title','Mellipi Foot Probe','--app-id','abstract-foot-probe','--term','xterm-256color','/bin/sh','-c','read -r line; printf %s "$line" > "$HOME/typed-result"; sleep 18'],env=dict(env,WAYLAND_DISPLAY=display,WAYLAND_DEBUG='client',LD_LIBRARY_PATH=args.library_path),stdout=protocol,stderr=protocol,start_new_session=True)
     observations=[]
     time.sleep(1)
     sys.path.insert(0,str(ROOT/'tools'))

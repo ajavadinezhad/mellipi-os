@@ -9,7 +9,7 @@ ScrollView {
     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
     ColumnLayout {
         width: guide.availableWidth;spacing: 12
-        Text {Layout.fillWidth:true;text:"Getting around Abstract";color:Theme.text;font.pixelSize:Theme.fontSize(15);wrapMode:Text.Wrap}
+        Text {Layout.fillWidth:true;text:"Getting around Mellipi";color:Theme.text;font.pixelSize:Theme.fontSize(15);wrapMode:Text.Wrap}
         SettingsGroup {
             title: "Find an app or action"
             Text {Layout.fillWidth:true;text:"Press Super and type an app, window, setting or action. Try sound, display, lock or log out. Super is usually the key with the Windows logo.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
@@ -38,7 +38,7 @@ ScrollView {
         }
         SettingsGroup {
             title: "Arrange your work"
-            Text {Layout.fillWidth:true;text:"Open Super → Saved layouts to save app positions and workspaces. Layouts reuse open windows; they do not save documents or browser tabs. Undo restores Abstract arrangement changes.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
+            Text {Layout.fillWidth:true;text:"Open Super → Saved layouts to save app positions and workspaces. Layouts reuse open windows; they do not save documents or browser tabs. Undo restores Mellipi arrangement changes.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
         }
         SettingsGroup {
             title: "Daily controls"

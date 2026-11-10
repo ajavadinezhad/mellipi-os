@@ -102,7 +102,7 @@ def inside(base,browser_check=None):
         wait_glib(has_portal)
         fixture='''from PyQt5.QtWidgets import QApplication,QWidget
 from PyQt5.QtCore import QTimer
-app=QApplication([]);w=QWidget();w.setWindowTitle("Abstract private video fixture");w.resize(360,240);state=[False]
+app=QApplication([]);w=QWidget();w.setWindowTitle("Mellipi private video fixture");w.resize(360,240);state=[False]
 def color():
  state[0]=not state[0];w.setStyleSheet("background:"+("#ff5500" if state[0] else "#0055ff"))
 color();w.show();timer=QTimer();timer.timeout.connect(color);timer.start(170);app.exec()

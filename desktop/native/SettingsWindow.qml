@@ -6,7 +6,7 @@ import "."
 Window {
     id: settingsWindow
     objectName: "settingsApplicationWindow"
-    title: "Settings — Abstract"
+    title: "Settings — Mellipi"
     width: 760; height: 620; minimumWidth: 480; minimumHeight: 420
     visible: true
     flags: Qt.Window | Qt.FramelessWindowHint

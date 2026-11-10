@@ -62,7 +62,7 @@ QtObject {
     }
     function filteredApps() { return Orbit.launcherApps.filter(a => (!launchPinned || Orbit.appearance.pins.indexOf(a.id)>=0) && (a.name + " " + a.description).toLowerCase().includes(query.toLowerCase())); }
     function filteredWindows() { return Orbit.windows.filter(w => w.title.toLowerCase().includes(query.toLowerCase())); }
-    function title() { return ({launcher:"Applications",overview:"Windows",ai:"Intelligence",settings:"Appearance","system-settings":"System settings",capture:"New note",quick:"Quick settings",music:"Music and sound",usage:"System usage",notifications:"Notifications",tray:"Background apps",bluetooth:"Bluetooth",battery:"Battery",screenshot:"Screenshot","window-capture":"Choose a window",switcher:"Switch windows"})[shell.renderedPanel] || "Abstract"; }
+    function title() { return ({launcher:"Applications",overview:"Windows",ai:"Intelligence",settings:"Appearance","system-settings":"System settings",capture:"New note",quick:"Quick settings",music:"Music and sound",usage:"System usage",notifications:"Notifications",tray:"Background apps",bluetooth:"Bluetooth",battery:"Battery",screenshot:"Screenshot","window-capture":"Choose a window",switcher:"Switch windows"})[shell.renderedPanel] || "Mellipi"; }
     property Timer clockTimer: Timer { interval: 60000; repeat: true; running: true; onTriggered: { shell.clockNow = new Date(); shell.hour = Qt.formatDateTime(new Date(), "hh:mm"); } }
     property Connections orbitConnections: Connections {
         target: Orbit
@@ -104,7 +104,7 @@ QtObject {
 
     property Window desktopWindow: Window {
         id: desktopSurface; objectName: "desktopSurface"
-        title: "Abstract — Desktop";property bool desktopIconsEnabled: Orbit.appearance.desktopIcons; property bool desktopEditing: false; visible: Orbit.surfacesReady; x: shell.sx; y: shell.sy; width: shell.sw; height: shell.sh
+        title: "Mellipi — Desktop";property bool desktopIconsEnabled: Orbit.appearance.desktopIcons; property bool desktopEditing: false; visible: Orbit.surfacesReady; x: shell.sx; y: shell.sy; width: shell.sw; height: shell.sh
         flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint
         color: Theme.background
         DesktopBackground {anchors.fill: parent}
@@ -120,7 +120,7 @@ QtObject {
     }
 
     property Window topbarWindow: Window {
-        id: top; objectName: "topbarSurface"; title: "Abstract — Bar"
+        id: top; objectName: "topbarSurface"; title: "Mellipi — Bar"
         visible: Orbit.surfacesReady; x: shell.foldStyle ? shell.taskbarRect.x : shell.sx; y: shell.foldStyle ? shell.taskbarRect.y : shell.sy; width: shell.foldStyle ? shell.taskbarRect.width : shell.sw; height: shell.foldStyle ? shell.taskbarRect.height : Orbit.isWayland ? 38 : (Theme.compact ? 30 : 38); color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
         OrbitSpine {anchors.fill: parent;visible: shell.foldStyle;clockText: ClockFormat.shortTime(shell.clockNow,Orbit.appearance.clock24);clockNow: shell.clockNow;outputName: Orbit.selectedOutput}
@@ -131,7 +131,7 @@ QtObject {
         Row {
             id: topbarLeft;objectName: "topbarLeft"
             anchors.left: parent.left;anchors.leftMargin: 10;anchors.verticalCenter: parent.verticalCenter;spacing: 8
-            OrbitButton { text: shell.foldStyle ? "◇  Abstract" : "◉  Abstract";quiet: true;implicitHeight: 28;hint: shell.foldStyle ? "Unfold Abstract · Super" : "Open Abstract · Super";onClicked: Orbit.showPanel("launcher") }
+            OrbitButton { text: shell.foldStyle ? "◇  Mellipi" : "◉  Mellipi";quiet: true;implicitHeight: 28;hint: shell.foldStyle ? "Unfold Mellipi · Super" : "Open Mellipi · Super";onClicked: Orbit.showPanel("launcher") }
             Row {
                 objectName: "workspaceIndicators";anchors.verticalCenter: parent.verticalCenter;spacing: 2
             Repeater { model: Orbit.desktops;OrbitButton { required property var modelData;text: String(modelData.id+1);quiet: true;implicitWidth: 20;implicitHeight: 20;padding: 2;
@@ -188,13 +188,13 @@ QtObject {
     }
 
     property Window dockReserveWindow: Window {
-        objectName: "dockReserveSurface";title: "Abstract — Dock reserve"
+        objectName: "dockReserveSurface";title: "Mellipi — Dock reserve"
         visible: Orbit.isWayland && Orbit.surfacesReady && !shell.foldStyle;width: 1;height: 1;color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
     }
 
     property Window dockWindow: Window {
-        id: dock;objectName: "dockSurface";title: "Abstract — Dock"
+        id: dock;objectName: "dockSurface";title: "Mellipi — Dock"
         visible: Orbit.surfacesReady && !shell.foldStyle
         width: Orbit.isWayland ? Orbit.dockGeometry.surfaceWidth : Orbit.dockGeometry.bodyWidth
         height: Orbit.isWayland ? Orbit.dockGeometry.surfaceHeight : Orbit.dockGeometry.bodyHeight
@@ -221,7 +221,7 @@ QtObject {
             onHeightChanged: updateMask()
             Row {
                 id: dockRow;x: Orbit.dockGeometry.padding;anchors.verticalCenter: parent.verticalCenter;spacing: Orbit.dockGeometry.gap
-                DockToolButton { kind: shell.foldStyle ? "fold" : "apps";width: Orbit.dockGeometry.slot;height: Theme.compact ? 38 : 50;hint: "";Accessible.name: shell.foldStyle ? "Unfold Abstract" : "Applications";onClicked: Orbit.showPanel("launcher") }
+                DockToolButton { kind: shell.foldStyle ? "fold" : "apps";width: Orbit.dockGeometry.slot;height: Theme.compact ? 38 : 50;hint: "";Accessible.name: shell.foldStyle ? "Unfold Mellipi" : "Applications";onClicked: Orbit.showPanel("launcher") }
                 Repeater {
                     model: Orbit.dockApps.slice(0,shell.dockCapacity)
                     Item {
@@ -277,7 +277,7 @@ QtObject {
             if(active){heldFocus=true;Orbit.settlePanelFocus();}
             else if(heldFocus && visible && utilityPanel && Orbit.panel!=="" && !swapPanel.running && !enterPanel.running) {heldFocus=false;Orbit.utilityFocusLost();}
         }
-        objectName: "overlaySurface"; title: "Abstract — Action surface"
+        objectName: "overlaySurface"; title: "Mellipi — Action surface"
         visible: Orbit.surfacesReady && shell.overlayShown
         width: Orbit.isWayland ? 760 : shell.panelBodyWidth;height: Orbit.isWayland ? 620 : shell.panelBodyHeight
         readonly property var popupOrigin: {var style=Orbit.appearance;var tasks=Orbit.dockApps;return Orbit.panelPopupOrigin(shell.renderedPanel,width,height,Orbit.screenGeometry,shell.panelEdge)}
@@ -313,15 +313,15 @@ QtObject {
                 MouseArea { anchors.fill: parent; onClicked: mouse => mouse.accepted=true }
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: shell.panelPadding; spacing: shell.panelGap
-                    SheetHeader {id: sheetHeader;visible: shell.foldStyle && !shell.foldPanel;Layout.fillWidth: true;Layout.preferredHeight: implicitHeight;compact: true;section: "ABSTRACT / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel==="screenshot" ? "CAPTURE" : "CONTROLS");title: shell.title();onCloseRequested: Orbit.closePanel()}
+                    SheetHeader {id: sheetHeader;visible: shell.foldStyle && !shell.foldPanel;Layout.fillWidth: true;Layout.preferredHeight: implicitHeight;compact: true;section: "MELLIPI / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel==="screenshot" ? "CAPTURE" : "CONTROLS");title: shell.title();onCloseRequested: Orbit.closePanel()}
                     RowLayout {
                         visible: !shell.foldPanel && !shell.foldStyle
                         Layout.fillWidth: true;Layout.preferredHeight: 30
                         Rectangle {visible: shell.foldStyle;Layout.leftMargin: 2;Layout.rightMargin: 6;width: 11;height: 11;rotation: 45;color: "transparent";border.color: Theme.accent;Rectangle{x: 3;y: 3;width: 5;height: 5;color:"transparent";border.color:Theme.accent}}
                         ColumnLayout {
                             Layout.fillWidth: true;spacing: 1
-                            Text {visible: shell.foldStyle;text: "ABSTRACT / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel.indexOf("capture")>=0 || shell.renderedPanel==="screenshot" ? "CAPTURE" : "SYSTEM");color: Theme.accent;font.pixelSize: Theme.fontSize(9);font.letterSpacing: 1}
-                            Text {text: shell.workPanel && !shell.foldStyle ? "Abstract" : shell.title();color: Theme.text;font.pixelSize: Theme.fontSize(shell.foldStyle ? 14 : 17);font.weight: Font.Medium;Layout.fillWidth: true;elide: Text.ElideRight}
+                            Text {visible: shell.foldStyle;text: "MELLIPI / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel.indexOf("capture")>=0 || shell.renderedPanel==="screenshot" ? "CAPTURE" : "SYSTEM");color: Theme.accent;font.pixelSize: Theme.fontSize(9);font.letterSpacing: 1}
+                            Text {text: shell.workPanel && !shell.foldStyle ? "Mellipi" : shell.title();color: Theme.text;font.pixelSize: Theme.fontSize(shell.foldStyle ? 14 : 17);font.weight: Font.Medium;Layout.fillWidth: true;elide: Text.ElideRight}
                         }
                         Text {visible: shell.workPanel && !shell.foldStyle;text: "YOUR WORKSPACE";color: Theme.faint;font.pixelSize: Theme.fontSize(9);font.letterSpacing: 1.2}
                         IconButton {objectName: "foldPanelCloseButton";iconName: "close";quiet: true;implicitWidth: 28;implicitHeight: 28;hint: "Close panel";onClicked: Orbit.closePanel()}
@@ -355,7 +355,7 @@ QtObject {
     }
 
     property Window screenshotSelectionWindow: Window {
-        id: screenshotSelection;objectName: "screenshotSelectionSurface";title: "Abstract — Screenshot selection"
+        id: screenshotSelection;objectName: "screenshotSelectionSurface";title: "Mellipi — Screenshot selection"
         visible: Orbit.surfacesReady && Screenshots.state.selecting
         x: shell.sx;y: shell.sy;width: shell.sw;height: shell.sh;color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
@@ -364,7 +364,7 @@ QtObject {
     }
 
     property Window noticeWindow: Window {
-        id: notification; objectName: "noticeSurface";title: "Abstract — Notice"; visible: Orbit.surfacesReady && (Orbit.notice !== "" || System.currentNotification.summary !== undefined); color: "transparent"
+        id: notification; objectName: "noticeSurface";title: "Mellipi — Notice"; visible: Orbit.surfacesReady && (Orbit.notice !== "" || System.currentNotification.summary !== undefined); color: "transparent"
         x: shell.sx + (shell.sw-width)/2; y: shell.sy+shell.sh-153; width: Math.min(shell.sw-28,380); height: 64
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
         Rectangle { anchors.fill: parent; radius: Theme.corner(10); color: Theme.surface; border.color: Theme.border
@@ -375,7 +375,7 @@ QtObject {
     }
 
     property Window tooltipSurface: Window {
-        objectName: "tooltipSurface";title: "Abstract — Tooltip";visible: Orbit.surfacesReady && Orbit.tooltip.text !== undefined
+        objectName: "tooltipSurface";title: "Mellipi — Tooltip";visible: Orbit.surfacesReady && Orbit.tooltip.text !== undefined
         x: Orbit.tooltip.x || 0;y: Orbit.tooltip.y || 36;width: Orbit.isWayland ? 300 : (Orbit.tooltip.width || 160);height: 34;color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
         onVisibleChanged: if(visible){tipBody.opacity=0;tipEnter.restart();}
@@ -385,7 +385,7 @@ QtObject {
         }
     }
     property Window contextSurface: Window {
-        id: contextWindow;objectName: "contextSurface";title: "Abstract — Menu";visible: Orbit.surfacesReady && (Orbit.context.items !== undefined || (Orbit.isWayland && Orbit.panel !== ""))
+        id: contextWindow;objectName: "contextSurface";title: "Mellipi — Menu";visible: Orbit.surfacesReady && (Orbit.context.items !== undefined || (Orbit.isWayland && Orbit.panel !== ""))
         x: shell.sx;y: shell.sy;width: shell.sw;height: shell.sh;color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
         onVisibleChanged: {Orbit.syncContextSurface();if(visible && Orbit.context.items!==undefined && !Orbit.isWayland)requestActivate();}

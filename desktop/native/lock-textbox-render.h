@@ -143,7 +143,7 @@ static void orbit_draw_lock_panel_fit(cairo_t *cr, double width, double height,
     if (scale > 1.5) scale = 1.5;
     double field_y;
     if (height >= 360) {
-        orbit_panel_line(cr, "Abstract", width, height*.075, 13*scale, info->muted);
+        orbit_panel_line(cr, "Mellipi", width, height*.075, 13*scale, info->muted);
         orbit_panel_line(cr, info->time_text, width, height*.25, 54*scale, info->text);
         orbit_panel_line(cr, info->date_text, width, height*.33, 14*scale, info->muted);
         orbit_panel_line(cr, info->user_text, width, height*.43, 17*scale, info->text);

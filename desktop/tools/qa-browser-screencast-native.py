@@ -8,7 +8,7 @@ import asyncio,http.server,importlib.util,json,os,subprocess,sys,tempfile,thread
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 spec=importlib.util.spec_from_file_location('private_screencast',ROOT/'tools/qa-screencast-native.py');fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
-PAGE=b'''<!doctype html><title>Abstract private browser capture fixture</title><style>body{background:#05f;color:white}</style><h1>Private browser capture test</h1><video hidden muted></video><canvas hidden></canvas><script>
+PAGE=b'''<!doctype html><title>Mellipi private browser capture fixture</title><style>body{background:#05f;color:white}</style><h1>Private browser capture test</h1><video hidden muted></video><canvas hidden></canvas><script>
 let flip=false;setInterval(()=>{flip=!flip;document.body.style.background=flip?'#ff5500':'#0055ff'},170);
 window.qa={started:false,done:false,frames:0,hashes:[],width:0,height:0,error:''};
 window.startCapture=async()=>{qa.requested=true;qa.activation=navigator.userActivation.isActive;qa.focus=document.hasFocus();qa.visibility=document.visibilityState;try{

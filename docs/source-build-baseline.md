@@ -59,7 +59,7 @@ acceptance rather than copying another system's Qt library.
 The builder reads Python code from `src/` and stages it in the stable installed
 layout, without an extra `src/` directory. The resulting `.deb` contains immutable
 program files under `/usr/lib/abstract`,
-a standard Abstract Wayland session entry, private-XDG launchers and narrow
+a standard Mellipi Wayland session entry, private-XDG launchers and narrow
 system integrations. It does not contain this checkout's user database,
 passwords, private build caches or a Linux kernel. Do not use the experimental
 checkout registration helper as the production packaging installer.

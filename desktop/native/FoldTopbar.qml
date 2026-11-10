@@ -37,10 +37,10 @@ Item {
             id: leftRow;anchors.centerIn: parent;spacing: 8
             IconButton {padding: 4;
                 objectName: "foldTopBrand";iconName: "fold";implicitWidth: 25;implicitHeight: perimeter.controlHeight
-                hint: "Unfold Abstract · Super";onClicked: perimeter.openPanel("launcher")
+                hint: "Unfold Mellipi · Super";onClicked: perimeter.openPanel("launcher")
             }
             Text {
-                text: "ABSTRACT";height: perimeter.controlHeight;verticalAlignment: Text.AlignVCenter
+                text: "MELLIPI";height: perimeter.controlHeight;verticalAlignment: Text.AlignVCenter
                 color: Theme.text;font.pixelSize: Theme.fontSize(10);font.letterSpacing: 1.3
                 visible: perimeter.screenWidth>=700
             }

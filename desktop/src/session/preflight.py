@@ -59,7 +59,7 @@ def inspect(environment=None,phase='install',*,root=Path('/'),which=None,runner=
     details['phase']=phase;details['supported_profile']='systemd-logind';details['hardware_validated']=False
     details['seatd_supported']=False
     if phase=='login':
-        if uid==0:add('user','root','Start Abstract as the desktop user through PAM/login, not with sudo.',True)
+        if uid==0:add('user','root','Start Mellipi as the desktop user through PAM/login, not with sudo.',True)
         runtime=env.get('XDG_RUNTIME_DIR','');private=False
         if runtime and Path(runtime).is_absolute():
             try:
@@ -84,7 +84,7 @@ def inspect(environment=None,phase='install',*,root=Path('/'),which=None,runner=
         # unprivileged logind sessions and encourage unsafe chmod/group fixes.
         local_active=session.get('Active')=='yes' and session.get('Remote')=='no' and bool(session.get('Seat')) and session.get('VTNr','0').isdigit() and int(session.get('VTNr','0'))>0
         details['active_local_seat']=local_active
-        if not local_active:add('seat','unavailable','No active local VT login seat was confirmed. Start Abstract from a display-manager login or a local PAM TTY; do not use sudo, SSH or change /dev/dri/input permissions.',True)
+        if not local_active:add('seat','unavailable','No active local VT login seat was confirmed. Start Mellipi from a display-manager login or a local PAM TTY; do not use sudo, SSH or change /dev/dri/input permissions.',True)
         if system_names is not None:
             network_active='org.freedesktop.NetworkManager' in system_names
             details['network']['daemon_status']='active' if network_active else 'inactive'

@@ -25,10 +25,10 @@
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.content = row.palette.background;
     if (remember) {
-      try { localStorage.setItem("abstract-site-theme", JSON.stringify(row)); } catch { /* Private browsing may forbid storage. */ }
+      try { localStorage.setItem("mellipi-site-theme", JSON.stringify(row)); } catch { /* Private browsing may forbid storage. */ }
     }
     return true;
   };
-  window.AbstractSiteTheme = {valid, apply};
-  try { apply(JSON.parse(localStorage.getItem("abstract-site-theme"))); } catch { /* Keep the default palette. */ }
+  window.MellipiSiteTheme = {valid, apply};
+  try { apply(JSON.parse(localStorage.getItem("mellipi-site-theme") || localStorage.getItem("abstract-site-theme"))); } catch { /* Keep the default palette. */ }
 })();

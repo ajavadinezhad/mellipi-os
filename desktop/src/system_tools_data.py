@@ -71,7 +71,7 @@ def set_default(gio,key,ident):
         if not mapping[ident].set_as_default_for_type(target):raise RuntimeError('Could not save the default application')
 
 def add_startup_application(gio,ident,environment):
-    """Opt one installed application into Abstract login; never run it now."""
+    """Opt one installed application into Mellipi login; never run it now."""
     import hashlib
     if not isinstance(ident,str) or not ident.endswith('.desktop') or len(ident)>240 or '/' in ident or '\0' in ident:raise ValueError('Choose an installed application')
     info=gio.DesktopAppInfo.new(ident)
@@ -83,14 +83,14 @@ def add_startup_application(gio,ident,environment):
     if autostart.command_identity(source) in autostart.OWNED_EXECUTABLES:raise ValueError('This application belongs to the desktop session')
     keys={'Type','Name','Comment','Exec','TryExec','Path','Icon','Terminal','StartupNotify'}
     entry={key:value for key,value in source.items() if key in keys or key.startswith(('Name[','Comment['))}
-    entry.update(Hidden='false',OnlyShowIn='Orbit;',DBusActivatable='false',**{'X-Abstract-Source':ident})
+    entry.update(Hidden='false',OnlyShowIn='Orbit;',DBusActivatable='false',**{'X-Mellipi-Source':ident})
     reason=autostart.eligible(entry,environment)
     if reason:raise ValueError('This application cannot start automatically: '+reason)
     name='abstract-user-'+hashlib.sha256(ident.encode()).hexdigest()[:20]+'.desktop'
     user=autostart.directories(environment)[0];user.mkdir(mode=0o700,parents=True,exist_ok=True)
     destination=user/name
     if destination.exists() or destination.is_symlink():
-        if destination.is_symlink() or autostart.read_entry(destination).get('X-Abstract-Source')!=ident:raise ValueError('The startup entry already exists and was preserved')
+        if destination.is_symlink() or autostart.read_entry(destination).get('X-Mellipi-Source')!=ident:raise ValueError('The startup entry already exists and was preserved')
         set_startup_enabled(name,True,environment);return name
     parser=configparser.ConfigParser(interpolation=None);parser.optionxform=str;parser['Desktop Entry']=entry
     fd,temp=tempfile.mkstemp(prefix='.abstract-startup-',dir=user)

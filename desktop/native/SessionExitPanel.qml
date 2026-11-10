@@ -69,7 +69,7 @@ ColumnLayout {
         model: SessionExit.inhibitors;clip: true;cacheBuffer: 0;spacing: 4
         delegate: Text {required property var modelData;width: protections.width;text: modelData.who+": "+modelData.reason;textFormat: Text.PlainText;color: Theme.text;font.pixelSize: Theme.fontSize(11);wrapMode: Text.Wrap}
     }
-    Text {Layout.fillWidth: true;visible: SessionExit.inhibitors.length>0;text: SessionExit.inhibitors.some(r=>r.mode!=="delay") ? "A system operation is still running. Check again when it finishes." : "These apps need time to prepare. Abstract will wait for their windows to close.";color: Theme.muted;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap}
+    Text {Layout.fillWidth: true;visible: SessionExit.inhibitors.length>0;text: SessionExit.inhibitors.some(r=>r.mode!=="delay") ? "A system operation is still running. Check again when it finishes." : "These apps need time to prepare. Mellipi will wait for their windows to close.";color: Theme.muted;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap}
     Text {Layout.fillWidth: true;visible: !!SessionExit.state.error;text: SessionExit.state.error;textFormat: Text.PlainText;color: Theme.text;font.pixelSize: Theme.fontSize(11);wrapMode: Text.Wrap}
     Text {Layout.fillWidth: true;visible: SessionExit.state.checking;text: SessionExit.state.action==="logout" ? "Preparing to log out…" : "Checking system protections…";color: Theme.muted;font.pixelSize: Theme.fontSize(11)}
     Text {

@@ -461,7 +461,7 @@ class BluetoothBus:
     def shutdown(self):
         if self.stopping:return
         try:
-            self.cancel_pending('Abstract is closing')
+            self.cancel_pending('Mellipi is closing')
             self.clear_timer('discovery_timeout')
             # Release only requests made by our dedicated connection. Requests
             # are ordered, so StopDiscovery also covers a pending Start reply.

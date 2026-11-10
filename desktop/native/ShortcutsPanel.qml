@@ -21,6 +21,6 @@ ScrollView {
                 }
             }
         }
-        Text {Layout.fillWidth: true;text: Shortcuts.state.error || (!Shortcuts.state.available ? "Shortcuts require an Abstract Wayland session." : "Changes apply immediately and persist for the next login.");color: Theme.muted;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap;textFormat: Text.PlainText}
+        Text {Layout.fillWidth: true;text: Shortcuts.state.error || (!Shortcuts.state.available ? "Shortcuts require an Mellipi Wayland session." : "Changes apply immediately and persist for the next login.");color: Theme.muted;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap;textFormat: Text.PlainText}
     }
 }

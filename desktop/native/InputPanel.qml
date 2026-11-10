@@ -87,6 +87,6 @@ ScrollView {
             SettingRow {label: "Natural scrolling";SettingToggle {objectName: "naturalScrollToggle";label: "Natural scrolling";checked: Input.state.naturalScroll;enabled: Input.state.available;onClicked: Input.setNaturalScroll(checked)}}
             SettingRow {visible: !Input.state.deviceType || Input.state.deviceType==="touchpad";label: "Tap to click";SettingToggle {objectName: "tapToClickToggle";label: "Touchpad tap to click";checked: Input.state.tapToClick;enabled: Input.state.available;onClicked: Input.setTapToClick(checked)}}
         }
-        Text {Layout.fillWidth: true;text: Input.state.error || (!Input.state.available ? "Input controls require an Abstract Wayland session." : "Changes apply to matching keyboards, mice and touchpads, including devices connected later.");wrapMode: Text.Wrap;color: Input.state.error ? Theme.accent : Theme.faint;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText}
+        Text {Layout.fillWidth: true;text: Input.state.error || (!Input.state.available ? "Input controls require an Mellipi Wayland session." : "Changes apply to matching keyboards, mice and touchpads, including devices connected later.");wrapMode: Text.Wrap;color: Input.state.error ? Theme.accent : Theme.faint;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText}
     }
 }

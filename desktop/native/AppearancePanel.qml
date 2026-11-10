@@ -41,7 +41,7 @@ ScrollView {
                 Text {
                     visible: view.nativeFrames && typeof Orbit.nativePaletteSupported!=="undefined" && !Orbit.nativePaletteSupported && Orbit.appearance.themePreset && Orbit.appearance.themePreset!=="custom"
                     Layout.fillWidth:true;Layout.margins:4
-                    text:"Full native window-border colors activate after your next Abstract login."
+                    text:"Full native window-border colors activate after your next Mellipi login."
                     wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(10)
                 }
                 ThemePicker {Layout.fillWidth:true;Layout.leftMargin:4;Layout.rightMargin:4}
@@ -133,7 +133,7 @@ ScrollView {
                 SettingRow { label: "Workspace transitions";enabled: !Orbit.appearance.reducedMotion;SettingToggle { label: "Workspace transitions";checked: Orbit.workspaceMotion;onToggled: Orbit.setPreference("workspaceMotion",checked) } }
                 SettingRow {label:"Reduce motion";Text {text:Orbit.appearance.reducedMotion ? "On" : "Off";color:Theme.muted;font.pixelSize:Theme.fontSize(11)}OrbitButton {objectName:"motionAccessibilityLink";text:"Accessibility…";quiet:true;implicitHeight:28;onClicked:Orbit.openSettingsSection(4)}}
             }
-            Text { text: "Economy uses fewer effects. Rendering changes apply when Abstract next starts.";font.pixelSize: Theme.fontSize(10);color: Theme.faint;Layout.fillWidth: true;wrapMode: Text.Wrap }
+            Text { text: "Economy uses fewer effects. Rendering changes apply when Mellipi next starts.";font.pixelSize: Theme.fontSize(10);color: Theme.faint;Layout.fillWidth: true;wrapMode: Text.Wrap }
         }
         SettingsGroup {
             visible: view.section===0;title: "Application windows"
@@ -142,7 +142,7 @@ ScrollView {
             SettingRow {visible:view.nativeFrames;label:"Theme window borders";SettingToggle {label:"Theme application window borders";checked:Orbit.appearance.matchWindows;onToggled:Orbit.setPreference("matchWindows",checked)}}
             SettingRow { visible: Orbit.isWayland && !view.nativeFrames;label: "Frame";SettingsSegments { value: Orbit.appearance.frameStyle;segmentWidth: 68;options: [{label:"Native",value:"auto"},{label:"Title bar",value:"normal"},{label:"Outline",value:"pixel"}];onSelected: value => Orbit.setPreference("frameStyle",value) } }
             SettingRow { visible: Orbit.isWayland && !view.nativeFrames && Orbit.appearance.frameStyle!=="auto";label: "Border";SettingsSegments { value: Orbit.appearance.frameWidth;segmentWidth: 34;options: [{label:"0",value:0},{label:"1",value:1},{label:"2",value:2},{label:"3",value:3}];onSelected: value => Orbit.setPreference("frameWidth",value) } }
-            Text {visible:view.nativeFrames;Layout.fillWidth:true;Layout.margins:6;text:"Abstract adds a thin matching border while keeping each app’s own titlebar. Older apps also receive integrated window controls.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
+            Text {visible:view.nativeFrames;Layout.fillWidth:true;Layout.margins:6;text:"Mellipi adds a thin matching border while keeping each app’s own titlebar. Older apps also receive integrated window controls.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
         }
         RowLayout {
             Layout.fillWidth: true

@@ -3,7 +3,7 @@
 Installing units while a user manager is already running does not start them.
 Never restart an existing server, enable a unit, undo a mask/disable, or run from
 installation checks, previews or shell recovery. These are distribution units,
-not additional Abstract daemons.
+not additional Mellipi daemons.
 """
 import os,shutil,socket,subprocess
 from pathlib import Path

@@ -11,20 +11,20 @@ On Ubuntu 24.04 amd64, install the two release files together with apt. It resol
 the required libraries, login screen, hardware services and applications:
 
 ```
-sudo apt install ./abstract-shell_0.1.6_amd64.deb ./abstract-desktop_0.1.6_all.deb
+sudo apt install ./mellipi-shell_0.1.8_amd64.deb ./mellipi-desktop_0.1.8_all.deb
 ```
 
 On a machine that already has a desktop/login manager, install only the core
 file. The complete profile is an explicit choice of LightDM plus its small
-Abstract greeter configuration. Standard dpkg conffile handling preserves local
+Mellipi greeter configuration. Standard dpkg conffile handling preserves local
 edits; the existing main greeter configuration and distro PAM files are not
-rewritten. Select Abstract at the next normal login. Run it as the desktop user,
+rewritten. Select Mellipi at the next normal login. Run it as the desktop user,
 never through sudo. For a local TTY start, first log in through the distribution's
-normal PAM getty and run `exec abstract-session` when no other graphical session
+normal PAM getty and run `exec mellipi-session` when no other graphical session
 is active. A working text login remains the recovery path.
 
-`abstract-session --check` is a read-only installation check, including the actual
-Qt layer-shell plugin. `abstract-session --check-login` additionally checks this
+`mellipi-session --check` is a read-only installation check, including the actual
+Qt layer-shell plugin. `mellipi-session --check-login` additionally checks this
 login's private runtime, buses and active local seat. Root installation and SSH
 are not graphical login contexts. Neither diagnostic creates a profile or starts
 a compositor. Driver metadata and a PAM-file check do not certify actual graphics
@@ -89,21 +89,21 @@ python3 tools/qa-clean-install-vm.py run \
   --image .clean-install-cache/ubuntu-24.04-minimal-cloudimg-amd64.img \
   --sha256 IMAGE_SHA256 \
   --workdir /tmp/abstract-vm-full-minimal \
-  --package dist/abstract-shell_0.1.6_amd64.deb \
-  --package dist/abstract-desktop_0.1.6_all.deb \
+  --package dist/mellipi-shell_0.1.8_amd64.deb \
+  --package dist/mellipi-desktop_0.1.8_all.deb \
   --profile full --no-install-recommends --start-desktop --keep-running
 ```
 
 Use a **new empty work directory for each case**. Run cases sequentially on a
-low-memory host. The full profile requires both `abstract-shell` and
-`abstract-desktop`; the core profile requires only `abstract-shell`.
+low-memory host. The full profile requires both `mellipi-shell` and
+`mellipi-desktop`; the core profile requires only `mellipi-shell`.
 
 | Case | Packages | APT behavior |
 | --- | --- | --- |
-| Core minimum | abstract-shell | `--no-install-recommends` |
-| Core normal | abstract-shell | normal recommendations |
-| Full minimum | abstract-shell + abstract-desktop | `--no-install-recommends` |
-| Full normal | abstract-shell + abstract-desktop | normal recommendations |
+| Core minimum | mellipi-shell | `--no-install-recommends` |
+| Core normal | mellipi-shell | normal recommendations |
+| Full minimum | mellipi-shell + mellipi-desktop | `--no-install-recommends` |
+| Full normal | mellipi-shell + mellipi-desktop | normal recommendations |
 
 The script waits up to10minutes for first boot/cloud-init and20minutes for APT.
 Both bounds can be explicitly changed. It uploads packages using its own SSH key,
@@ -157,7 +157,7 @@ Required acceptance beyond automated startup:
    account password. Record actual compositor locked/unlocked state as well as
    screenshots. PAM-file existence alone does not pass this test.
 3. In a separate fresh snapshot, install a supported display manager **inside the
-   VM only**, select Abstract at its greeter, and perform a real password login.
+   VM only**, select Mellipi at its greeter, and perform a real password login.
    Start with LightDM; GDM and SDDM are additional compatibility cases. Do not
    claim a tty1 autologin as greeter acceptance.
 4. Use Ctrl+Alt+F2 in the VM, sign in normally and confirm a usable recovery TTY.

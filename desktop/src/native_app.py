@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Abstract Qt Quick shell for the native desktop and isolated previews."""
+"""Mellipi Qt Quick shell for the native desktop and isolated previews."""
 import argparse, json, os, signal, sys, threading, uuid
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -266,7 +266,7 @@ class Bridge(QObject):
             ('bluetooth','Bluetooth devices','Pair or connect a device','bluetooth','headphones wireless pair battery'),
             ('appearance','Appearance','Theme, colors and desktop layout','preferences-desktop-theme','dark light black theme accent wallpaper'),
             ('shortcuts','Keyboard shortcuts','Find and change keyboard shortcuts','preferences-desktop-keyboard-shortcuts','hotkeys keys bindings'),
-            ('help','Getting around Abstract','Learn where actions are and how to use the desktop','help-browser','help guide how login logout shortcuts'),
+            ('help','Getting around Mellipi','Learn where actions are and how to use the desktop','help-browser','help guide how login logout shortcuts'),
             ('lock','Lock screen','Lock this session; apps stay open','system-lock-screen','lock password privacy'),
             ('logout','Log out','Review apps before returning to the login screen','system-log-out','logout log out sign out login sign in'),
             ('suspend','Sleep','Open the Power menu to confirm sleep','system-suspend','suspend sleep standby'),
@@ -1116,7 +1116,7 @@ class Bridge(QObject):
         if not isinstance(device,dict) or not getattr(self,'systemServices',None):return
         self._deviceNotificationId=getattr(self,'_deviceNotificationId',0)-1
         name=' '.join(str(device.get('name') or 'Removable drive').split())[:100]
-        self.systemServices.receiveNotification(dict(id=self._deviceNotificationId,app='Abstract',summary=name+' connected',body='Open removable devices to mount, open or safely eject it.',actions=[],resident=False,timeout=5000,abstractDevice=True))
+        self.systemServices.receiveNotification(dict(id=self._deviceNotificationId,app='Mellipi',summary=name+' connected',body='Open removable devices to mount, open or safely eject it.',actions=[],resident=False,timeout=5000,abstractDevice=True))
 
     @Slot(object)
     def openNotification(self,note):
@@ -1335,7 +1335,7 @@ def main():
     if args.smoke_test:session_key='smoke-'+uuid.uuid4().hex[:12]
     state_dir=Path(os.environ.get('ORBIT_DATA',str(ROOT/'data')));state_dir.mkdir(parents=True,mode=0o700,exist_ok=True)
     lock=QLockFile(str(state_dir/f'native-{session_key}.lock'))
-    if not lock.tryLock(100): print('Abstract native shell is already running'); return 1
+    if not lock.tryLock(100): print('Mellipi native shell is already running'); return 1
     core.initialize()
     from icon_theme import configure as configure_icons
     configure_icons()
@@ -1555,7 +1555,7 @@ def main():
     else:
         if args.initial_panel: QTimer.singleShot(500,lambda:bridge.showPanel(args.initial_panel))
         if args.screenshot: QTimer.singleShot(1700,capture)
-    print('Abstract native shell ready · Ctrl Alt Space · Ctrl Alt Q to quit',flush=True)
+    print('Mellipi native shell ready · Ctrl Alt Space · Ctrl Alt Q to quit',flush=True)
     result=app.exec()
     bridge.tooltipTimer.stop()
     if events: events.close()

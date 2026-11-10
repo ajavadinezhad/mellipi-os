@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explicit user-side checkout→installed Abstract migration; never overwrite.
+"""Explicit user-side checkout→installed Mellipi migration; never overwrite.
 
 Run when you are ready to switch installation. Existing source files are kept.
 SQLite uses its backup API, so open data is copied consistently. No session,

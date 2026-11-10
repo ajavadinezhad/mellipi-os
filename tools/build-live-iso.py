@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an Abstract-only Ubuntu live/installer ISO inside a disposable QA VM.
+"""Build a Mellipi-only Ubuntu live/installer ISO inside a disposable QA VM.
 
 Never invoke this tool on a workstation. It refuses non-QEMU QA guests and never
 accepts a disk device. Installation choices belong to the interactive installer.
@@ -7,7 +7,7 @@ accepts a disk device. Installation choices belong to the interactive installer.
 import argparse,contextlib,hashlib,json,os,re,shutil,struct,subprocess,time
 from pathlib import Path
 
-ARCHIVE='https://ajavadinezhad.github.io/abstract-os/apt'
+ARCHIVE='https://ajavadinezhad.github.io/mellipi-os/apt'
 FINGERPRINT='7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF'
 CALAMARES_VERSION='3.3.5-0ubuntu4'
 CALAMARES_PARTITION_PATH='usr/lib/x86_64-linux-gnu/calamares/modules/partition/libcalamares_viewmodule_partition.so'
@@ -55,7 +55,7 @@ def apply_calamares_partition_module(root,args):
     return {'module_sha256':digest,'module_bytes':module.stat().st_size,'ubuntu_package':version,'upstream_module_sha256':CALAMARES_STOCK_MODULE_SHA256,'patches':patches,'geometry_regression':geometry,'sdk_versions':provenance.get('sdk_versions',{}),'only_partition_module_replaced':True}
 
 def guard(work):
-    if os.geteuid()!=0:raise SystemExit('Run with sudo inside the disposable Abstract build VM only.')
+    if os.geteuid()!=0:raise SystemExit('Run with sudo inside the disposable Mellipi build VM only.')
     if Path('/etc/hostname').read_text().strip()!='abstract-qa' or not Path('/home/abstract/qa-guest.py').is_file():raise SystemExit('Refusing: this is not the named disposable QA guest.')
     virt=subprocess.check_output(['systemd-detect-virt'],text=True).strip()
     if virt not in ('kvm','qemu'):raise SystemExit('Refusing: QEMU/KVM guest required.')
@@ -178,7 +178,7 @@ tmpOptions:
 ''',
     'localecfg.conf':'{}\n',
     'displaymanager.conf':'''displaymanagers: [ lightdm ]
-defaultDesktopEnvironment: { executable: /usr/bin/abstract-session, desktopFile: abstract }
+defaultDesktopEnvironment: { executable: /usr/bin/mellipi-session, desktopFile: abstract }
 basicSetup: false
 sysconfigSetup: false
 lightdm: { preferred_greeters: [ lightdm-gtk-greeter.desktop ] }
@@ -196,7 +196,7 @@ operations:
     'grubcfg.conf':'overwrite: false\ndefaults: { GRUB_ENABLE_CRYPTODISK: true }\n',
     'initramfs.conf':'kernel: all\nbe_unsafe: false\n',
     'bootloader.conf':'''efiBootLoader: grub
-efiBootloaderId: Abstract
+efiBootloaderId: Mellipi
 grubInstall: grub-install
 grubMkconfig: grub-mkconfig
 grubCfg: /boot/grub/grub.cfg
@@ -223,10 +223,10 @@ script:
 set -eu
 # Calamares invokes this inside its selected target, never in the live system.
 test -f /etc/calamares/settings.conf
-test -x /usr/bin/abstract-session
-rm -f /usr/share/initramfs-tools/scripts/casper-bottom/99abstract-live /etc/initramfs-tools/conf.d/abstract-live
-rm -f /usr/share/applications/abstract-install.desktop /usr/share/applications/calamares.desktop
-rm -f /etc/skel/Desktop/abstract-install.desktop /usr/bin/abstract-install /usr/lib/abstract/iso-installer-root /usr/lib/abstract/iso-check-target
+test -x /usr/bin/mellipi-session
+rm -f /usr/share/initramfs-tools/scripts/casper-bottom/99mellipi-live /etc/initramfs-tools/conf.d/mellipi-live
+rm -f /usr/share/applications/mellipi-install.desktop /usr/share/applications/calamares.desktop
+rm -f /etc/skel/Desktop/mellipi-install.desktop /usr/bin/mellipi-install /usr/lib/abstract/iso-installer-root /usr/lib/abstract/iso-check-target
 rm -f /etc/sudoers.d/casper /etc/lightdm/lightdm.conf
 rm -f /etc/ssh/ssh_host_* /var/lib/systemd/random-seed
 : > /etc/machine-id
@@ -267,16 +267,16 @@ sidebar: widget
 navigation: widget
 slideshow: [ abstract.svg ]
 strings:
-  productName: Abstract
-  shortProductName: Abstract
+  productName: Mellipi
+  shortProductName: Mellipi
   version: "{version}"
   shortVersion: "{version}"
-  versionedName: "Abstract {version}"
-  shortVersionedName: "Abstract {version}"
-  bootloaderEntryName: Abstract
-  productUrl: https://ajavadinezhad.github.io/abstract-os/
-  supportUrl: https://github.com/ajavadinezhad/abstract-os/issues
-  knownIssuesUrl: https://github.com/ajavadinezhad/abstract-os/issues
+  versionedName: "Mellipi {version}"
+  shortVersionedName: "Mellipi {version}"
+  bootloaderEntryName: Mellipi
+  productUrl: https://ajavadinezhad.github.io/mellipi-os/
+  supportUrl: https://github.com/ajavadinezhad/mellipi-os/issues
+  knownIssuesUrl: https://github.com/ajavadinezhad/mellipi-os/issues
 images:
   productIcon: abstract.svg
   productLogo: abstract.svg
@@ -298,20 +298,25 @@ def install(work,root,args):
     resolv=root/'etc/resolv.conf'
     if resolv.is_symlink():resolv.unlink()
     shutil.copyfile('/etc/resolv.conf',resolv)
-    key=root/'etc/apt/keyrings/abstract-archive-keyring.gpg';key.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(args.keyring,key)
+    key=root/'etc/apt/keyrings/mellipi-archive-keyring.gpg';key.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(args.keyring,key)
     info=subprocess.check_output(['gpg','--batch','--with-colons','--show-keys',str(key)],text=True)
     assert len([r for r in info.splitlines() if r.startswith('pub:')])==1
     assert next(r.split(':')[9] for r in info.splitlines() if r.startswith('fpr:'))==FINGERPRINT
     key.chmod(0o644)
-    write(root,'etc/apt/sources.list.d/abstract.sources',f'Types: deb\nURIs: {ARCHIVE}\nSuites: noble\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/abstract-archive-keyring.gpg\n')
+    write(root,'etc/apt/sources.list.d/mellipi.sources',f'Types: deb\nURIs: {ARCHIVE}\nSuites: noble\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/mellipi-archive-keyring.gpg\n')
+    (root/'etc/apt/sources.list.d/abstract.sources').unlink(missing_ok=True)
     copied=[];package_inputs={}
-    for name,package in [('abstract-shell',args.core_deb),('abstract-desktop',args.desktop_deb)]:
+    for name,package in [('mellipi-shell',args.core_deb),('mellipi-desktop',args.desktop_deb)]:
         found=subprocess.check_output(['dpkg-deb','-f',str(package),'Package'],text=True).strip();assert found==name
         version=subprocess.check_output(['dpkg-deb','-f',str(package),'Version'],text=True).strip();assert version==args.version
-        arch=subprocess.check_output(['dpkg-deb','-f',str(package),'Architecture'],text=True).strip();assert arch==('amd64' if name=='abstract-shell' else 'all')
+        arch=subprocess.check_output(['dpkg-deb','-f',str(package),'Architecture'],text=True).strip();assert arch==('amd64' if name=='mellipi-shell' else 'all')
         with Path(package).open('rb') as stream:package_inputs[name]={'version':version,'architecture':arch,'sha256':hashlib.file_digest(stream,'sha256').hexdigest()}
         target=root/'tmp'/Path(package).name;target.parent.mkdir(exist_ok=True);shutil.copyfile(package,target);copied.append('/tmp/'+target.name)
     with mounts(root):
+        # The new project endpoint is enrolled in the image; local builds use
+        # only signed Ubuntu indexes and the explicitly verified .deb pair.
+        project_source=root/'etc/apt/sources.list.d/mellipi.sources'
+        project_source.rename(project_source.with_suffix('.pending'))
         chroot(root,'apt-get','-o','APT::Update::Error-Mode=any','update')
         chroot(root,'apt-get','-y','--no-install-recommends','install',*BASE_PACKAGES,*copied)
         # Private QA candidates can be rebuilt at the same unpublished version.
@@ -320,6 +325,7 @@ def install(work,root,args):
         chroot(root,'update-alternatives','--set','x-terminal-emulator','/usr/bin/foot')
         write(root,'etc/locale.gen','en_US.UTF-8 UTF-8\n');chroot(root,'locale-gen')
         chroot(root,'update-locale','LANG=en_US.UTF-8')
+        project_source.with_suffix('.pending').rename(project_source)
         configure_installer(root,args.version)
         configure_live(root,args.version)
         chroot(root,'update-initramfs','-u','-k','all')
@@ -338,18 +344,20 @@ def install(work,root,args):
     (root/'etc/machine-id').write_text('')
     (root/'var/lib/dbus/machine-id').unlink(missing_ok=True);(root/'var/lib/dbus/machine-id').symlink_to('/etc/machine-id')
     (root/'var/lib/systemd/random-seed').unlink(missing_ok=True)
-    (work/'installed.json').write_text(json.dumps({'version':args.version,'rootfs':str(root),'base':'Ubuntu 24.04 noble minbase','only_desktop':'Abstract','package_inputs':package_inputs},indent=2)+'\n')
+    (work/'installed.json').write_text(json.dumps({'version':args.version,'rootfs':str(root),'base':'Ubuntu 24.04 noble minbase','only_desktop':'Mellipi','package_inputs':package_inputs},indent=2)+'\n')
 
 def configure_live(root,version):
-    write(root,'etc/hostname','abstract-live\n')
-    write(root,'etc/hosts','127.0.0.1 localhost\n127.0.1.1 abstract-live\n::1 localhost ip6-localhost ip6-loopback\n')
-    write(root,'etc/casper.conf','export USERNAME="abstract"\nexport USERFULLNAME="Abstract live session"\nexport HOST="abstract-live"\nexport BUILD_SYSTEM="Ubuntu"\nexport FLAVOUR="Abstract"\n')
-    write(root,'etc/initramfs-tools/conf.d/abstract-live','export CASPER_GENERATE_UUID=1\n')
-    write(root,'etc/abstract-release',f'Abstract {version}\nBase: Ubuntu 24.04 noble\n')
+    for name in ('etc/abstract-release','etc/initramfs-tools/conf.d/abstract-live','usr/share/initramfs-tools/scripts/casper-bottom/99abstract-live','usr/bin/abstract-install','usr/share/applications/abstract-install.desktop','etc/skel/Desktop/abstract-install.desktop'):
+        (root/name).unlink(missing_ok=True)
+    write(root,'etc/hostname','mellipi-live\n')
+    write(root,'etc/hosts','127.0.0.1 localhost\n127.0.1.1 mellipi-live\n::1 localhost ip6-localhost ip6-loopback\n')
+    write(root,'etc/casper.conf','export USERNAME="mellipi"\nexport USERFULLNAME="Mellipi live session"\nexport HOST="mellipi-live"\nexport BUILD_SYSTEM="Ubuntu"\nexport FLAVOUR="Mellipi"\n')
+    write(root,'etc/initramfs-tools/conf.d/mellipi-live','export CASPER_GENERATE_UUID=1\n')
+    write(root,'etc/mellipi-release',f'Mellipi {version}\nBase: Ubuntu 24.04 noble\n')
     write(root,'etc/lightdm/lightdm.conf.d/50-abstract-session.conf','[Seat:*]\nuser-session=abstract\nautologin-session=abstract\nallow-guest=false\n')
     write(root,'etc/X11/default-display-manager','/usr/sbin/lightdm\n')
     write(root,'etc/NetworkManager/conf.d/90-abstract-managed.conf','[ifupdown]\nmanaged=true\n[keyfile]\nunmanaged-devices=\n')
-    write(root,'etc/default/grub','GRUB_DEFAULT=0\nGRUB_TIMEOUT=3\nGRUB_DISTRIBUTOR="Abstract"\nGRUB_CMDLINE_LINUX_DEFAULT="quiet"\nGRUB_CMDLINE_LINUX=""\n')
+    write(root,'etc/default/grub','GRUB_DEFAULT=0\nGRUB_TIMEOUT=3\nGRUB_DISTRIBUTOR="Mellipi"\nGRUB_CMDLINE_LINUX_DEFAULT="quiet"\nGRUB_CMDLINE_LINUX=""\n')
     for link,target in [('etc/systemd/system/default.target','/lib/systemd/system/graphical.target'),('etc/systemd/system/display-manager.service','/lib/systemd/system/lightdm.service')]:
         path=root/link;path.parent.mkdir(parents=True,exist_ok=True);path.unlink(missing_ok=True);path.symlink_to(target)
     prefs={'pins':['org.codeberg.dnkl.foot.desktop','thunar.desktop','org.xfce.mousepad.desktop','org.gnome.Epiphany.desktop'],'density':'compact','themePreset':'forest','mode':'dark','darkLevel':'normal','accent':'#b8d893','backgroundColor':'#111a14','wallpaper':'theme-forest','taskbarLength':'fit','taskbarFloating':True}
@@ -374,10 +382,10 @@ exit 1
 LIVELOCK
 chmod 0755 /root/usr/lib/abstract/.lock-runtime/bin/swaylock
 '''
-    write(root,'usr/share/initramfs-tools/scripts/casper-bottom/99abstract-live',hook,0o755)
-    write(root,'usr/bin/abstract-install','''#!/bin/sh
+    write(root,'usr/share/initramfs-tools/scripts/casper-bottom/99mellipi-live',hook,0o755)
+    write(root,'usr/bin/mellipi-install','''#!/bin/sh
 set -eu
-case " $(cat /proc/cmdline) " in *" boot=casper "*) ;; *) echo 'Run the installer from the Abstract live USB.' >&2; exit 1;; esac
+case " $(cat /proc/cmdline) " in *" boot=casper "*) ;; *) echo 'Run the installer from the Mellipi live USB.' >&2; exit 1;; esac
 exec sudo -- /usr/lib/abstract/iso-installer-root "${XDG_RUNTIME_DIR:?Start the installer from the live desktop}" "${WAYLAND_DISPLAY:?Start the installer from the live desktop}"
 ''',0o755)
     write(root,'usr/lib/abstract/iso-installer-root','''#!/usr/bin/python3
@@ -402,10 +410,10 @@ def display_socket(runtime,display,uid):
 
 def main():
     if os.geteuid()!=0 or len(sys.argv)!=3 or 'boot=casper' not in Path('/proc/cmdline').read_text().split():
-        raise SystemExit('Start Install Abstract from the live desktop.')
+        raise SystemExit('Start Install Mellipi from the live desktop.')
     try:socket=display_socket(sys.argv[1],sys.argv[2],int(os.environ.get('SUDO_UID','-1')))
     except (OSError,ValueError):raise SystemExit('The live desktop display is unavailable.')
-    with tempfile.TemporaryDirectory(prefix='abstract-installer-',dir='/run') as runtime:
+    with tempfile.TemporaryDirectory(prefix='mellipi-installer-',dir='/run') as runtime:
         os.chmod(runtime,0o700)
         environment=dict(os.environ)
         for key in ('DISPLAY','XAUTHORITY','DBUS_SESSION_BUS_ADDRESS','QT_PLUGIN_PATH','QML2_IMPORT_PATH','PYTHONPATH','LD_LIBRARY_PATH'):
@@ -415,9 +423,9 @@ def main():
 
 if __name__=='__main__':sys.exit(main())
 ''',0o755)
-    desktop='[Desktop Entry]\nType=Application\nName=Install Abstract\nComment=Choose a disk and install Abstract on this computer\nExec=/usr/bin/abstract-install\nIcon=system-software-install\nTerminal=false\nCategories=System;\nStartupWMClass=calamares\n'
-    write(root,'usr/share/applications/abstract-install.desktop',desktop)
-    write(root,'etc/skel/Desktop/abstract-install.desktop',desktop,0o755)
+    desktop='[Desktop Entry]\nType=Application\nName=Install Mellipi\nComment=Choose a disk and install Mellipi on this computer\nExec=/usr/bin/mellipi-install\nIcon=system-software-install\nTerminal=false\nCategories=System;\nStartupWMClass=calamares\n'
+    write(root,'usr/share/applications/mellipi-install.desktop',desktop)
+    write(root,'etc/skel/Desktop/mellipi-install.desktop',desktop,0o755)
     (root/'usr/share/applications/calamares.desktop').unlink(missing_ok=True)
 
 def image(work,root,args):
@@ -444,11 +452,11 @@ def image(work,root,args):
     identifiers=list(audit.rglob('uuid.conf'));assert len(identifiers)==1,identifiers
     identifier=identifiers[0].read_text().strip();assert re.fullmatch(r'[a-fA-F0-9-]{36}',identifier)
     write(target,'.disk/casper-uuid-generic',identifier+'\n')
-    write(target,'.disk/info','Abstract '+args.version+' Ubuntu noble amd64 live/installer\n')
+    write(target,'.disk/info','Mellipi '+args.version+' Ubuntu noble amd64 live/installer\n')
     shutil.rmtree(audit)
     write(target,'boot/grub/grub.cfg',f'''set default=0
 set timeout=5
-menuentry "Try or install Abstract {args.version}" {{
+menuentry "Try or install Mellipi {args.version}" {{
     linux /casper/vmlinuz boot=casper quiet noprompt noeject ---
     initrd /casper/initrd
 }}
@@ -457,7 +465,7 @@ menuentry "Power off" {{ halt }}
 ''')
     with (target/'casper/filesystem.manifest').open('w') as output:
         chroot(root,'dpkg-query','-W','--showformat=${Package} ${Version}\n',stdout=output)
-    manifest=(target/'casper/filesystem.manifest').read_text();assert 'abstract-shell ' in manifest
+    manifest=(target/'casper/filesystem.manifest').read_text();assert 'mellipi-shell ' in manifest
     (target/'casper/filesystem.manifest-desktop').write_text('\n'.join(line for line in manifest.splitlines() if not line.startswith(('casper ','calamares ')))+'\n')
     size=int(subprocess.check_output(['du','-sx','--block-size=1',str(root)],text=True).split()[0]);write(target,'casper/filesystem.size',str(size)+'\n')
     squash=target/'casper/filesystem.squashfs'
@@ -469,16 +477,16 @@ menuentry "Power off" {{ halt }}
             with path.open('rb') as stream:value=hashlib.file_digest(stream,'md5').hexdigest()
             sums.append(value+'  ./'+str(path.relative_to(target)))
     write(target,'md5sum.txt','\n'.join(sums)+'\n')
-    output=work/f'abstract-{args.version}-noble-amd64.iso'
+    output=work/f'mellipi-{args.version}-noble-amd64.iso'
     if output.exists():raise SystemExit('Refusing to overwrite an existing ISO.')
-    run(['grub-mkrescue','-o',output,target,'-V','ABSTRACT_'+args.version.replace('.','_')])
+    run(['grub-mkrescue','-o',output,target,'-V','MELLIPI_'+args.version.replace('.','_')])
     with output.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
-    report={'compression':{'format':'zstd','level':6,'processors':1,'memory_mib':512},'iso':output.name,'bytes':output.stat().st_size,'sha256':digest,'kernel':kernel,'base':'debootstrap Ubuntu24.04 noble minbase','only_desktop':'Abstract','user_accounts_embedded':False,'ssh_server_embedded':False,'secure_boot':'unsupported; unsigned GRUB rescue loader','boot_tested':False,'installation_tested':False,'built_inside_disposable_guest':True,'package_inputs':json.loads((work/'installed.json').read_text()).get('package_inputs',{})}
+    report={'compression':{'format':'zstd','level':6,'processors':1,'memory_mib':512},'iso':output.name,'bytes':output.stat().st_size,'sha256':digest,'kernel':kernel,'base':'debootstrap Ubuntu24.04 noble minbase','only_desktop':'Mellipi','user_accounts_embedded':False,'ssh_server_embedded':False,'secure_boot':'unsupported; unsigned GRUB rescue loader','boot_tested':False,'installation_tested':False,'built_inside_disposable_guest':True,'package_inputs':json.loads((work/'installed.json').read_text()).get('package_inputs',{})}
     report['calamares_partition_override']=calamares_override
     write(work,'iso-build-report.json',json.dumps(report,indent=2)+'\n');write(work,'SHA256SUMS',digest+'  '+output.name+'\n');print(json.dumps(report),flush=True)
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--workdir',type=Path,required=True);parser.add_argument('--core-deb',type=Path,required=True);parser.add_argument('--desktop-deb',type=Path,required=True);parser.add_argument('--keyring',type=Path,required=True);parser.add_argument('--version',default='0.1.7');parser.add_argument('--mirror',default='https://archive.ubuntu.com/ubuntu');parser.add_argument('--security-mirror',default='https://security.ubuntu.com/ubuntu');parser.add_argument('--phase',choices=('bootstrap','install','image','all'),default='all')
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--workdir',type=Path,required=True);parser.add_argument('--core-deb',type=Path,required=True);parser.add_argument('--desktop-deb',type=Path,required=True);parser.add_argument('--keyring',type=Path,required=True);parser.add_argument('--version',default='0.1.8');parser.add_argument('--mirror',default='https://archive.ubuntu.com/ubuntu');parser.add_argument('--security-mirror',default='https://security.ubuntu.com/ubuntu');parser.add_argument('--phase',choices=('bootstrap','install','image','all'),default='all')
     parser.add_argument('--calamares-partition-module',type=Path);parser.add_argument('--calamares-partition-sha256');parser.add_argument('--calamares-partition-provenance',type=Path);args=parser.parse_args()
     module_inputs=(args.calamares_partition_module,args.calamares_partition_sha256,args.calamares_partition_provenance)
     if (any(module_inputs) and not all(module_inputs)) or (args.phase in ('image','all') and not all(module_inputs)):

@@ -12,7 +12,7 @@ spec=importlib.util.spec_from_file_location('live_iso_builder',ROOT/'tools/build
 class BuildBoundaryTest(unittest.TestCase):
  def test_unprivileged_invocation_stops_before_any_directory_creation(self):
   with mock.patch.object(builder.os,'geteuid',return_value=1000),mock.patch.object(Path,'mkdir') as mkdir:
-   with self.assertRaisesRegex(SystemExit,'disposable Abstract build VM'):builder.guard('/home/abstract/abstract-iso/build')
+   with self.assertRaisesRegex(SystemExit,'disposable Mellipi build VM'):builder.guard('/home/abstract/abstract-iso/build')
    mkdir.assert_not_called()
  def test_root_on_another_host_cannot_start_build(self):
   with mock.patch.object(builder.os,'geteuid',return_value=0),mock.patch.object(Path,'read_text',return_value='workstation\n'),mock.patch.object(Path,'mkdir') as mkdir,mock.patch.object(builder.subprocess,'check_output') as command:
@@ -80,21 +80,21 @@ class InstallerDefaultsTest(unittest.TestCase):
  def test_live_lock_override_does_not_disable_installed_lock_defaults(self):
   prefs=json.loads((self.root/'etc/skel/.config/abstract/settings.json').read_text());self.assertNotIn('idleLockEnabled',prefs);self.assertNotIn('lockBeforeSleep',prefs)
   self.assertIn('org.codeberg.dnkl.foot.desktop',prefs['pins']);self.assertEqual(prefs['wallpaper'],'theme-forest')
-  hook=(self.root/'usr/share/initramfs-tools/scripts/casper-bottom/99abstract-live').read_text();self.assertIn('"idleLockEnabled": false',hook);self.assertIn('"lockBeforeSleep": false',hook)
+  hook=(self.root/'usr/share/initramfs-tools/scripts/casper-bottom/99mellipi-live').read_text();self.assertIn('"idleLockEnabled": false',hook);self.assertIn('"lockBeforeSleep": false',hook)
   self.assertIn('Locking is unavailable in the password-free live session.',hook)
-  cleanup=(self.root/'usr/lib/abstract/iso-target-cleanup').read_text();self.assertIn('casper-bottom/99abstract-live',cleanup)
+  cleanup=(self.root/'usr/lib/abstract/iso-target-cleanup').read_text();self.assertIn('casper-bottom/99mellipi-live',cleanup)
   self.assertFalse((self.root/'home/abstract').exists())
  def test_target_mounts_and_uuid_settings_are_present(self):
   mounts=self.module('mount.conf')['extraMounts'];self.assertTrue({'/proc','/sys','/dev','/run','/run/udev','/sys/firmware/efi/efivars'}.issubset({m['mountPoint'] for m in mounts}))
   self.assertIn('default',self.module('fstab.conf')['tmpOptions'])
-  self.assertEqual((self.root/'etc/initramfs-tools/conf.d/abstract-live').read_text(),'export CASPER_GENERATE_UUID=1\n')
+  self.assertEqual((self.root/'etc/initramfs-tools/conf.d/mellipi-live').read_text(),'export CASPER_GENERATE_UUID=1\n')
  def test_required_branding_slideshow_and_images_resolve(self):
   directory=self.root/'etc/calamares/branding/abstract';branding=yaml.safe_load((directory/'branding.desc').read_text())
   self.assertEqual(branding['slideshow'],['abstract.svg'])
   for name in [*branding['slideshow'],*branding['images'].values()]:self.assertTrue((directory/name).is_file(),name)
  def test_installer_entry_has_no_unattended_partition_command(self):
-  entry=(self.root/'usr/share/applications/abstract-install.desktop').read_text();self.assertIn('Exec=/usr/bin/abstract-install',entry)
-  launcher=(self.root/'usr/bin/abstract-install').read_text();self.assertIn('boot=casper',launcher);self.assertIn('/usr/lib/abstract/iso-installer-root',launcher)
+  entry=(self.root/'usr/share/applications/mellipi-install.desktop').read_text();self.assertIn('Exec=/usr/bin/mellipi-install',entry)
+  launcher=(self.root/'usr/bin/mellipi-install').read_text();self.assertIn('boot=casper',launcher);self.assertIn('/usr/lib/abstract/iso-installer-root',launcher)
   self.assertNotIn('mkfs',launcher);self.assertNotIn('parted',launcher)
  def installer_helper(self):
   namespace={'__name__':'abstract_installer_helper_test'}

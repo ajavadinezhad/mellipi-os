@@ -29,7 +29,7 @@ job=json.loads(Path(sys.argv[1]).read_text());a=QApplication([]);w=QWidget();w.s
 if job['operation']=='typing':
  edit=QLineEdit(w);edit.setGeometry(5,5,170,35);edit.show();edit.setFocus();Path(job['result']).write_text('');edit.textChanged.connect(lambda text:Path(job['result']).write_text(text))
 mode=QClipboard.Selection if job.get('primary') else QClipboard.Clipboard
-payload=job.get('payload','Abstract retained text')
+payload=job.get('payload','Mellipi retained text')
 def tick():
  global done
  if job['operation']=='typing' or done or not Path(job['gate']).exists():return
@@ -37,7 +37,7 @@ def tick():
   if job.get('sensitive'):
    data=QMimeData();data.setText(payload);data.setData('x-kde-passwordManagerHint',b'secret');a.clipboard().setMimeData(data,mode)
   elif job.get('file'):
-   data=QMimeData();data.setData('x-special/gnome-copied-files',payload.encode());data.setData('text/uri-list',payload.split('\n',1)[1].encode());data.setText('/tmp/Abstract file.txt');a.clipboard().setMimeData(data,mode)
+   data=QMimeData();data.setData('x-special/gnome-copied-files',payload.encode());data.setData('text/uri-list',payload.split('\n',1)[1].encode());data.setText('/tmp/Mellipi file.txt');a.clipboard().setMimeData(data,mode)
   else:a.clipboard().setText(payload,mode)
   Path(job['result']).write_text('ready');done=True
  else:
@@ -114,14 +114,14 @@ def main():
                 assert row,'Source fixture window missing'
                 client.request('close',id=int(row['id']));wait(lambda:process.poll() is not None)
             for platform in ('wayland','xcb'):
-                payload='Abstract survives source exit '+platform+' ✓'
+                payload='Mellipi survives source exit '+platform+' ✓'
                 writer,_=app('write',platform,payload=payload);time.sleep(.2);close_source(writer);time.sleep(.1)
                 reader,result=app('read',payload=payload);assert result.read_text()==payload,result.read_bytes();stop(reader)
                 print('PASS '+platform+' copied UTF8 text survives source exit',flush=True)
             writer,_=app('write',primary=True,payload='Primary selection survives focus');reader,result=app('read',primary=True)
             assert result.read_text()=='Primary selection survives focus';stop(reader);stop(writer)
             print('PASS independent Wayland primary-selection transfer',flush=True)
-            payload='cut\nfile:///tmp/Abstract%20file.txt'
+            payload='cut\nfile:///tmp/Mellipi%20file.txt'
             writer,_=app('write',file=True,payload=payload);time.sleep(.2);close_source(writer);time.sleep(.1)
             reader,result=app('read',mime='x-special/gnome-copied-files');assert result.read_text()==payload;stop(reader)
             reader,result=app('read',mime='text/uri-list');assert result.read_text()==payload.split('\n',1)[1];stop(reader)

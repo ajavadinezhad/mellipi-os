@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a public Abstract archive using private APT state; never installs."""
+"""Verify a public Mellipi archive using private APT state; never installs."""
 import argparse,hashlib,json,os,re,subprocess,tempfile,urllib.parse,urllib.request
 from pathlib import Path
 
@@ -13,7 +13,7 @@ def verify(url,fingerprint):
     if not re.fullmatch(r'[A-F0-9]{40}',fingerprint):raise ValueError('Full reviewed primary fingerprint required')
     with tempfile.TemporaryDirectory(prefix='abstract-public-apt-check-') as directory:
         work=Path(directory);key=work/'archive.gpg'
-        with urllib.request.urlopen(url.rstrip('/')+'/abstract-archive-keyring.gpg',timeout=30) as response:key.write_bytes(response.read(1048576))
+        with urllib.request.urlopen(url.rstrip('/')+'/mellipi-archive-keyring.gpg',timeout=30) as response:key.write_bytes(response.read(1048576))
         home=work/'gnupg';home.mkdir(mode=0o700)
         info=run(['gpg','--homedir',str(home),'--batch','--with-colons','--show-keys',str(key)])
         assert len([r for r in info.splitlines() if r.startswith('pub:')])==1
@@ -24,7 +24,7 @@ def verify(url,fingerprint):
         options=[item for value in values for item in ('-o',value)]
         run(['apt-get',*options,'update'])
         packages={}
-        for package in ('abstract-shell','abstract-desktop'):
+        for package in ('mellipi-shell','mellipi-desktop'):
             policy=run(['apt-cache',*options,'policy',package]);candidate=re.search(r'Candidate: (\S+)',policy);assert candidate and candidate[1]!='(none)',policy
             version=candidate[1];run(['apt-get',*options,'download',package+'='+version],cwd=work/'downloads')
             path=next((work/'downloads').glob(package+'_*.deb'));packages[package]={'candidate':version,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'bytes':path.stat().st_size}

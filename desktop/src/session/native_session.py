@@ -87,7 +87,7 @@ def check(environment=None,login=False):
     from session.preflight import inspect
     prerequisites=inspect(env,phase='login' if login else 'install')
     issues.extend(prerequisites['issues'])
-    return {'ok':not issues,'issues':issues,'warnings':prerequisites['warnings'],'prerequisites':prerequisites,'readiness_scope':'login' if login else 'installation','preflight':preflight,'hardware_validated':False,'changes_active_session':False,'login_entry':'Abstract' if env.get('ORBIT_INSTALLED_SESSION')=='1' else 'Abstract (Experimental)','current_graphical_session':graphical_session(env)}
+    return {'ok':not issues,'issues':issues,'warnings':prerequisites['warnings'],'prerequisites':prerequisites,'readiness_scope':'login' if login else 'installation','preflight':preflight,'hardware_validated':False,'changes_active_session':False,'login_entry':'Mellipi' if env.get('ORBIT_INSTALLED_SESSION')=='1' else 'Mellipi (Experimental)','current_graphical_session':graphical_session(env)}
 
 def wait_ready(process,log,timeout=20):
     selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ);buffer=b'';deadline=time.monotonic()+timeout
@@ -134,10 +134,10 @@ def transfer_previous_state(environment,nested=False):
     try:
         from state_handoff import consume
         result=consume(environment)
-        if result['copied']:print('Abstract: previous desktop state transferred',flush=True)
-        if result['preserved']:print('Abstract: destination edits preserved during state handoff',flush=True)
+        if result['copied']:print('Mellipi: previous desktop state transferred',flush=True)
+        if result['preserved']:print('Mellipi: destination edits preserved during state handoff',flush=True)
     except (OSError,ValueError,KeyError,TypeError,sqlite3.Error) as error:
-        print('Abstract: previous state could not be fully transferred: '+str(error)[:180],file=sys.stderr,flush=True)
+        print('Mellipi: previous state could not be fully transferred: '+str(error)[:180],file=sys.stderr,flush=True)
 
 def stop_owned(process):
     if process is None or process.poll() is not None:return
@@ -150,7 +150,7 @@ def stop_owned(process):
         process.wait(timeout=2)
 
 def run(nested=False,no_shell=False,qa_seconds=None):
-    if not nested and graphical_session(os.environ):raise RuntimeError('A graphical desktop is already running. Keep apps open; use --check or --nested here. Native DRM login starts only after deliberately logging out and choosing Abstract.')
+    if not nested and graphical_session(os.environ):raise RuntimeError('A graphical desktop is already running. Keep apps open; use --check or --nested here. Native DRM login starts only after deliberately logging out and choosing Mellipi.')
     if nested and not graphical_session(os.environ):raise RuntimeError('Nested preview needs an existing graphical session.')
     report=check(login=not nested)
     if not report['ok']:raise RuntimeError('\n'.join(report['issues']))
@@ -203,7 +203,7 @@ def run(nested=False,no_shell=False,qa_seconds=None):
                     autostart.update_activation_environment()
                     from session.audiostart import start_enabled_audio
                     audio_start=start_enabled_audio(environment)
-                    if not audio_start['ok']:print('Abstract audio: '+audio_start['reason'],file=sys.stderr,flush=True)
+                    if not audio_start['ok']:print('Mellipi audio: '+audio_start['reason'],file=sys.stderr,flush=True)
                     from session import portal_service
                     portal=portal_service.backend_command(ROOT)
                     autostart.refresh_portals_at_login(environment,local_backend=bool(portal))
@@ -246,7 +246,7 @@ def main():
     if args.qa_seconds is not None and (not args.nested or not args.no_shell or not 0<args.qa_seconds<=60):parser.error('--qa-seconds requires --nested --no-shell and a duration up to 60 seconds')
     if args.nested and not args.no_shell and not os.environ.get('ORBIT_NATIVE_NESTED_BUS'):
         bus=shutil.which('dbus-run-session')
-        if not bus:print('Abstract: dbus-run-session is required for a safely isolated nested shell',file=sys.stderr);return 1
+        if not bus:print('Mellipi: dbus-run-session is required for a safely isolated nested shell',file=sys.stderr);return 1
         environment=dict(os.environ,ORBIT_NATIVE_NESTED_BUS='1')
         os.execvpe(bus,[bus,'--','/usr/bin/python3',str(Path(__file__).resolve()),*sys.argv[1:]],environment)
     try:
@@ -256,5 +256,5 @@ def main():
                 try:return run(args.nested,args.no_shell,args.qa_seconds)
                 finally:os.environ.pop('ORBIT_DATA',None)
         return run(args.nested,args.no_shell,args.qa_seconds)
-    except (OSError,RuntimeError,TimeoutError,ValueError) as error:print('Abstract: '+str(error),file=sys.stderr);return 1
+    except (OSError,RuntimeError,TimeoutError,ValueError) as error:print('Mellipi: '+str(error),file=sys.stderr);return 1
 if __name__=='__main__':sys.exit(main())

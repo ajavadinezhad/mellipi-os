@@ -17,7 +17,7 @@ QtObject {
     onGeometryChanged: dock=Orbit.dockForWidth(geometry.width)
     property Timer clockTimer: Timer {interval: 60000;repeat: true;running: output.ready;onTriggered: output.now=new Date()}
     property Window desktop: Window {
-        objectName: "secondaryDesktopSurface";title: "Abstract — Desktop"
+        objectName: "secondaryDesktopSurface";title: "Mellipi — Desktop"
         property string orbitOutputName: output.screenName
         property bool desktopIconsEnabled: Orbit.appearance.desktopIcons
         property bool desktopEditing: false
@@ -36,7 +36,7 @@ QtObject {
 
     }
     property Window topbar: Window {
-        objectName: "secondaryTopbarSurface";title: "Abstract — Top panel"
+        objectName: "secondaryTopbarSurface";title: "Mellipi — Top panel"
         property string orbitOutputName: output.screenName
         x: output.barGeometry.x;y: output.barGeometry.y;width: output.barGeometry.width;height: output.barGeometry.height
         visible: output.ready && Orbit.surfacesReady;color: "transparent"
@@ -45,14 +45,14 @@ QtObject {
         FoldTopbar {visible: !Theme.fold;width: parent.width;height: Theme.compact ? 30 : 38;clockText: output.clock;screenWidth: output.geometry.width;outputName: output.screenName}
     }
     property Window reserve: Window {
-        objectName: "secondaryDockReserveSurface";title: "Abstract — Dock reserve"
+        objectName: "secondaryDockReserveSurface";title: "Mellipi — Dock reserve"
         property string orbitOutputName: output.screenName
         x: output.geometry.x+output.geometry.width/2;y: output.geometry.y+output.geometry.height-1;width: 1;height: 1
         visible: output.ready && Orbit.surfacesReady && !Theme.fold;color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
     }
     property Window dockWindow: Window {
-        id: edge;objectName: "secondaryDockSurface";title: "Abstract — Dock"
+        id: edge;objectName: "secondaryDockSurface";title: "Mellipi — Dock"
         property string orbitOutputName: output.screenName
         x: output.geometry.x+(Orbit.appearance.dockAlign==="left" ? 12 : Orbit.appearance.dockAlign==="right" ? output.geometry.width-width-12 : (output.geometry.width-width)/2)
         y: output.geometry.y+output.geometry.height-height-10;width: output.dock.surfaceWidth;height: output.dock.surfaceHeight
@@ -69,7 +69,7 @@ QtObject {
             onHeightChanged: Orbit.maskSecondaryDock(edge,Math.floor(x),Math.floor(y),Math.ceil(width),Math.ceil(height))
             Row {
                 x: output.dock.padding;anchors.verticalCenter: body.verticalCenter;spacing: output.dock.gap
-                DockToolButton {kind: Theme.fold ? "fold" : "apps";width: output.dock.slot;height: Theme.compact ? 38 : 50;Accessible.name: "Open Abstract";onClicked: Orbit.showPanelOn("launcher",output.screenName)}
+                DockToolButton {kind: Theme.fold ? "fold" : "apps";width: output.dock.slot;height: Theme.compact ? 38 : 50;Accessible.name: "Open Mellipi";onClicked: Orbit.showPanelOn("launcher",output.screenName)}
                 Repeater {
                     model: Orbit.dockApps.slice(0,output.dock.capacity)
                     OrbitButton {

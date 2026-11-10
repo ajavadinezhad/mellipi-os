@@ -2,7 +2,7 @@
 import re
 
 LABELS={
-    'launcher':'Open Abstract','quick':'Quick settings','screenshot':'Screenshot','terminal':'Terminal',
+    'launcher':'Open Mellipi','quick':'Quick settings','screenshot':'Screenshot','terminal':'Terminal',
     'volume-up':'Volume up','volume-down':'Volume down','volume-mute':'Output mute',
     'microphone-mute':'Microphone mute','media-play-pause':'Play / pause','media-next':'Next track','media-previous':'Previous track',
     'brightness-up':'Brightness up','brightness-down':'Brightness down',

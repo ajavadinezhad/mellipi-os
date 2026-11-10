@@ -26,7 +26,7 @@ from pathlib import Path
 root=Path(sys.argv[1]);preview=sys.argv[2]=='1'
 files={
  '/usr/local/bin/orbit-native-session':('#!/bin/sh\n# Independent experimental native login session.\nexec '+shlex.quote(str(root/'run-native-session.sh'))+' "$@"\n',0o755),
- '/usr/share/wayland-sessions/orbit-native.desktop':('[Desktop Entry]\nName=Abstract (Experimental)\nComment=Abstract native DRM/KMS desktop with workspace animation\nExec=/usr/local/bin/orbit-native-session\nTryExec=/usr/local/bin/orbit-native-session\nType=Application\nDesktopNames=Orbit;\n',0o644)}
+ '/usr/share/wayland-sessions/orbit-native.desktop':('[Desktop Entry]\nName=Mellipi (Experimental)\nComment=Mellipi native DRM/KMS desktop with workspace animation\nExec=/usr/local/bin/orbit-native-session\nTryExec=/usr/local/bin/orbit-native-session\nType=Application\nDesktopNames=Orbit;\n',0o644)}
 if preview:print(json.dumps({path:{'mode':oct(mode),'content':text} for path,(text,mode) in files.items()},indent=2));sys.exit(0)
 for name,(text,mode) in files.items():
  path=Path(name);path.parent.mkdir(parents=True,exist_ok=True)
@@ -36,6 +36,6 @@ for name,(text,mode) in files.items():
   os.chmod(temporary,mode);os.replace(temporary,path)
  finally:
   if os.path.exists(temporary):os.unlink(temporary)
-print('Registered Abstract (Experimental). Existing Orbit/Sway/Mint sessions and login default are unchanged.')
+print('Registered Mellipi (Experimental). Existing Orbit/Sway/Mint sessions and login default are unchanged.')
 print('Save work before deliberately logging out and choosing the new entry. Hardware login has not been validated.')
 PY

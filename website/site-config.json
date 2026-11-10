@@ -1,16 +1,8 @@
 {
-  "repositoryUrl": "https://github.com/ajavadinezhad/abstract-os",
-  "aptUrl": "https://ajavadinezhad.github.io/abstract-os/apt",
-  "release": "0.1.7",
+  "repositoryUrl": "https://github.com/ajavadinezhad/mellipi-os",
+  "aptUrl": "https://ajavadinezhad.github.io/mellipi-os/apt",
+  "release": "0.1.8",
   "signingFingerprint": "7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF",
-  "signingKeyPath": "abstract-archive-keyring.asc",
-  "installerPath": "install-update-source.sh",
-  "liveImage": {
-    "url": "https://github.com/ajavadinezhad/abstract-os/releases/download/v0.1.7/abstract-0.1.7-noble-amd64.iso",
-    "sha256": "ca639728ef403dfa94562aa2dd16e200c8c49fe68ac70813a9cdb9a482c57fee",
-    "bytes": 1418792960,
-    "checksumUrl": "https://github.com/ajavadinezhad/abstract-os/releases/download/v0.1.7/abstract-0.1.7-noble-amd64.iso.sha256",
-    "guideUrl": "https://github.com/ajavadinezhad/abstract-os/blob/main/docs/live-iso.md",
-    "secureBoot": false
-  }
+  "signingKeyPath": "mellipi-archive-keyring.asc",
+  "installerPath": "install-update-source.sh"
 }

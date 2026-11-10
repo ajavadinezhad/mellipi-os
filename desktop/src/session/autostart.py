@@ -25,15 +25,15 @@ def supervise_shell(start,stopping,exit_session,delays=RESTART_DELAYS,release=No
             code=process.wait()
             if release:release(process)
         except OSError as error:
-            print('Abstract shell could not start: '+str(error),file=sys.stderr,flush=True)
+            print('Mellipi shell could not start: '+str(error),file=sys.stderr,flush=True)
             code=1
         if stopping.is_set():return
         if code==0:exit_session();return
         if time.monotonic()-began>=60:attempt=0
         if attempt==len(delays):
-            print('Abstract shell recovery exhausted; preserving compositor and open applications',file=sys.stderr,flush=True)
+            print('Mellipi shell recovery exhausted; preserving compositor and open applications',file=sys.stderr,flush=True)
             return
-        print(f'Abstract shell exited ({code}); restarting {attempt+1}/{len(delays)}',file=sys.stderr,flush=True)
+        print(f'Mellipi shell exited ({code}); restarting {attempt+1}/{len(delays)}',file=sys.stderr,flush=True)
         if stopping.wait(delays[attempt]):return
         attempt+=1
 
@@ -163,7 +163,7 @@ def main():
                 _,event=receive(sock)
                 if event.get('change')=='exit':break
     except (OSError,ConnectionError) as error:
-        if not stopping.is_set() and not leaving.is_set():print('Abstract session ended: '+str(error),file=sys.stderr,flush=True)
+        if not stopping.is_set() and not leaving.is_set():print('Mellipi session ended: '+str(error),file=sys.stderr,flush=True)
     finally:
         stop()
         # Requesting exit is harmless if Sway already disconnected; explicit

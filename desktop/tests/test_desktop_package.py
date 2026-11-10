@@ -61,7 +61,7 @@ class DesktopPackageTest(unittest.TestCase):
   self.assertNotIn('lightdm',builder.DEPENDENCIES)
   with tempfile.TemporaryDirectory() as directory:
    stage=builder.stage_desktop_package(Path(directory)/'desktop','0.1.5');control=(stage/'DEBIAN/control').read_text()
-   for name in ('abstract-shell (= 0.1.5)','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','foot','mousepad','epiphany-browser','synaptic','wvkbd','orca','fcitx5','fcitx5-config-qt','ddcutil','gnome-system-tools'):self.assertIn(name,control)
+   for name in ('mellipi-shell (= 0.1.5)','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','foot','mousepad','epiphany-browser','synaptic','wvkbd','orca','fcitx5','fcitx5-config-qt','ddcutil','gnome-system-tools'):self.assertIn(name,control)
    self.assertFalse((stage/'DEBIAN/postinst').exists());self.assertFalse((stage/'etc/pam.d').exists());self.assertFalse((stage/'etc/lightdm/lightdm.conf').exists());self.assertFalse((stage/'etc/lightdm/lightdm-gtk-greeter.conf').exists())
    for path in stage.rglob('*'):self.assertEqual(path.stat().st_mode & 0o022,0,str(path))
  def test_shlibdeps_includes_all_elfs_and_private_search_paths_without_suppressing_missing_info(self):
@@ -72,9 +72,9 @@ class DesktopPackageTest(unittest.TestCase):
    library=stage/'usr/lib/abstract/.tray-runtime/lib/libFixture.so.5';library.parent.mkdir(parents=True);shutil.copy2('/usr/bin/true',library);paths.append(library)
    def dynamic(args,**kwargs):return '(SONAME) Library soname: [libFixture.so.5]' if args[-1]==str(library) else ''
    def resolver(args,**kwargs):
-    self.assertNotIn('--ignore-missing-info',args);self.assertIn('-xabstract-shell',args);self.assertIn('-l'+str(library.parent),args)
+    self.assertNotIn('--ignore-missing-info',args);self.assertIn('-xmellipi-shell',args);self.assertIn('-l'+str(library.parent),args)
     self.assertEqual({v[2:] for v in args if v.startswith('-e')},{str(path) for path in paths})
-    self.assertIn('libFixture 5 abstract-shell (= 0.1.5)',Path(next(v[2:] for v in args if v.startswith('-L'))).read_text())
+    self.assertIn('libFixture 5 mellipi-shell (= 0.1.5)',Path(next(v[2:] for v in args if v.startswith('-L'))).read_text())
     return type('Result',(),dict(returncode=0,stdout='shlibs:Depends=libc6 (>= 2.34), libxcb-damage0\n',stderr=''))()
    with patch.object(builder.subprocess,'check_output',side_effect=dynamic),patch.object(builder.subprocess,'run',side_effect=resolver):
     self.assertEqual(builder.elf_dependencies(stage,'amd64','0.1.5'),['libc6 (>= 2.34)','libxcb-damage0'])

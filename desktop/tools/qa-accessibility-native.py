@@ -32,10 +32,10 @@ class Style(QObject):
  def hideTooltip(self):pass
  @Slot(QObject,str,float,float)
  def queueItemTooltip(self,*args):pass
-app=QApplication([]);app.setApplicationName('Abstract accessibility fixture')
+app=QApplication([]);app.setApplicationName('Mellipi accessibility fixture')
 engine=QQmlApplicationEngine();style=Style();engine.rootContext().setContextProperty('Orbit',style)
 uri=(Path(sys.argv[1])/'native').as_uri()
-engine.loadData(('import QtQuick 2.15\\nimport QtQuick.Controls 2.15\\nimport QtQuick.Window 2.15\\nimport "'+uri+'" as Ui\\nWindow{id:fixtureWindow;property bool applied:false;visible:true;width:480;height:240;title:"Abstract accessibility fixture";Column{anchors.centerIn:parent;spacing:20;TextField{Accessible.name:"Write here";placeholderText:"Write here"}Ui.OrbitButton{text:"Apply example";onClicked:fixtureWindow.applied=true}Text{text:fixtureWindow.applied?"Applied example":"Ready";Accessible.name:text}}}').encode())
+engine.loadData(('import QtQuick 2.15\\nimport QtQuick.Controls 2.15\\nimport QtQuick.Window 2.15\\nimport "'+uri+'" as Ui\\nWindow{id:fixtureWindow;property bool applied:false;visible:true;width:480;height:240;title:"Mellipi accessibility fixture";Column{anchors.centerIn:parent;spacing:20;TextField{Accessible.name:"Write here";placeholderText:"Write here"}Ui.OrbitButton{text:"Apply example";onClicked:fixtureWindow.applied=true}Text{text:fixtureWindow.applied?"Applied example":"Ready";Accessible.name:text}}}').encode())
 assert engine.rootObjects()
 from PyQt5.QtDBus import QDBusConnection
 from PyQt5.QtCore import QTimer
@@ -124,7 +124,7 @@ def main():
                 wait(lambda:Atspi.Text.get_text(field,0,-1)!=initial)
             finally:pointer.close()
             wait(lambda:bool((current:=labels()) and 'Applied example' in current[0]))
-            print('PASS real native Qt Quick exposes editable field and Abstract button to private AT-SPI')
+            print('PASS real native Qt Quick exposes editable field and Mellipi button to private AT-SPI')
             print('PASS AT-SPI focuses/reads the real text field after private keyboard input and invokes the real button')
             print(json.dumps(dict(private_bus=True,labels=sorted(found),physical_session_untouched=True,enabled_after_launch='--enable-later' in sys.argv)))
         finally:

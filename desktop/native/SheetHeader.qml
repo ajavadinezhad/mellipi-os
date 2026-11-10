@@ -3,7 +3,7 @@ import QtQuick.Layouts 1.15
 import "."
 Item {
     id: header
-    property string section: "ABSTRACT"
+    property string section: "MELLIPI"
     property string title: ""
     property string subtitle: ""
     property bool compact: false

@@ -1,4 +1,4 @@
-# Abstract desktop source
+# Mellipi desktop source
 
 This directory contains the desktop shell, native Wayland compositor, services, themes and application build tools. The top-level [project README](../README.md) covers installation and downloads; shared technical guides live in [docs](../docs).
 

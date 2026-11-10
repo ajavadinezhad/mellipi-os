@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
-  <vendor>Abstract</vendor>
+  <vendor>Mellipi</vendor>
   <action id="org.abstract.charge-limit">
     <description>Set a system battery charging limit</description>
     <message>Administrator authorization is required to change the battery charging limit and save it for startup.</message>

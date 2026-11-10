@@ -1,5 +1,5 @@
 [Unit]
-Description=Restore approved Abstract battery charging limits
+Description=Restore approved Mellipi battery charging limits
 After=systemd-udev-settle.service
 RequiresMountsFor=/var/lib/abstract
 ConditionPathExists=/var/lib/abstract/charge-limits.json

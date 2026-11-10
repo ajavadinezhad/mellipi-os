@@ -18,7 +18,7 @@ ScrollView {
                 onSelected: name => {view.sizesExpanded=false;Orbit.setPreference("textScale",Number(name));}
             }
             SettingRow {label: "High contrast";SettingToggle {objectName: "highContrastToggle";label: "High contrast colors";checked: Theme.highContrast;onClicked: Orbit.setPreference("highContrast",checked)}}
-            Text {Layout.fillWidth: true;Layout.margins: 6;text: "Text size and contrast apply to Abstract panels. Applications keep their own text and accessibility preferences.";wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11)}
+            Text {Layout.fillWidth: true;Layout.margins: 6;text: "Text size and contrast apply to Mellipi panels. Applications keep their own text and accessibility preferences.";wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11)}
         }
         SettingsGroup {
             title: "Keyboard and motion"

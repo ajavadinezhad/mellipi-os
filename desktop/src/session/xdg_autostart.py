@@ -29,7 +29,7 @@ POLKIT_EXECUTABLES=frozenset(('polkit-gnome-authentication-agent-1','polkit-mate
 
 def log(name,reason):
     # Never log Exec lines: user-provided entries may contain credentials.
-    print('Abstract autostart: '+str(name).replace('\n',' ')[:180]+': '+reason,file=sys.stderr,flush=True)
+    print('Mellipi autostart: '+str(name).replace('\n',' ')[:180]+': '+reason,file=sys.stderr,flush=True)
 
 def directories(environment):
     home=Path(environment.get('HOME',str(Path.home())))

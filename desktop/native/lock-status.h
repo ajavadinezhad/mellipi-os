@@ -1,4 +1,4 @@
-/* Read-only, bounded metadata for Abstract's lock presentation.
+/* Read-only, bounded metadata for Mellipi's lock presentation.
  * No password, input, authentication or PAM APIs. No subprocesses or threads.
  * Include in the existing locker render translation unit (POSIX2008/C11).
  */
