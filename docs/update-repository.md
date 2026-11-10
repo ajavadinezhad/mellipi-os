@@ -54,7 +54,10 @@ Keep the signing home **outside** the source tree and publication directory.
 The deployment workflow receives no private key and cannot sign new updates.
 Back up the private key and revocation certificate securely outside GitHub.
 
-Build and verify the package pair first. Stage only the static website's named
+Build and verify the package pair from `desktop/` first; the resulting files
+are in `desktop/dist/`. Then return to the **repository root** for all commands
+below. The five release helpers remain in root `tools/`; application build/QA
+helpers live in `desktop/tools/`. Stage only the static website's named
 public files, the enrollment helper and the public APT archive:
 
 ```sh
@@ -63,13 +66,19 @@ cp website/index.html website/style.css website/site.js \
    website/site-config.json website/favicon.svg public/
 python3 tools/build-apt-repository.py \
   --output public/apt \
-  --packages dist/abstract-shell_0.1.6_amd64.deb \
-             dist/abstract-desktop_0.1.6_all.deb \
+  --packages desktop/dist/abstract-shell_0.1.6_amd64.deb \
+             desktop/dist/abstract-desktop_0.1.6_all.deb \
   --gnupg-home /path/outside-repository/abstract-release-signing \
   --signing-key 7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF \
   --suite noble --valid-days 90
 cp tools/install-update-source.sh public/apt/install-update-source.sh
 ```
+
+For a new release, replace `0.1.6` in preparation commands with the new
+version; the examples identify the currently published package pair. Do not
+rebuild or replace the frozen 0.1.6 files. Release-tool tests run from the root
+with `python3 -m unittest discover -s tests`; they use temporary GPG/APT state
+and do not edit the host package sources.
 
 Preserve existing `public/apt/pool` files when adding a release so installed
 clients and older indexes can still fetch their referenced packages. The
@@ -85,7 +94,9 @@ python3 tools/build-public-sources.py \
   --version 0.1.6 --fetch
 ```
 
-This creates an explicit project-source snapshot (including modified Smithay,
+The source helper reads the application under `desktop/`, while the signed APT
+and site helpers use repository-root `public/` and `website/`. This creates an
+explicit project-source snapshot (including modified Smithay,
 patches and build scripts), exact-version Ubuntu source archives for bundled
 Qt/KF5/tray components, pinned Qt compatibility inputs, locker/portal source,
 and checksum-verified Rust crate sources from the lockfiles. Its manifest and
@@ -93,6 +104,10 @@ and checksum-verified Rust crate sources from the lockfiles. Its manifest and
 runtime directories. Do not assign a license to Abstract's own files merely
 because an upstream dependency uses that license; project licensing is a
 separate maintainer choice.
+
+The checked-in `public/sources/0.1.6` archives describe the original 0.1.6 release
+layout and are immutable. A working-tree reorganization is not a reason to
+regenerate or overwrite them. Use a new release version for new source archives.
 
 Do not upload the live developer directory. In particular exclude `data/`,
 `.venv/`, toolchains, private signing homes, VM disks and cloud-init credentials,

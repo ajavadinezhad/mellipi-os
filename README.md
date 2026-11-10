@@ -1,23 +1,40 @@
 # Abstract OS
 
-**Abstract** is a lightweight native Wayland desktop for Linux, designed around a compact spine, smooth workspaces, and direct access to everyday controls.
+**Abstract** is a lightweight native Wayland desktop for Linux, designed around a compact spine, smooth workspaces and direct access to everyday controls.
 
-[Website](https://ajavadinezhad.github.io/abstract-os/) · [Installation and updates](docs/update-repository.md) · [Downloads](https://github.com/ajavadinezhad/abstract-os/releases)
+[Website](https://ajavadinezhad.github.io/abstract-os/) · [Install and update](docs/update-repository.md) · [Downloads](https://github.com/ajavadinezhad/abstract-os/releases) · [Issues](https://github.com/ajavadinezhad/abstract-os/issues)
 
-The current binary release is **0.1.6**, targeting **Ubuntu 24.04 (noble), amd64, systemd/logind**. Abstract is a desktop environment installed on a Linux base, rather than a separate kernel or distribution. Other distributions and architectures are not yet certified.
+The current binary release is **0.1.6**, targeting **Ubuntu 24.04 (noble), amd64, systemd/logind**. Abstract installs on a Linux base; other distributions and architectures are not yet certified. Hardware compatibility and performance depend on the distribution, driver and applications.
 
 ## Install
 
-Follow the [signed APT setup instructions](https://ajavadinezhad.github.io/abstract-os/#install) to add the repository, then install `abstract-desktop` on a supported minimal base. Existing installations can update `abstract-shell` through their normal package manager. Updates do not force a logout; native compositor changes activate at the next normal login.
+Follow the [signed APT setup](https://ajavadinezhad.github.io/abstract-os/#install), then install `abstract-desktop` on a supported minimal base. Existing desktops can install or update only `abstract-shell`. Updates do not force a logout; compositor changes activate at the next normal login. Read the [clean-install and recovery guide](docs/clean-install-acceptance.md) before trying a new session.
 
-See the [clean-install and recovery guide](docs/clean-install-acceptance.md) before testing a new session.
+## Repository layout
 
-## Source and releases
+```text
+desktop/   Desktop application, compositor, themes, packaging and app build/QA tools
+tools/     Repository, source-publication and release/deployment tools
+tests/     Release-tool tests
+docs/      Build, installation, recovery and maintainer guides
+website/   Editable static website source
+public/    Reviewed deployment output: website, signed APT archive and release sources
+.github/   GitHub Actions workflows
+```
 
-This repository contains the reviewed desktop source, build tools, static website, and signed APT archive. Bundled-component notices and matching source archives are available under [`public/sources/0.1.6`](public/sources/0.1.6/manifest.json). Private archive-signing keys, user settings, VM credentials and build caches are excluded.
+Application build commands run inside `desktop/`:
 
-- [Source build baseline](docs/source-build-baseline.md)
-- [Repository maintenance and release process](docs/update-repository.md)
-- [Report a reproducible issue](https://github.com/ajavadinezhad/abstract-os/issues)
+```sh
+cd desktop
+python3 tools/prepare-native-drm.py
+python3 tools/prepare-screen-lock.py
+./tools/build-native-compositor.sh --release --features drm
+./tools/build-core.sh
+python3 tools/prepare-portal-runtime.py
+python3 tools/prepare-qt5-a11y-runtime.py --jobs 1
+python3 tools/build-desktop-package.py --version 0.1.6 --with-desktop
+```
 
-Hardware compatibility and performance depend on the underlying distribution, graphics driver and applications.
+Provision the supported toolchain and dependencies first; see the [source-build baseline](docs/source-build-baseline.md). Application tests live in `desktop/tests/`; run them from `desktop/`. Repository publication commands run from the **repository root**, using `tools/`; see the [release process](docs/update-repository.md).
+
+`website/` is the editable site; `public/` is the explicit deployment boundary. Do not deploy the working tree or put private signing keys, user data, VM credentials or build caches there. Bundled-component notices and matching release sources are listed in the [0.1.6 source manifest](public/sources/0.1.6/manifest.json). Those frozen release archives remain unchanged when the working source layout changes.

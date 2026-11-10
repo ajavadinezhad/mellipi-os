@@ -15,23 +15,29 @@ Required host build tools include Python3, a C/C++ compiler, `pkg-config`,
 compiler with edition2024 support. This checkout was built with
 Rust/Cargo1.99.1; it does not yet declare a tested minimum compiler version or a
 fully pinned compiler bootstrap. Do not assume Noble's default Rust package is
-sufficient. The scripts use `.toolchain/{cargo,rustup}` for the compositor; the
-core helper can also use `cargo` from PATH. Provision that trusted toolchain
+sufficient. The scripts use `desktop/.toolchain/{cargo,rustup}` relative to the
+repository root for the compositor; the core helper can also use `cargo` from PATH. Provision that trusted toolchain
 explicitly before a fresh source build.
 
-The release sequence, from the repository root, is:
+The application source and its build tools live in `desktop/`. From the repository
+root, enter that directory before building:
 
-```
+```sh
+cd desktop
 python3 tools/prepare-native-drm.py
 python3 tools/prepare-screen-lock.py
 ./tools/build-native-compositor.sh --release --features drm
 ./tools/build-core.sh
 python3 tools/prepare-portal-runtime.py
 python3 tools/prepare-qt5-a11y-runtime.py --jobs 1
-python3 tools/build-desktop-package.py --version 0.1.6
+python3 tools/build-desktop-package.py --version 0.1.6 --with-desktop
 ```
 
-The preparation tools download/extract development inputs into the checkout.
+These commands write packages under `desktop/dist/`. Application unit tests also
+run from `desktop/`, for example `python3 -m unittest discover -s tests`. The
+repository-level `tools/` directory contains publication tools, not app compilers.
+
+The preparation tools download/extract development inputs into `desktop/`.
 They do not install packages on the host or change a running desktop. The locker
 and portal verify pinned upstream archives; the portal and Qt compatibility
 build also verify their recorded distribution inputs. DRM development packages

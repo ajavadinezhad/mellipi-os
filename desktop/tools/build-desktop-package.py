@@ -71,6 +71,7 @@ def write(path,text,mode=0o644):
 
 def stage_package(stage,version,architecture,root=ROOT):
     root=Path(root);stage=Path(stage);lib=stage/'usr/lib/abstract'
+    docs_root=root/'docs' if (root/'docs').is_dir() else root.parent/'docs'
     for name in RUNTIME_FILES:
         if not (root/name).is_file():raise ValueError('Build required runtime first: '+name)
     lib.mkdir(parents=True)
@@ -112,7 +113,7 @@ def stage_package(stage,version,architecture,root=ROOT):
     doc=stage/'usr/share/doc/abstract-shell';doc.mkdir(parents=True)
     shutil.copy2(root/'README.md',doc/'README.md')
     for name in ('independent-desktop.md','request-recheck-2026-11-08.md','native-protocols.md','hardware-acceptance-2026-11-08.md','operational-readiness.md','clean-install-acceptance.md','source-build-baseline.md','audits/2026-11-09-clean-full-minimum.json'):
-        source=root/'docs'/name
+        source=docs_root/name
         if source.is_file():
             # Keep old flat doc paths and README's repository-relative links.
             for destination in (doc/name,doc/'docs'/name):

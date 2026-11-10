@@ -19,8 +19,8 @@ __pycache__/
 .tray-runtime/
 .wayland-runtime/
 .wayland-packages/
-backend/target/
-compositor/target/
+desktop/backend/target/
+desktop/compositor/target/
 dist/
 *.qcow2
 *.img

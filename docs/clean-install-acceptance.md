@@ -48,12 +48,16 @@ policy; a VM cannot validate physical display or headset hardware.
 
 ## Disposable VM runner
 
-`tools/qa-clean-install-vm.py` owns a fresh qcow2 overlay and its processes. It
+`desktop/tools/qa-clean-install-vm.py` owns a fresh qcow2 overlay and its processes. It
 never installs host software, starts a host login manager or acquires a host seat.
 Its guest has two virtual CPUs,4096MiB RAM and a24GiB virtual disk. QEMU uses
 virtio-vga with guest software rendering; it does not require host virgl or pass
 through a host GPU. KVM is selected when accessible; TCG is an explicit slower
 fallback. The NoCloud seed is attached as a read-only virtio block device: the minimal cloud kernel may omit SATA/CD drivers. An explicit NoCloud SMBIOS hint makes discovery independent of hypervisor heuristics. SSH is forwarded only to127.0.0.1. QMP and VNC use private Unix sockets.
+
+Run all commands in this VM-runner section from `desktop/` (`cd desktop`
+from the repository root). The runner and its guest probes live in
+`desktop/tools/`; package paths such as `dist/` are relative to `desktop/`.
 
 Host prerequisites: `qemu-system-x86_64`, `qemu-img`, `genisoimage`, `ssh`,
 `ssh-keygen`, `openssl`, `gpgv`, `dpkg-deb`, and the distribution's trusted Ubuntu

@@ -1,0 +1,115 @@
+{
+  "scope": "Fresh Ubuntu24.04.5 Minimal amd64 full-profile installation with no recommendations; frozen dependency/runtime candidate before later cosmetic clock-only patch",
+  "date": "2026-11-09",
+  "vcpu": 2,
+  "memory_mib": 4096,
+  "accelerator": "kvm",
+  "host_desktop_changed": false,
+  "manual_guest_package_or_service_repairs": false,
+  "image_sha256": "406630c08b5e545fcc7209854b129d47e3af822db128c9f19336593b5a2d3fe0",
+  "packages": [
+    {
+      "name": "abstract-shell",
+      "filename": "abstract-shell_0.1.5_amd64.deb",
+      "sha256": "8eb811208850e8fed305cc6472c23ef9441b0a9725ad7bb84cfd33ac69d01cb0"
+    },
+    {
+      "name": "abstract-desktop",
+      "filename": "abstract-desktop_0.1.5_all.deb",
+      "sha256": "c2cc182ef77ad0c9d8b126ebb279832c5be7476b3bbd6ae64a429ee3a3f180b3"
+    }
+  ],
+  "automated": {
+    "profile": "full",
+    "no_install_recommends": true,
+    "base_image_verified": true,
+    "official_manifest_signature_verified": true,
+    "host_desktop_changed": false,
+    "graphical_login": "passed: VM tty1 PAM login and native compositor",
+    "lock_unlock": "not tested",
+    "accessibility": "not tested",
+    "lifecycle": "not tested",
+    "fresh_cloud_boot": true,
+    "package_install": true,
+    "baseline": {
+      "elf_dependencies": true,
+      "elf_files": [
+        ".lock-runtime/bin/swaylock",
+        ".native-runtime/bin/orbit-compositor",
+        ".portal-runtime/xdg-desktop-portal-wlr",
+        ".qt5-a11y-runtime/lib/libQt5WaylandClient.so.5",
+        ".tray-runtime/bin/xembedsniproxy",
+        ".tray-runtime/lib/libKF5WindowSystem.so.5.115.0",
+        ".tray-runtime/lib/libQt5X11Extras.so.5.15.13",
+        ".tray-runtime/plugins/kf5/kwindowsystem/KF5WindowSystemX11Plugin.so",
+        "backend/target/release/orbit-core"
+      ],
+      "qt_layer_shell_plugin": true,
+      "qt_svg_and_icon_fallback": true,
+      "themed_lock_svg": true,
+      "required_commands": true,
+      "pam_policy_present": true,
+      "pam_authentication": "not tested",
+      "optional_services": {
+        "nmcli": true,
+        "bluetoothctl": true,
+        "orca": true,
+        "fcitx5": true,
+        "wvkbd": true
+      },
+      "screen_reader_lock_support": false,
+      "touchscreen_lock_keyboard": false,
+      "distribution": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n",
+      "installed_packages": "abstract-shell=0.1.5"
+    },
+    "session": {
+      "native_drm_login": true,
+      "shell_ready": true,
+      "qml_errors": [],
+      "runtime_private": true,
+      "secure_lock_capability": true,
+      "locked": false,
+      "wayland_display": "wayland-1",
+      "workspace": 1,
+      "output_count": 1,
+      "vm_only": true
+    },
+    "display_pixels": {
+      "width": 1280,
+      "height": 800,
+      "samples": 20079,
+      "nonblack_fraction": 0.9996513770606106,
+      "distinct_colors": 146
+    }
+  },
+  "read_only_acceptance": {
+    "no_manual_package_or_service_repairs": true,
+    "audio_units_active_before_pactl": {
+      "pipewire.service": "active",
+      "pipewire-pulse.service": "active",
+      "wireplumber.service": "active"
+    },
+    "audio_server_name": "PulseAudio (on PipeWire 1.0.5)",
+    "dark_greeter_fragment": "/etc/lightdm/lightdm-gtk-greeter.conf.d/60-abstract.conf",
+    "greeter_theme": "Adwaita-dark",
+    "greeter_background": "/usr/share/backgrounds/abstract/login.svg",
+    "greeter_background_sha256": "9ba3c35d172939b36a1b2b7ea3c5cfbdd00614e0dfe3bdc9fd66065947146c57",
+    "greeter_assets_installed": true,
+    "greeter_password_login_in_this_vm": "not tested",
+    "meminfo": {
+      "MemTotal": "4009840 kB",
+      "MemAvailable": "3378824 kB"
+    }
+  },
+  "artifacts": {
+    "startup_screenshot": "/tmp/abstract-vm-full-final/startup.png",
+    "runtime_report": "/tmp/abstract-vm-full-final/report.json",
+    "install_log": "/tmp/abstract-vm-full-final/install.log"
+  },
+  "not_certified": [
+    "Greeter password login in this fresh guest",
+    "Actual lock/unlock in this fresh guest",
+    "Physical hardware peripherals or suspend/resume",
+    "Later cosmetic clock-only artifact; verify its whole-package upgrade separately"
+  ]
+}
