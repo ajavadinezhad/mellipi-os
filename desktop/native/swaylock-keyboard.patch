@@ -1,0 +1,206 @@
+--- a/render.c
++++ b/render.c
+@@ -3,6 +3,7 @@
+ #include <string.h>
+ #include "orbit-lock-textbox.h"
+ #include "orbit-lock-status.h"
++#include "mellipi-lock-keyboard.h"
+ #include <time.h>
+ #include <stdio.h>
+ #include <wayland-client.h>
+@@ -269,7 +270,8 @@
+ 		if (logical_width > 420) logical_width = 420;
+ 		if (logical_width < 96) logical_width = 96;
+ 		buffer_width = logical_width * surface->scale;
+-		buffer_height = orbit_lock_panel_height(surface->height) * surface->scale;
++		int keyboard_height = state->orbit_keyboard_shown ? mellipi_keyboard_height(surface->height) : 0;
++		buffer_height = (orbit_lock_panel_height(surface->height-keyboard_height)+keyboard_height) * surface->scale;
+ 	}
+ 
+ 	int subsurf_xpos;
+@@ -350,8 +352,12 @@
+ 		};
+ 		cairo_save(cairo);
+ 		cairo_scale(cairo, surface->scale, surface->scale);
++		int keyboard_height = state->orbit_keyboard_shown ? mellipi_keyboard_height(surface->height) : 0;
++		int panel_height = orbit_lock_panel_height(surface->height-keyboard_height);
+ 		orbit_draw_lock_panel_fit(cairo, buffer_width / surface->scale,
+-			buffer_height / surface->scale, &view, &info);
++			panel_height, &view, &info);
++		mellipi_keyboard_toggle(cairo,buffer_width/surface->scale,state->orbit_keyboard_shown,info.border,info.text);
++		if(state->orbit_keyboard_shown) mellipi_keyboard_draw(cairo,buffer_width/surface->scale,panel_height,keyboard_height,state->orbit_keyboard_shift,state->orbit_keyboard_symbols,info.inside,info.border,info.text,info.accent);
+ 		cairo_restore(cairo);
+ 	} else if (draw_indicator) {
+ 		// Fill inner circle
+--- a/seat.c
++++ b/seat.c
+@@ -7,6 +7,8 @@
+ #include "swaylock.h"
+ #include "seat.h"
+ #include "loop.h"
++#include "orbit-lock-textbox.h"
++#include "mellipi-lock-keyboard.h"
+ 
+ static void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
+ 		uint32_t format, int32_t fd, uint32_t size) {
+@@ -147,25 +149,64 @@
+ 	.repeat_info = keyboard_repeat_info,
+ };
+ 
+-static void wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
+-		uint32_t serial, struct wl_surface *surface,
+-		wl_fixed_t surface_x, wl_fixed_t surface_y) {
+-	wl_pointer_set_cursor(wl_pointer, serial, NULL, 0, 0);
+-}
+-
+-static void wl_pointer_leave(void *data, struct wl_pointer *wl_pointer,
+-		uint32_t serial, struct wl_surface *surface) {
+-	// Who cares
+-}
+-
+-static void wl_pointer_motion(void *data, struct wl_pointer *wl_pointer,
+-		uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+-	// Who cares
+-}
+-
+-static void wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
+-		uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
+-	// Who cares
++/* All pointer/touch input is local to an owned session-lock surface. The
++ * existing upstream key handler still owns buffer lifetime and PAM submission. */
++static bool mellipi_keyboard_enabled(void) {
++ const char *option=getenv("ORBIT_LOCK_TEXTBOX");return option&&strcmp(option,"1")==0;
++}
++static struct swaylock_surface *mellipi_surface(struct swaylock_state *state,struct wl_surface *target) {
++ struct swaylock_surface *surface;
++ wl_list_for_each(surface,&state->surfaces,link) if(surface->surface==target||surface->child==target)return surface;
++ return NULL;
++}
++static void mellipi_click(struct swaylock_seat *seat,struct swaylock_surface *surface,double x,double y,bool child) {
++ struct swaylock_state *state=seat->state;
++ if(!mellipi_keyboard_enabled()||!surface||state->auth_state==AUTH_STATE_VALIDATING)return;
++ double width=surface->width-32;if(width>420)width=420;if(width<96)width=96;
++ int kh=state->orbit_keyboard_shown?mellipi_keyboard_height(surface->height):0;
++ int ph=orbit_lock_panel_height(surface->height-kh);
++ if(!child){x-=(surface->width-width)/2;y-=(surface->height-ph-kh)/2;}
++ struct mellipi_keyboard_key key=mellipi_keyboard_hit(x,y,width,ph,kh,state->orbit_keyboard_shown,state->orbit_keyboard_shift,state->orbit_keyboard_symbols);
++ bool control=state->xkb.control;state->xkb.control=false;
++ switch(key.action) {
++ case MELLIPI_KEY_TOGGLE:state->orbit_keyboard_shown=!state->orbit_keyboard_shown;break;
++ case MELLIPI_KEY_SHIFT:state->orbit_keyboard_shift=!state->orbit_keyboard_shift;break;
++ case MELLIPI_KEY_SYMBOLS:state->orbit_keyboard_symbols=!state->orbit_keyboard_symbols;break;
++ case MELLIPI_KEY_CHARACTER:swaylock_handle_key(state,xkb_utf32_to_keysym(key.codepoint),key.codepoint);break;
++ case MELLIPI_KEY_BACKSPACE:swaylock_handle_key(state,XKB_KEY_BackSpace,0);break;
++ case MELLIPI_KEY_ENTER:swaylock_handle_key(state,XKB_KEY_Return,0);break;
++ default:state->xkb.control=control;return;
++ }
++ state->xkb.control=control;
++ damage_state(state);
++}
++static void mellipi_cursor(struct swaylock_seat *seat,struct wl_pointer *pointer,uint32_t serial) {
++ if(!mellipi_keyboard_enabled()){wl_pointer_set_cursor(pointer,serial,NULL,0,0);return;}
++ if(!seat->cursor_surface)seat->cursor_surface=wl_compositor_create_surface(seat->state->compositor);
++ if(!seat->cursor_surface)return;
++ struct pool_buffer *buffer=get_next_buffer(seat->state->shm,seat->cursor_buffers,24,28);
++ if(!buffer)return;
++ cairo_t *cr=buffer->cairo;cairo_set_operator(cr,CAIRO_OPERATOR_SOURCE);cairo_set_source_rgba(cr,0,0,0,0);cairo_paint(cr);cairo_set_operator(cr,CAIRO_OPERATOR_OVER);
++ cairo_move_to(cr,2,2);cairo_line_to(cr,2,23);cairo_line_to(cr,8,17);cairo_line_to(cr,13,27);cairo_line_to(cr,18,25);cairo_line_to(cr,13,15);cairo_line_to(cr,22,15);cairo_close_path(cr);cairo_set_source_rgb(cr,1,1,1);cairo_fill_preserve(cr);cairo_set_source_rgb(cr,0,0,0);cairo_set_line_width(cr,1.5);cairo_stroke(cr);
++ wl_surface_attach(seat->cursor_surface,buffer->buffer,0,0);wl_surface_damage(seat->cursor_surface,0,0,24,28);wl_surface_commit(seat->cursor_surface);wl_pointer_set_cursor(pointer,serial,seat->cursor_surface,2,2);
++}
++static void wl_pointer_enter(void *data, struct wl_pointer *pointer,
++ uint32_t serial,struct wl_surface *surface,wl_fixed_t x,wl_fixed_t y) {
++ struct swaylock_seat *seat=data;seat->pointer_surface=surface;seat->pointer_x=wl_fixed_to_double(x);seat->pointer_y=wl_fixed_to_double(y);
++ /* Upstream's indicator child is a subsurface. Remember coordinate space. */
++ struct swaylock_surface *owned=mellipi_surface(seat->state,surface);seat->pointer_child=owned&&owned->child==surface;
++ mellipi_cursor(seat,pointer,serial);
++}
++static void wl_pointer_leave(void *data,struct wl_pointer *pointer,uint32_t serial,struct wl_surface *surface) {
++ (void)pointer;(void)serial;(void)surface;struct swaylock_seat *seat=data;seat->pointer_surface=NULL;
++}
++static void wl_pointer_motion(void *data,struct wl_pointer *pointer,uint32_t time,wl_fixed_t x,wl_fixed_t y) {
++ (void)pointer;(void)time;struct swaylock_seat *seat=data;seat->pointer_x=wl_fixed_to_double(x);seat->pointer_y=wl_fixed_to_double(y);
++}
++static void wl_pointer_button(void *data,struct wl_pointer *pointer,uint32_t serial,uint32_t time,uint32_t button,uint32_t state) {
++ (void)pointer;(void)serial;(void)time;struct swaylock_seat *seat=data;
++ /* Kernel BTN_LEFT only; secondary clicks never type or authenticate. */
++ if(button==0x110&&state==WL_POINTER_BUTTON_STATE_PRESSED)mellipi_click(seat,mellipi_surface(seat->state,seat->pointer_surface),seat->pointer_x,seat->pointer_y,seat->pointer_child);
+ }
+ 
+ static void wl_pointer_axis(void *data, struct wl_pointer *wl_pointer,
+@@ -204,9 +245,27 @@
+ 	.axis_discrete = wl_pointer_axis_discrete,
+ };
+ 
++static void touch_down(void *data,struct wl_touch *touch,uint32_t serial,uint32_t time,struct wl_surface *target,int32_t id,wl_fixed_t x,wl_fixed_t y) {
++ (void)touch;(void)serial;(void)time;struct swaylock_seat *seat=data;
++ if(seat->touch_tap.active)return;
++ struct swaylock_surface *surface=mellipi_surface(seat->state,target);if(!surface)return;
++ if(!mellipi_touch_begin(&seat->touch_tap,id,wl_fixed_to_double(x),wl_fixed_to_double(y))) {return;}
++ seat->touch_surface=target;seat->touch_child=target==surface->child;
++}
++static void touch_up(void *data,struct wl_touch *touch,uint32_t serial,uint32_t time,int32_t id) {
++ (void)touch;(void)serial;(void)time;struct swaylock_seat *seat=data;if(mellipi_touch_end(&seat->touch_tap,id)) {mellipi_click(seat,mellipi_surface(seat->state,seat->touch_surface),seat->touch_tap.x,seat->touch_tap.y,seat->touch_child);}
++ if(!seat->touch_tap.active)seat->touch_surface=NULL;
++}
++static void touch_motion(void *data,struct wl_touch *touch,uint32_t time,int32_t id,wl_fixed_t x,wl_fixed_t y) {(void)touch;(void)time;struct swaylock_seat *seat=data;mellipi_touch_motion(&seat->touch_tap,id,wl_fixed_to_double(x),wl_fixed_to_double(y));}
++static void touch_frame(void *data,struct wl_touch *touch) {(void)data;(void)touch;}
++static void touch_cancel(void *data,struct wl_touch *touch) {(void)touch;struct swaylock_seat *seat=data;mellipi_touch_cancel(&seat->touch_tap);seat->touch_surface=NULL;}
++static const struct wl_touch_listener touch_listener={.down=touch_down,.up=touch_up,.motion=touch_motion,.frame=touch_frame,.cancel=touch_cancel};
++
+ static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
+ 		enum wl_seat_capability caps) {
+ 	struct swaylock_seat *seat = data;
++	if(seat->touch){wl_touch_release(seat->touch);seat->touch=NULL;mellipi_touch_cancel(&seat->touch_tap);}
++	seat->pointer_surface=NULL;
+ 	if (seat->pointer) {
+ 		wl_pointer_release(seat->pointer);
+ 		seat->pointer = NULL;
+@@ -217,8 +276,9 @@
+ 	}
+ 	if ((caps & WL_SEAT_CAPABILITY_POINTER)) {
+ 		seat->pointer = wl_seat_get_pointer(wl_seat);
+-		wl_pointer_add_listener(seat->pointer, &pointer_listener, NULL);
+-	}
++		wl_pointer_add_listener(seat->pointer, &pointer_listener, seat);
++	}
++	if(caps & WL_SEAT_CAPABILITY_TOUCH){seat->touch=wl_seat_get_touch(wl_seat);wl_touch_add_listener(seat->touch,&touch_listener,seat);}
+ 	if ((caps & WL_SEAT_CAPABILITY_KEYBOARD)) {
+ 		seat->keyboard = wl_seat_get_keyboard(wl_seat);
+ 		wl_keyboard_add_listener(seat->keyboard, &keyboard_listener, seat);
+--- a/include/seat.h
++++ b/include/seat.h
+@@ -3,6 +3,8 @@
+ #include <xkbcommon/xkbcommon.h>
+ #include <stdint.h>
+ #include <stdbool.h>
++#include "pool-buffer.h"
++#include "mellipi-lock-keyboard.h"
+ 
+ struct loop;
+ struct loop_timer;
+@@ -19,6 +21,15 @@
+ 	struct swaylock_state *state;
+ 	struct wl_pointer *pointer;
+ 	struct wl_keyboard *keyboard;
++	struct wl_touch *touch;
++	struct wl_surface *pointer_surface;
++	double pointer_x, pointer_y;
++	struct wl_surface *cursor_surface;
++	struct pool_buffer cursor_buffers[2];
++	struct mellipi_touch_tap touch_tap;
++	struct wl_surface *touch_surface;
++	bool touch_child;
++	bool pointer_child;
+ 	int32_t repeat_period_ms;
+ 	int32_t repeat_delay_ms;
+ 	uint32_t repeat_sym;
+--- a/include/swaylock.h
++++ b/include/swaylock.h
+@@ -98,6 +98,7 @@
+ 	uint32_t highlight_start; // position of highlight; 2048 = 1 full turn
+ 	int failed_attempts;
+ 	bool run_display, locked;
++	bool orbit_keyboard_shown, orbit_keyboard_shift, orbit_keyboard_symbols;
+ 	struct ext_session_lock_manager_v1 *ext_session_lock_manager_v1;
+ 	struct ext_session_lock_v1 *ext_session_lock_v1;
+ };

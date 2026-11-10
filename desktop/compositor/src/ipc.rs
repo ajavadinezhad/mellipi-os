@@ -259,6 +259,7 @@ impl OrbitCompositor {
                         | "unsubscribe"
                         | "input_get"
                         | "output_power"
+                        | "output_resume"
                         | "output_rollback"
                 )
             )
@@ -267,7 +268,7 @@ impl OrbitCompositor {
         }
         match value["command"].as_str().unwrap_or("") {
             "status" => {
-                json!({"backend":"orbit-native","protocol_version":1,"capabilities":{"native_workspace_slide":true,"native_window_motion":true,"trusted_virtual_keyboard":true,"primary_selection":true,"clipboard_text_retention":true,"client_dmabuf":self.dmabuf.global.is_some(),"clipboard_png":true,"native_png_clipboard":true,"themed_cursor":true,"layer_shell":true,"xdg_shell":true,"maximize_restore":true,"xwayland":self.xwayland.xwm.is_some(),"secure_lock":std::env::args().any(|arg|arg=="--drm"),"idle_notify":true,"idle_inhibit":true,"hardware_validated":false,"screen_copy":true,"screencopy_version":2,"legacy_ssd":true,"orbit_shell_adapter":true,"login_session":std::env::args().any(|arg|arg=="--drm")},"control_capabilities":self.native_system_capabilities(),"experimental":true,"xdisplay":self.xwayland.display,"xwayland_error":self.xwayland.error,"locked":self.protocols.is_locked(),"pointer":self.seat.get_pointer().map(|p|{let pos=p.current_location();json!({"x":pos.x,"y":pos.y,"header":self.header_at(pos).map(|(id,_,_)|id.to_string()),"grabbed":p.is_grabbed()})}),"workspace":self.current_workspace+1,"workspaces":4,"animating":self.has_animations(),"window_animations":self.window_motions.active.len(),"window_motion_enabled":self.window_motion_enabled,"rendered_frames":self.rendered_frames,"animation_frames":self.animation_frames,"wayland_display":self.socket_name.to_string_lossy(),"capture_based":false,"progress":self.transition.map(|t|(t.started.elapsed().as_secs_f64()/if self.economy {0.18}else{0.24}).min(1.0)).unwrap_or(1.0),"direction":self.transition.map(|t|t.direction as i32),"economy":self.economy,"reduced_motion":self.reduced_motion})
+                json!({"backend":"orbit-native","protocol_version":1,"capabilities":{"native_workspace_slide":true,"native_window_motion":true,"trusted_virtual_keyboard":true,"touch":self.seat.get_touch().is_some(),"primary_selection":true,"clipboard_text_retention":true,"client_dmabuf":self.dmabuf.global.is_some(),"clipboard_png":true,"native_png_clipboard":true,"themed_cursor":true,"layer_shell":true,"xdg_shell":true,"maximize_restore":true,"xwayland":self.xwayland.xwm.is_some(),"secure_lock":std::env::args().any(|arg|arg=="--drm"),"idle_notify":true,"idle_inhibit":true,"hardware_validated":false,"screen_copy":true,"screencopy_version":2,"legacy_ssd":true,"orbit_shell_adapter":true,"login_session":std::env::args().any(|arg|arg=="--drm")},"control_capabilities":self.native_system_capabilities(),"experimental":true,"xdisplay":self.xwayland.display,"xwayland_error":self.xwayland.error,"locked":self.protocols.is_locked(),"pointer":self.seat.get_pointer().map(|p|{let pos=p.current_location();json!({"x":pos.x,"y":pos.y,"header":self.header_at(pos).map(|(id,_,_)|id.to_string()),"grabbed":p.is_grabbed()})}),"workspace":self.current_workspace+1,"workspaces":4,"animating":self.has_animations(),"window_animations":self.window_motions.active.len(),"window_motion_enabled":self.window_motion_enabled,"rendered_frames":self.rendered_frames,"animation_frames":self.animation_frames,"wayland_display":self.socket_name.to_string_lossy(),"capture_based":false,"progress":self.transition.map(|t|(t.started.elapsed().as_secs_f64()/if self.economy {0.18}else{0.24}).min(1.0)).unwrap_or(1.0),"direction":self.transition.map(|t|t.direction as i32),"economy":self.economy,"reduced_motion":self.reduced_motion})
             }
             "clipboard_png" => {
                 match crate::clipboard::read_png(value["path"].as_str().unwrap_or("")){
@@ -366,7 +367,7 @@ impl OrbitCompositor {
                 }
                 Err(error) => json!({"ok":false,"error":error}),
             },
-            "input_get" | "input_configure" | "output_configure" | "output_power" | "output_checkpoint" | "output_commit" | "output_rollback" => {
+            "input_get" | "input_configure" | "output_configure" | "output_power" | "output_resume" | "output_checkpoint" | "output_commit" | "output_rollback" => {
                 self.native_system_control(&value)
             }
             "focus" | "minimize" | "restore" | "snap" | "resize" | "fullscreen" | "constrain" => {

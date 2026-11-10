@@ -162,3 +162,36 @@ sources intact. To roll back a bad release, select a retained known-good
 version through APT and test it; a repository rollback alone does not downgrade
 already installed packages. Keep Mint/Xfce or a working TTY recovery option
 while testing session changes.
+
+
+## Scheduled health checks and safe renewal
+
+The weekly **Check signed update repository health** workflow verifies both the
+Mellipi and compatibility endpoints using the pinned public key. It warns 30 days
+before metadata or key expiry, fails on signature/network/identity errors, and
+maintains one repository issue for investigation. It adds no desktop service and
+never receives the archive private key. Run it manually after each release too.
+
+On the maintainer signing machine, renew metadata without rebuilding packages:
+
+```sh
+python3 tools/renew-update-repository.py --gnupg-home /path/to/private-signing-home \
+  --signing-key 7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF
+```
+
+The helper authenticates the old archive (including expired metadata), verifies
+all signed indexes/package hashes, stages a complete publication, preserves
+package/source bytes and the enrollment helper, and validates before replacing
+the local tree. On failure the original tree is kept. Review and push the changed
+public metadata and run the Pages workflow normally. Repeat with
+`--public-directory /path/to/legacy-checkout/public` to retain the original
+compatibility Origin. This step does not upload, install packages or change APT.
+The local private-key approval and publication remain maintainer operations;
+GitHub does not automatically sign releases or silently extend trust.
+
+
+GitHub can disable public-repository schedules after 60 days without repository
+activity. The scheduled check is an alerting aid, not unattended renewal or an
+availability guarantee. During a monthly maintainer review, run the check,
+renew/redeploy signed metadata as needed, and confirm the workflow is enabled.
+The check also supports manual dispatch. See [GitHub’s scheduler policy](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).

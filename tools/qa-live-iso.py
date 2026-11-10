@@ -125,7 +125,10 @@ def command(work,state,boot='iso'):
  accel=state['acceleration'];disk=work/'target.qcow2';media=state.get('media','cdrom')
  if media not in ('cdrom','usb'):raise ValueError('Invalid QA media metadata')
  if accel not in ('kvm','tcg') or state.get('firmware') not in ('bios','uefi'):raise ValueError('Invalid VM acceleration/firmware metadata')
- args=['qemu-system-x86_64','-name',state['name'],'-machine','q35,accel='+accel,'-cpu','host' if accel=='kvm' else 'max','-smp','2','-m','4096','-device','virtio-vga','-display','none','-vnc','unix:'+str(work/'vnc.sock'),'-qmp','unix:'+str(work/'qmp.sock')+',server=on,wait=off','-serial','file:'+str(work/'serial.log'),'-monitor','none','-boot',('menu=on' if boot=='iso' and media=='usb' else 'order='+('d' if boot=='iso' else 'c')+',menu=on'),'-blockdev',json.dumps({'driver':'qcow2','node-name':'qa-target','file':{'driver':'file','filename':str(disk)},'backing':None},separators=(',',':')),'-device','virtio-blk-pci,drive=qa-target,serial=ABSTRACT_QA_DISK'+(',bootindex=2' if boot=='iso' and media=='usb' else ''),'-device','qemu-xhci','-device','usb-tablet','-netdev','user,id=qa-net','-device','virtio-net-pci,netdev=qa-net']
+ args=['qemu-system-x86_64','-name',state['name'],'-machine','q35,accel='+accel+(',smm=on' if state.get('secure_boot') else ''),'-cpu','host' if accel=='kvm' else 'max','-smp','2','-m','4096','-device','virtio-vga','-display','none','-vnc','unix:'+str(work/'vnc.sock'),'-qmp','unix:'+str(work/'qmp.sock')+',server=on,wait=off','-serial','file:'+str(work/'serial.log'),'-monitor','none','-boot',('menu=on' if boot=='iso' and media=='usb' else 'order='+('d' if boot=='iso' else 'c')+',menu=on'),'-blockdev',json.dumps({'driver':'qcow2','node-name':'qa-target','file':{'driver':'file','filename':str(disk)},'backing':None},separators=(',',':')),'-device','virtio-blk-pci,drive=qa-target,serial=ABSTRACT_QA_DISK'+(',bootindex=2' if boot=='iso' and media=='usb' else ''),'-device','qemu-xhci','-device','usb-tablet','-netdev','user,id=qa-net','-device','virtio-net-pci,netdev=qa-net']
+ if state.get('secure_boot'):
+  if state['firmware']!='uefi':raise ValueError('Secure Boot requires UEFI')
+  args+=['-global','driver=cfi.pflash01,property=secure,value=on']
  if state.get('serial_transport')=='socket':
   serial_at=args.index('-serial');args[serial_at:serial_at+2]=['-chardev','socket,id=qa-serial,path='+str(work/'serial.sock')+',server=on,wait=off,logfile='+str(work/'serial.log'),'-serial','chardev:qa-serial']
  if boot=='iso':
@@ -161,6 +164,7 @@ def launch(work,state,boot='iso'):
  return {'workdir':str(work),'pid':process.pid,'firmware':state['firmware'],'boot':boot,'acceleration':state['acceleration'],'media':state.get('media','cdrom'),'status':status,'guest_install_target':'/dev/vda (serial ABSTRACT_QA_DISK)','vcpu':2,'memory_mib':4096,'host_disks_attached':False,'guest_ssh_enabled':False,'vnc_socket':str(work/'vnc.sock')}
 
 def start(args):
+ if getattr(args,'secure_boot',False) and args.firmware!='uefi':raise ValueError('Secure Boot requires --firmware uefi')
  for tool in TOOLS:
   if not shutil.which(tool):raise RuntimeError('Missing QA tool: '+tool)
  iso=safe_path(args.iso)
@@ -178,6 +182,10 @@ def start(args):
  state={'kind':KIND,'name':'abstract-live-qa-'+secrets.token_hex(8),'workdir':str(work),'iso':str(iso),'iso_sha256':checksum,'firmware':args.firmware,'media':args.media,'acceleration':accel,'serial_transport':'socket','guest_target':'/dev/vda','target_serial':'ABSTRACT_QA_DISK','host_disks_attached':False}
  if args.firmware=='uefi':
   code,variables=firmware_paths(args.firmware_cache)
+  if getattr(args,'secure_boot',False):
+   root=Path(args.firmware_cache)/'root/usr/share/OVMF'
+   code=root/'OVMF_CODE_4M.secboot.fd';variables=root/'OVMF_VARS_4M.ms.fd'
+   state['secure_boot']=True
   if args.ovmf_code or args.ovmf_vars:
    if not args.ovmf_code or not args.ovmf_vars:raise ValueError('Pass both OVMF code and variables files')
    code,variables=safe_path(args.ovmf_code),safe_path(args.ovmf_vars)
@@ -289,7 +297,7 @@ def main():
  os.umask(0o077);parser=argparse.ArgumentParser(description=__doc__);sub=parser.add_subparsers(dest='action',required=True)
  p=sub.add_parser('check-tools');p.add_argument('--firmware-cache',type=Path,default=FIRMWARE_CACHE)
  p=sub.add_parser('fetch-firmware');p.add_argument('--cache',type=Path,default=FIRMWARE_CACHE)
- p=sub.add_parser('start');p.add_argument('--iso',type=Path,required=True);p.add_argument('--sha256');p.add_argument('--workdir',type=Path,required=True);p.add_argument('--firmware',choices=('bios','uefi'),default='bios');p.add_argument('--media',choices=('cdrom','usb'),default='cdrom',help='Virtual CD-ROM or read-only virtual USB storage; no host USB device is used');p.add_argument('--acceleration',choices=('auto','kvm','tcg'),default='auto');p.add_argument('--disk-gib',type=int,default=24);p.add_argument('--firmware-cache',type=Path,default=FIRMWARE_CACHE);p.add_argument('--ovmf-code',type=Path);p.add_argument('--ovmf-vars',type=Path)
+ p=sub.add_parser('start');p.add_argument('--iso',type=Path,required=True);p.add_argument('--sha256');p.add_argument('--workdir',type=Path,required=True);p.add_argument('--firmware',choices=('bios','uefi'),default='bios');p.add_argument('--media',choices=('cdrom','usb'),default='cdrom',help='Virtual CD-ROM or read-only virtual USB storage; no host USB device is used');p.add_argument('--acceleration',choices=('auto','kvm','tcg'),default='auto');p.add_argument('--disk-gib',type=int,default=24);p.add_argument('--firmware-cache',type=Path,default=FIRMWARE_CACHE);p.add_argument('--ovmf-code',type=Path);p.add_argument('--ovmf-vars',type=Path);p.add_argument('--secure-boot',action='store_true',help='Use isolated SMM-enabled firmware with Microsoft-enrolled test variables; verify SecureBoot inside the guest')
  for name in ('status','screenshot','key','text','mouse','serial','eject-iso','powerdown','stop','boot-disk'):
   p=sub.add_parser(name);p.add_argument('--workdir',type=Path,required=True)
   if name=='screenshot':p.add_argument('--name',default='screen');p.add_argument('--require-content',action='store_true')

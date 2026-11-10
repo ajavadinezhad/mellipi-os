@@ -1,0 +1,27 @@
+#!/usr/bin/python3 -I
+"""Inspect/save a working version or explicitly restore signed APT packages."""
+import argparse,json,os,subprocess,sys
+from pathlib import Path
+root=Path('/usr/lib/abstract')
+if (root/'recovery_packages.py').is_file():sys.path.insert(0,str(root))
+else:sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
+from recovery_packages import load_checkpoint,save_checkpoint,restore_command,recovery_environment
+
+def main():
+    p=argparse.ArgumentParser(description='Mellipi recovery. Package recovery uses signed APT sources; it does not restore documents or restart the desktop.')
+    group=p.add_mutually_exclusive_group();group.add_argument('--save-working',action='store_true',help='Record installed desktop versions after checking this session works');group.add_argument('--restore',nargs='+',metavar='PACKAGE=VERSION',help='Restore exact known desktop package versions through APT (requires sudo)')
+    args=p.parse_args()
+    try:
+        if args.restore:
+            command=restore_command(args.restore)
+            if os.geteuid()!=0:raise ValueError('Run the shown recovery command with sudo from a recovery TTY.')
+            print('APT will show the proposed changes and ask before installing. Your current desktop is not restarted.',flush=True)
+            return subprocess.run(command,env=recovery_environment(os.environ)).returncode
+        if os.geteuid()==0:raise ValueError('Inspect and save recovery versions as your normal desktop user.')
+        record=save_checkpoint(os.environ) if args.save_working else load_checkpoint(os.environ)
+        if not record['available']:print('No working version saved. When the desktop works, run mellipi-recover --save-working.');return 0
+        print('Saved working desktop:\n'+'\n'.join(record['packages'])+'\n\nRecovery TTY: Ctrl+Alt+F3, log in, then run:\n'+record['command']+'\n\nAPT needs the retained versions in a trusted configured repository. Log out normally only after saving your work to activate the restored compositor.')
+        return 0
+    except (OSError,ValueError,subprocess.SubprocessError,json.JSONDecodeError) as error:print(str(error),file=sys.stderr);return 1
+
+if __name__=='__main__':raise SystemExit(main())

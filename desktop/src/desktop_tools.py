@@ -72,8 +72,11 @@ class DesktopTools(QObject):
                     self._tools['files'].update(command=fallback,available=bool(fallback),reason='' if fallback else 'Install a file manager, then select it under Default applications.')
             except Exception:pass
         for key,label in [('defaults','Default applications'),('devices','Removable devices')]:self._tools[key]=dict(label=label,command=[],available=self.gioAvailable,reason='' if self.gioAvailable else 'GIO integration is not installed in this Python runtime.',builtin=True)
+        for key,label in [('users','Users and passwords'),('datetime','Date and time')]:self._tools[key]=dict(label=label,command=[],available=self.gioAvailable,reason='' if self.gioAvailable else 'Install python3-gi to access system services.',builtin=True)
+        self._tools['recovery']=dict(label='Backups & recovery',command=[],available=True,reason='',builtin=True)
         self._tools['defaults-mint']=dict(label='Default applications',command=[],available=False,reason='Use the built-in Default applications page.',builtin=True)
         self._defaultKey='browser';self._defaults=[];self._startup=[];self._devices=[];self._state=dict(busy=False,error='',monitorAvailable=False,gioAvailable=self.gioAvailable);self._active=False;self._generation=0;self._startupReading=False;self._startupLock=threading.Lock();self._startupRevision=0;self._viewRequest={};self._viewSerial=0
+        self._systemUsers=[];self._systemState=dict(busy=False,error='',usersAvailable=False,clockAvailable=False,timezone='',ntp=False,canNtp=False,synchronized=False,zones=[]);self._systemClosed=False
         from device_monitor import DeviceMonitor
         self.monitor=DeviceMonitor(self);self.monitor.result.connect(self.applyUpdate);self.update.connect(self.applyUpdate)
     tools=Property('QVariantMap',lambda s:{key:{k:v for k,v in row.items() if k!='command'} for key,row in s._tools.items()},notify=changed)
@@ -83,6 +86,8 @@ class DesktopTools(QObject):
     defaultType=Property(str,lambda s:s._defaultKey,notify=changed)
     startupApps=Property('QVariantList',lambda s:s._startup,notify=changed)
     devices=Property('QVariantList',lambda s:s._devices,notify=changed)
+    systemUsers=Property('QVariantList',lambda s:[{k:v for k,v in r.items() if k!='path'} for r in s._systemUsers],notify=changed)
+    systemState=Property('QVariantMap',lambda s:dict(s._systemState),notify=changed)
     state=Property('QVariantMap',lambda s:dict(s._state),notify=changed)
     viewRequest=Property('QVariantMap',lambda s:dict(s._viewRequest),notify=changed)
     @Slot(object)
@@ -94,6 +99,10 @@ class DesktopTools(QObject):
         if 'error' in data:self._state['error']=data['error'];self._state['busy']=False
         if data.get('operationDone'):self._state['busy']=False
         if 'monitorAvailable' in data:self._state['monitorAvailable']=data['monitorAvailable']
+        if 'system' in data:
+            result=data['system'];self._systemState.update(busy=False,error=result.get('error',''))
+            if 'users' in result:self._systemUsers=result['users'];self._systemState['usersAvailable']=True
+            if 'clock' in result:self._systemState.update(result['clock'],clockAvailable=True)
         self.changed.emit()
     def fail(self,error):self.applyUpdate(dict(error=str(error)[:240]));self.notice.emit(str(error)[:240])
     @Slot(bool)
@@ -160,11 +169,47 @@ class DesktopTools(QObject):
             return
         if action not in ('mount','unmount','eject') or self._state['busy']:return
         self._state.update(busy=True,error='');self.changed.emit();self.monitor.action(ident,action)
+    def _system_submit(self,method,*args):
+        if self._systemClosed or self._systemState['busy']:return
+        self._systemState.update(busy=True,error='');self.changed.emit()
+        def work():
+            from system_settings import SystemSettingsBackend,ServiceError
+            try:
+                value=getattr(SystemSettingsBackend(),method)(*args)
+                result={'clock' if method in ('clock','set_timezone','set_ntp','set_time') else 'users':value}
+            except (ValueError,ServiceError) as error:result=dict(error=str(error)[:240])
+            except Exception:result=dict(error='The system request failed. Refresh to check its current state.')
+            if not self._systemClosed:self.update.emit(dict(system=result))
+        threading.Thread(target=work,name='mellipi-system-settings',daemon=True).start()
+    @Slot(str)
+    def refreshSystem(self,section):
+        if section in ('users','datetime'):self._system_submit('users' if section=='users' else 'clock')
+    @Slot(int,str,bool)
+    def saveSystemUser(self,uid,name,administrator):self._system_submit('update_user',uid,name,administrator)
+    @Slot(str,str,str,str,bool)
+    def createSystemUser(self,username,name,password,confirmation,administrator):self._system_submit('create_user',username,name,password,confirmation,administrator)
+    @Slot(int,str,str)
+    def resetSystemPassword(self,uid,password,confirmation):self._system_submit('reset_password',uid,password,confirmation)
+    @Slot(int)
+    def removeSystemUser(self,uid):self._system_submit('delete_user',uid)
+    @Slot(str)
+    def setSystemTimezone(self,zone):self._system_submit('set_timezone',zone)
+    @Slot(bool)
+    def setSystemNtp(self,enabled):self._system_submit('set_ntp',enabled)
+    @Slot(str)
+    def setSystemTime(self,value):self._system_submit('set_time',value)
+    @Slot()
+    def changeMyPassword(self):
+        terminal=next((self._which(n) for n in ('x-terminal-emulator','foot','xfce4-terminal','gnome-terminal','konsole','xterm') if self._which(n)),None)
+        if not terminal:self.fail('Install a terminal emulator to change your password securely.');return
+        command=[terminal,*(['--'] if Path(terminal).name=='gnome-terminal' else [] if Path(terminal).name=='foot' else ['-e']),'/usr/bin/passwd']
+        self.monitor.submit(lambda Gio:launch_tool(Gio,command,'Change my password'))
     @Slot(str)
     def open(self,key):
         row=self._tools.get(key)
         if not row or not row['available']:self.fail((row or {}).get('reason','This tool is unavailable'));return
         if row.get('builtin'):
+            if key in ('users','datetime'):self.refreshSystem(key)
             self._viewSerial+=1;self._viewRequest=dict(name=key,serial=self._viewSerial);self.changed.emit();self.viewRequested.emit(key);return
         command=list(row['command']);label=row['label']
         def work(Gio):
@@ -174,4 +219,4 @@ class DesktopTools(QObject):
             except Exception as error:raise RuntimeError('Could not open '+label+': '+str(error)[:160]) from error
         self.monitor.submit(work)
     @Slot()
-    def close(self):self.monitor.stop()
+    def close(self):self._systemClosed=True;self.monitor.stop()

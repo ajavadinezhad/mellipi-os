@@ -240,6 +240,7 @@ impl Dispatch<manager::ExtSessionLockManagerV1, ()> for OrbitCompositor {
                     owner.finished();
                     return;
                 }
+                state.cancel_touch_sequence();
                 state.protocols.lock.owner = Some(owner);
                 state.protocols.lock.acknowledged = false;
                 state.protocols.lock.awaiting = state.space.outputs().cloned().collect();
@@ -300,6 +301,7 @@ impl Dispatch<lock::ExtSessionLockV1, ()> for OrbitCompositor {
                     );
                     return;
                 }
+                state.cancel_touch_sequence();
                 state.protocols.lock = LockState::default();
                 let focus = state
                     .space

@@ -10,12 +10,12 @@ def locker_binary():
 def command(environment=None,binary=None):
     env=os.environ if environment is None else environment
     identity=env.get('ORBIT_NATIVE_CONTROL') or env.get('SWAYSOCK')
-    if not identity or not env.get('WAYLAND_DISPLAY'):raise ValueError('A Wayland Orbit session is required')
+    if not identity or not env.get('WAYLAND_DISPLAY'):raise ValueError('A Wayland Mellipi session is required')
     if env.get('ORBIT_NATIVE_CONTROL'):
         from native_compositor import NativeCompositor
         status=NativeCompositor(env['ORBIT_NATIVE_CONTROL']).status()
         if not status.get('capabilities',{}).get('secure_lock'):
-            raise ValueError('Native session locking is not yet validated; use the established Orbit session for secure locking')
+            raise ValueError('Native session locking is not yet validated; use a supported Mellipi session for secure locking')
     runtime=Path(env.get('XDG_RUNTIME_DIR',''))
     if not runtime.is_absolute() or not runtime.is_dir():raise ValueError('The session runtime directory is unavailable')
     binary=binary or locker_binary();flock=shutil.which('flock')

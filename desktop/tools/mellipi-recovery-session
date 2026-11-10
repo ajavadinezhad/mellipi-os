@@ -1,0 +1,18 @@
+#!/usr/bin/python3 -I
+"""Authenticated, shell-independent Xorg emergency terminal; no desktop daemon."""
+import os,pwd,sys
+from pathlib import Path
+
+def main():
+    if os.geteuid()==0:raise SystemExit('Start Recovery from the normal sign-in screen, not sudo.')
+    if not os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'):raise SystemExit('Choose Mellipi Recovery at the sign-in screen.')
+    if not Path('/usr/bin/xterm').is_file():raise SystemExit('The Mellipi desktop profile requires xterm for recovery.')
+    env=dict(os.environ)
+    for key in list(env):
+        if key.startswith(('ORBIT_','QT_','QML','PYTHON','LD_','BASH_FUNC_')) or key in ('BASH_ENV','ENV','SHELLOPTS','BASHOPTS','PROMPT_COMMAND','INPUTRC','XENVIRONMENT','XAPPLRESDIR','XFILESEARCHPATH','XUSERFILESEARCHPATH'):env.pop(key,None)
+    # Xterm must not load broken per-user .Xdefaults before the console runs.
+    # The console restores the authenticated account's real HOME itself.
+    env.update(PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',HOME='/',XENVIRONMENT='/dev/null',INPUTRC='/dev/null',XDG_CURRENT_DESKTOP='MellipiRecovery',XDG_SESSION_DESKTOP='mellipi-recovery')
+    os.execve('/usr/bin/xterm',['/usr/bin/xterm','-fa','DejaVu Sans Mono','-fs','10','-geometry','80x28+0+0','-title','Mellipi Recovery','-e','/usr/bin/python3','-I','/usr/lib/abstract/recovery_console.py'],env)
+
+if __name__=='__main__':main()

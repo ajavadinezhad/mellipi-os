@@ -166,6 +166,14 @@ def serve(bridge):
                 if action=='dismiss':bridge.dismiss()
                 elif action=='resume':bridge.activateDock('orbit-settings',False)
                 elif action=='close':bridge.closeSettingsTask()
+            elif data.startswith('qa-essential-tool:') and os.environ.get('ORBIT_QA')=='1' and os.environ.get('ORBIT_NESTED')=='1':
+                name=data.removeprefix('qa-essential-tool:')
+                if name in ('users','datetime','recovery'):
+                    tool=getattr(bridge,'desktopTools',None)
+                    if tool:tool.open(name)
+                elif name=='choose-folder':
+                    recovery=getattr(bridge,'recovery',None)
+                    if recovery:recovery.chooseDirectory('backupParent')
             elif data=='qa-window-state' and os.environ.get('ORBIT_QA')=='1':
                 connection.write(json.dumps({'windows':bridge._windows,'frame_style':bridge.appearance['frameStyle'],'tracking':bridge.frameTrackingEnabled}).encode());connection.flush()
             elif data.startswith('qa-system-section:') and os.environ.get('ORBIT_QA')=='1':

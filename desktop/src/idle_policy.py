@@ -50,6 +50,9 @@ def policy_command(values,native=False):
             args+=['timeout',str(seconds),power+' off','resume',power+' on']
         else:args+=['timeout',str(seconds),'swaymsg "output * power off"','resume','swaymsg "output * power on"']
     if before:args+=['before-sleep',locker]
+    if native:
+        recovery='/usr/bin/python3 '+shlex.quote(str(ROOT/'tools/native-output-power.py'))+' resume'
+        args+=['after-resume',recovery]
     return args if len(args)>2 else []
 
 def legacy_idle_processes(environment,proc_root=Path('/proc')):
@@ -122,7 +125,10 @@ class IdlePolicy(QObject):
             self._stop();self.current=None
             if command:
                 env={k:v for k,v in self.environment.items() if not k.startswith('ORBIT_')}
-                if self.native:env['ORBIT_NATIVE_CONTROL']=self.environment['ORBIT_NATIVE_CONTROL']
+                for key in ('ORBIT_NATIVE_CONTROL','ORBIT_SETTINGS_FILE','ORBIT_DATA'):
+                    if self.environment.get(key):env[key]=self.environment[key]
+                settings=getattr(self.preferences,'path',None)
+                if settings is not None:env['ORBIT_SETTINGS_FILE']=str(settings)
                 for key in ('QT_WAYLAND_SHELL_INTEGRATION','QT_QPA_PLATFORM','QT_QUICK_BACKEND'):env.pop(key,None)
                 # The wrapper execs the timer, so it consumes no extra idle
                 # process and the timer dies even if Orbit itself is SIGKILLed.

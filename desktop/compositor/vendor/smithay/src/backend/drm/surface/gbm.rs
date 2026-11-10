@@ -404,6 +404,19 @@ where
         self.swapchain.reset_buffers()
     }
 
+    /// Discard userspace scanout bookkeeping after the caller has synchronously
+    /// disabled/reset the DRM device (for example after system suspend).
+    ///
+    /// Unlike `reset_buffers`, this also retires a pageflip whose vblank was lost
+    /// while asleep. Never call while the kernel can still scan these buffers:
+    /// first reset the device/CRTC, then queue a completely new full frame.
+    pub fn reset_after_device_reset(&mut self) {
+        self.pending_fb = None;
+        self.queued_fb = None;
+        self.next_fb = None;
+        self.swapchain.reset_buffers();
+    }
+
     /// Reset the age for all buffers.
     ///
     /// This can be used to efficiently clear the damage history without having to

@@ -14,8 +14,10 @@ SETTING_ACTIONS=(
     dict(id='software-updates',name='Software updates',description='Open the installed update manager',icon='system-software-update',words='updates upgrade software packages',section=16,tab=3,target='systemTool_updates'),
     dict(id='user-accounts',name='Users and passwords',description='Open user account settings',icon='system-users',words='users accounts password login avatar profile',section=16,tab=3,target='systemTool_users'),
     dict(id='date-time',name='Date and time',description='Open time, timezone and clock settings',icon='preferences-system-time',words='date time timezone clock ntp automatic',section=16,tab=3,target='systemTool_datetime'),
+    dict(id='backups',name='Backups and recovery',description='Back up files, restore settings or find your working desktop version',icon='document-revert',words='backup back up restore recovery undo update downgrade working version safe rescue repair files',section=16,tab=3,target='systemTool_recovery'),
 )
 SETTING_TARGETS={row['id']:(row['section'],row['tab'],row['target']) for row in SETTING_ACTIONS}
+BUILTIN_TOOLS={'user-accounts':'users','date-time':'datetime','backups':'recovery'}
 
 def setting_actions():
     return [dict(id=r['id'],name=r['name'],description=r['description'],icon=r['icon'],searchText=' '.join((r['name'],r['description'],r['words'])).lower(),destination='setting:'+r['id']) for r in SETTING_ACTIONS]

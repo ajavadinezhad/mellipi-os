@@ -9,7 +9,7 @@ RUNTIME_FILES=('.native-runtime/bin/orbit-compositor','backend/target/release/or
 
 # Explicit opt-in installation profile. Merely installing mellipi-shell never
 # selects a greeter, adds another desktop, or changes a display-manager default.
-DESKTOP_DEPENDENCIES=('systemd-sysv','libpam-systemd','dbus-user-session','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','network-manager-gnome','bluez','upower','power-profiles-daemon','gnome-keyring','libpam-gnome-keyring','gvfs','gvfs-backends','udisks2','thunar','foot','mousepad','epiphany-browser | firefox-esr','synaptic','system-config-printer','fonts-dejavu-core','dmz-cursor-theme','wvkbd','orca','fcitx5','fcitx5-config-qt','fcitx5-frontend-qt5','fcitx5-frontend-gtk3','ddcutil','gnome-system-tools')
+DESKTOP_DEPENDENCIES=('systemd-sysv','libpam-systemd','dbus-user-session','lightdm','lightdm-gtk-greeter','xserver-xorg','xterm','network-manager','network-manager-gnome','bluez','upower','power-profiles-daemon','gnome-keyring','libpam-gnome-keyring','gvfs','gvfs-backends','udisks2','thunar','foot','mousepad','epiphany-browser | firefox-esr','synaptic','system-config-printer','fonts-dejavu-core','dmz-cursor-theme','wvkbd','orca','fcitx5','fcitx5-config-qt','fcitx5-frontend-qt5','fcitx5-frontend-gtk3','ddcutil','accountsservice','systemd-timesyncd | time-daemon')
 
 def packaged_elfs(stage,architecture):
     if architecture!='amd64':raise ValueError('The supported release baseline is Ubuntu 24.04 amd64; rebuild and validate other targets separately')
@@ -64,6 +64,12 @@ def stage_desktop_package(stage,version):
     write(stage/'usr/share/doc/mellipi-desktop/README','Mellipi desktop installation profile\n\nInstall alongside mellipi-shell on an Ubuntu 24.04 amd64 systemd base.\nLightDM and its GTK greeter are installed using distribution package policy;\nif another display manager exists, use its normal debconf selection.\nNo Mellipi maintainer script chooses or overwrites a display manager or PAM.\nThe GTK greeter receives a dpkg-managed appearance fragment and a static SVG\nwallpaper. Existing main greeter configuration takes precedence; local edits\nto the Mellipi fragment are protected as a conffile. No greeter is restarted.\nRemoving this metapackage alone does not remove its applications or services.\n')
     for path in stage.rglob('*'):
         if not path.is_symlink():path.chmod(0o755 if path.is_dir() else 0o644)
+    write(stage/'usr/share/xsessions/mellipi-recovery.desktop','[Desktop Entry]\nName=Mellipi Recovery\nComment=Emergency terminal without the desktop compositor\nExec=/usr/bin/mellipi-recovery-session\nTryExec=/usr/bin/xterm\nType=Application\nDesktopNames=MellipiRecovery;\n')
+    write(stage/'usr/bin/mellipi-recovery-session',(ROOT/'tools/mellipi-recovery-session').read_text(),0o755)
+    write(stage/'usr/bin/mellipi-session-wrapper',(ROOT/'tools/mellipi-session-wrapper').read_text(),0o755)
+    write(stage/'usr/share/lightdm/lightdm.conf.d/50-mellipi-recovery.conf','[Seat:*]\nsession-wrapper=/usr/bin/mellipi-session-wrapper\n')
+    for path in stage.rglob('*'):
+        if path.is_dir() and not path.is_symlink():path.chmod(0o755)
     return stage
 
 def write(path,text,mode=0o644):
@@ -107,6 +113,7 @@ def stage_package(stage,version,architecture,root=ROOT):
       'packaging/abstract-package-manager':('usr/bin/abstract-package-manager',0o755),
       'packaging/org.abstract.package-manager.policy':('usr/share/polkit-1/actions/org.abstract.package-manager.policy',0o644),
       'packaging/mellipi-archive-keyring.gpg':('usr/share/keyrings/mellipi-archive-keyring.gpg',0o644),
+      'tools/mellipi-recover':('usr/bin/mellipi-recover',0o755),
       'tools/migrate-update-source.py':('usr/lib/abstract/migrate-update-source.py',0o644),
       'tools/abstract-charge-limit':('usr/lib/abstract/abstract-charge-limit',0o755),
       'packaging/org.abstract.charge-limit.policy':('usr/share/polkit-1/actions/org.abstract.charge-limit.policy',0o644),
@@ -121,7 +128,7 @@ def stage_package(stage,version,architecture,root=ROOT):
     write(stage/'usr/share/xdg-desktop-portal/orbit-portals.conf',portal.read_text())
     doc=stage/'usr/share/doc/mellipi-shell';doc.mkdir(parents=True)
     shutil.copy2(root/'README.md',doc/'README.md')
-    for name in ('independent-desktop.md','request-recheck-2026-11-08.md','native-protocols.md','hardware-acceptance-2026-11-08.md','operational-readiness.md','clean-install-acceptance.md','source-build-baseline.md','audits/2026-11-09-clean-full-minimum.json'):
+    for name in ('independent-desktop.md','request-recheck-2026-11-08.md','native-protocols.md','hardware-acceptance-2026-11-08.md','operational-readiness.md','backups-and-recovery.md','system-administration.md','hardware-validation.md','secure-unlocking.md','secure-boot.md','clean-install-acceptance.md','source-build-baseline.md','audits/2026-11-09-clean-full-minimum.json'):
         source=docs_root/name
         if source.is_file():
             # Keep old flat doc paths and README's repository-relative links.
@@ -146,7 +153,7 @@ def stage_transition(stage,version,kind):
     write(Path(stage)/'usr/share/doc'/old/'README',f'Mellipi replaces {old}. The current desktop package is {new}.\n')
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--version',default='0.1.8');parser.add_argument('--output-dir',type=Path,default=ROOT/'dist');parser.add_argument('--with-desktop',action='store_true',help='Also build the optional complete desktop metapackage');args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--version',default='0.1.9');parser.add_argument('--output-dir',type=Path,default=ROOT/'dist');parser.add_argument('--with-desktop',action='store_true',help='Also build the optional complete desktop metapackage');args=parser.parse_args()
     if not re.fullmatch(r'[0-9][A-Za-z0-9.+~:-]{0,63}',args.version):parser.error('Invalid Debian version')
     architecture=subprocess.check_output(['dpkg','--print-architecture'],text=True).strip()
     args.output_dir.mkdir(parents=True,exist_ok=True)

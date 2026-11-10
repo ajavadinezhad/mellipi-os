@@ -61,7 +61,7 @@ class DesktopPackageTest(unittest.TestCase):
   self.assertNotIn('lightdm',builder.DEPENDENCIES)
   with tempfile.TemporaryDirectory() as directory:
    stage=builder.stage_desktop_package(Path(directory)/'desktop','0.1.5');control=(stage/'DEBIAN/control').read_text()
-   for name in ('mellipi-shell (= 0.1.5)','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','foot','mousepad','epiphany-browser','synaptic','wvkbd','orca','fcitx5','fcitx5-config-qt','ddcutil','gnome-system-tools'):self.assertIn(name,control)
+   for name in ('mellipi-shell (= 0.1.5)','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','foot','mousepad','epiphany-browser','synaptic','wvkbd','orca','fcitx5','fcitx5-config-qt','ddcutil','accountsservice'):self.assertIn(name,control)
    self.assertFalse((stage/'DEBIAN/postinst').exists());self.assertFalse((stage/'etc/pam.d').exists());self.assertFalse((stage/'etc/lightdm/lightdm.conf').exists());self.assertFalse((stage/'etc/lightdm/lightdm-gtk-greeter.conf').exists())
    for path in stage.rglob('*'):self.assertEqual(path.stat().st_mode & 0o022,0,str(path))
  def test_shlibdeps_includes_all_elfs_and_private_search_paths_without_suppressing_missing_info(self):

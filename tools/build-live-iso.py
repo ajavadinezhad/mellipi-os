@@ -4,7 +4,7 @@
 Never invoke this tool on a workstation. It refuses non-QEMU QA guests and never
 accepts a disk device. Installation choices belong to the interactive installer.
 """
-import argparse,contextlib,hashlib,json,os,re,shutil,struct,subprocess,time
+import argparse,contextlib,hashlib,importlib.util,json,os,re,shutil,struct,subprocess,time
 from pathlib import Path
 
 ARCHIVE='https://ajavadinezhad.github.io/mellipi-os/apt'
@@ -12,7 +12,7 @@ FINGERPRINT='7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF'
 CALAMARES_VERSION='3.3.5-0ubuntu4'
 CALAMARES_PARTITION_PATH='usr/lib/x86_64-linux-gnu/calamares/modules/partition/libcalamares_viewmodule_partition.so'
 CALAMARES_STOCK_MODULE_SHA256='55a6c6a1f0624dff6df59358eb2c77b535f520c525a9ec8c7ae06a9d36414ea8'
-BASE_PACKAGES=['ca-certificates','systemd-sysv','udev','dbus','dbus-user-session','sudo','locales','tzdata','keyboard-configuration','console-setup','casper','initramfs-tools','linux-generic','linux-firmware','systemd-resolved','network-manager','calamares','grub-pc-bin','grub-efi-amd64-bin','grub2-common','efibootmgr','os-prober','rsync','squashfs-tools','cryptsetup','cryptsetup-initramfs','dosfstools','e2fsprogs','parted','python3-yaml','xdg-user-dirs','fonts-dejavu-core','dmz-cursor-theme']
+BASE_PACKAGES=['ca-certificates','systemd-sysv','udev','dbus','dbus-user-session','sudo','locales','tzdata','keyboard-configuration','console-setup','casper','initramfs-tools','linux-generic','linux-firmware','systemd-resolved','network-manager','calamares','grub-pc-bin','grub-efi-amd64-bin','grub-efi-amd64-signed','shim-signed','sbsigntool','mokutil','grub2-common','efibootmgr','os-prober','rsync','squashfs-tools','cryptsetup','cryptsetup-initramfs','dosfstools','e2fsprogs','parted','python3-yaml','xdg-user-dirs','fonts-dejavu-core','dmz-cursor-theme']
 
 def run(args,**kwargs):
     print('+ '+' '.join(map(str,args)),flush=True)
@@ -108,9 +108,12 @@ instances:
   - id: abstractcleanup
     module: shellprocess
     config: abstractcleanup.conf
+  - id: abstractbootcleanup
+    module: shellprocess
+    config: abstractbootcleanup.conf
 sequence:
   - show: [ welcome, locale, keyboard, partition, users, summary ]
-  - exec: [ partition, mount, shellprocess@abstracttargetcheck, unpackfs, machineid, fstab, locale, keyboard, localecfg, shellprocess@abstractcleanup, users, displaymanager, networkcfg, hwclock, initramfscfg, grubcfg, packages, initramfs, bootloader, umount ]
+  - exec: [ partition, mount, shellprocess@abstracttargetcheck, unpackfs, machineid, fstab, locale, keyboard, localecfg, shellprocess@abstractcleanup, users, displaymanager, networkcfg, hwclock, initramfscfg, grubcfg, packages, initramfs, bootloader, shellprocess@abstractbootcleanup, umount ]
   - show: [ finished ]
 branding: abstract
 prompt-install: true
@@ -196,13 +199,13 @@ operations:
     'grubcfg.conf':'overwrite: false\ndefaults: { GRUB_ENABLE_CRYPTODISK: true }\n',
     'initramfs.conf':'kernel: all\nbe_unsafe: false\n',
     'bootloader.conf':'''efiBootLoader: grub
-efiBootloaderId: Mellipi
-grubInstall: grub-install
+efiBootloaderId: ubuntu
+grubInstall: /usr/lib/abstract/iso-grub-install
 grubMkconfig: grub-mkconfig
 grubCfg: /boot/grub/grub.cfg
 grubProbe: grub-probe
 efiBootMgr: efibootmgr
-installEFIFallback: true
+installEFIFallback: false
 ''',
     'finished.conf':'restartNowMode: user-unchecked\nrestartNowCommand: systemctl -i reboot\n',
     'umount.conf':'emergency: true\n',
@@ -216,9 +219,58 @@ i18n: { name: "Check installation partition" }
 timeout: 30
 script:
   - /usr/lib/abstract/iso-target-cleanup
+''',
+    'abstractbootcleanup.conf':'''dontChroot: false
+timeout: 10
+script:
+  - '/usr/bin/rm -f /usr/lib/abstract/iso-grub-install'
 '''
     }
     for name,text in configs.items():write(root,'etc/calamares/modules/'+name,text)
+    write(root,'usr/lib/abstract/iso-grub-install',r'''#!/usr/bin/python3 -I
+"""Calamares-only signed Ubuntu UEFI install; ordinary BIOS install remains."""
+import os,re,shutil,stat,subprocess,sys
+from pathlib import Path
+
+def plan(arguments):
+    if '--target=i386-pc' in arguments:
+        devices=[a for a in arguments if a.startswith('/dev/')]
+        if len(devices)!=1 or '..' in devices[0].split('/') or not re.fullmatch(r'/dev/[A-Za-z0-9_./:+-]+',devices[0]):raise ValueError('Invalid selected BIOS disk')
+        if any(a not in ('--target=i386-pc','--recheck','--force',devices[0]) for a in arguments):raise ValueError('Unexpected BIOS installer argument')
+        return ['/usr/sbin/grub-install',*arguments],devices[0]
+    expected={'--target=x86_64-efi','--efi-directory=/boot/efi','--bootloader-id=ubuntu','--force'}
+    if len(arguments)!=4 or set(arguments)!=expected:raise ValueError('Unexpected signed UEFI installer arguments')
+    # Never use Calamares --force as an escape from Secure Boot enforcement.
+    return ['/usr/sbin/grub-install','--target=x86_64-efi','--efi-directory=/boot/efi','--bootloader-id=ubuntu','--uefi-secure-boot'],None
+
+def main():
+    if os.geteuid()!=0 or not Path('/etc/mellipi-release').is_file():raise SystemExit('Run only inside the selected Mellipi installation target')
+    command,device=plan(sys.argv[1:])
+    if device:
+        if not stat.S_ISBLK(os.stat(device).st_mode):raise ValueError('The selected BIOS target is not a block device')
+        return subprocess.run(command,check=True).returncode
+    esp=Path('/boot/efi')
+    if esp.is_symlink() or not os.path.ismount(esp):raise ValueError('The selected EFI system partition is not mounted')
+    sources={'bootx64.efi':Path('/usr/lib/shim/shimx64.efi.signed.latest'),'grubx64.efi':Path('/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed'),'mmx64.efi':Path('/usr/lib/shim/mmx64.efi')}
+    if not sources['bootx64.efi'].is_file():sources['bootx64.efi']=Path('/usr/lib/shim/shimx64.efi.signed')
+    for source in sources.values():
+        if not source.is_file():raise ValueError('A signed Ubuntu boot component is missing')
+        check=subprocess.run(['/usr/bin/sbverify','--list',str(source)],capture_output=True,text=True,check=True)
+        if 'signature 1' not in check.stdout:raise ValueError('An EFI input is unsigned')
+    subprocess.run(command,check=True)
+    # Signed Ubuntu GRUB has a fixed EFI/ubuntu prefix. Its normal distro
+    # update scripts maintain that directory; a separate fallback starts shim.
+    directory=esp/'EFI/ubuntu';fallback=esp/'EFI/BOOT';fallback.mkdir(parents=True,exist_ok=True)
+    config=directory/'grub.cfg'
+    if not config.is_file():raise ValueError('Signed GRUB did not create its root-filesystem configuration')
+    for name,source in sources.items():shutil.copyfile(source,fallback/name)
+    shutil.copyfile(config,fallback/'grub.cfg')
+    return 0
+
+if __name__=='__main__':
+    try:raise SystemExit(main())
+    except (OSError,ValueError,subprocess.SubprocessError) as error:raise SystemExit('Signed bootloader installation failed: '+str(error))
+''',0o755)
     write(root,'usr/lib/abstract/iso-target-cleanup','''#!/bin/sh
 set -eu
 # Calamares invokes this inside its selected target, never in the live system.
@@ -439,7 +491,9 @@ def image(work,root,args):
     assert not (root/'usr/sbin/sshd').exists()
     sessions=sorted(p.name for p in (root/'usr/share/wayland-sessions').glob('*.desktop'))
     other=list((root/'usr/share/xsessions').glob('*.desktop'))
-    assert sessions==['abstract.desktop'] and not other,(sessions,other)
+    # The sole normal desktop is Mellipi. Its optional authenticated recovery
+    # terminal is an Xorg escape hatch, not another desktop environment.
+    assert sessions==['abstract.desktop'] and sorted(p.name for p in other)==['mellipi-recovery.desktop'],(sessions,other)
     for p in (root/'etc/apt').rglob('*'):
         if p.is_file() and not p.is_symlink():assert b'10.0.2.2' not in p.read_bytes() and b'127.0.0.1' not in p.read_bytes(),p
     assert not any(root.rglob('id_ed25519')) and not any(root.rglob('id_rsa'))
@@ -479,14 +533,31 @@ menuentry "Power off" {{ halt }}
     write(target,'md5sum.txt','\n'.join(sums)+'\n')
     output=work/f'mellipi-{args.version}-noble-amd64.iso'
     if output.exists():raise SystemExit('Refusing to overwrite an existing ISO.')
-    run(['grub-mkrescue','-o',output,target,'-V','MELLIPI_'+args.version.replace('.','_')])
+    secure_report=None
+    if getattr(args,'unsigned_efi',False):
+        run(['grub-mkrescue','-o',output,target,'-V','MELLIPI_'+args.version.replace('.','_')])
+    else:
+        # Keep the unsigned intermediate private; only the signed-chain image
+        # becomes the versioned release candidate. No local keys are enrolled.
+        helper=Path(__file__).resolve().with_name('secure-boot-image.py')
+        if not helper.is_file():raise SystemExit('Copy secure-boot-image.py alongside the ISO builder before image creation')
+        unsigned=work/('mellipi-'+args.version+'-unsigned-build.iso')
+        boot_work=work/('secure-boot-'+args.version)
+        if unsigned.exists() or boot_work.exists():raise SystemExit('Preserve/inspect previous private boot-image inputs before retrying')
+        run(['grub-mkrescue','-o',unsigned,target,'-V','MELLIPI_'+args.version.replace('.','_')])
+        boot_work.mkdir(mode=0o700)
+        spec=importlib.util.spec_from_file_location('mellipi_secure_boot_image',helper)
+        boot=importlib.util.module_from_spec(spec);spec.loader.exec_module(boot)
+        secure_report=boot.build(unsigned,output,root,boot_work)
+        unsigned.unlink()
     with output.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
-    report={'compression':{'format':'zstd','level':6,'processors':1,'memory_mib':512},'iso':output.name,'bytes':output.stat().st_size,'sha256':digest,'kernel':kernel,'base':'debootstrap Ubuntu24.04 noble minbase','only_desktop':'Mellipi','user_accounts_embedded':False,'ssh_server_embedded':False,'secure_boot':'unsupported; unsigned GRUB rescue loader','boot_tested':False,'installation_tested':False,'built_inside_disposable_guest':True,'package_inputs':json.loads((work/'installed.json').read_text()).get('package_inputs',{})}
+    report={'compression':{'format':'zstd','level':6,'processors':1,'memory_mib':512},'iso':output.name,'bytes':output.stat().st_size,'sha256':digest,'kernel':kernel,'base':'debootstrap Ubuntu24.04 noble minbase','only_desktop':'Mellipi','user_accounts_embedded':False,'ssh_server_embedded':False,'secure_boot':'signed Ubuntu EFI chain; actual firmware acceptance required' if secure_report else 'unsupported; explicitly requested unsigned GRUB rescue loader','secure_boot_tested':False,'boot_tested':False,'installation_tested':False,'built_inside_disposable_guest':True,'package_inputs':json.loads((work/'installed.json').read_text()).get('package_inputs',{})}
+    if secure_report:report['secure_boot_build']=secure_report
     report['calamares_partition_override']=calamares_override
     write(work,'iso-build-report.json',json.dumps(report,indent=2)+'\n');write(work,'SHA256SUMS',digest+'  '+output.name+'\n');print(json.dumps(report),flush=True)
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--workdir',type=Path,required=True);parser.add_argument('--core-deb',type=Path,required=True);parser.add_argument('--desktop-deb',type=Path,required=True);parser.add_argument('--keyring',type=Path,required=True);parser.add_argument('--version',default='0.1.8');parser.add_argument('--mirror',default='https://archive.ubuntu.com/ubuntu');parser.add_argument('--security-mirror',default='https://security.ubuntu.com/ubuntu');parser.add_argument('--phase',choices=('bootstrap','install','image','all'),default='all')
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--workdir',type=Path,required=True);parser.add_argument('--core-deb',type=Path,required=True);parser.add_argument('--desktop-deb',type=Path,required=True);parser.add_argument('--keyring',type=Path,required=True);parser.add_argument('--version',default='0.1.9');parser.add_argument('--mirror',default='https://archive.ubuntu.com/ubuntu');parser.add_argument('--security-mirror',default='https://security.ubuntu.com/ubuntu');parser.add_argument('--phase',choices=('bootstrap','install','image','all'),default='all');parser.add_argument('--unsigned-efi',action='store_true',help='Build an explicitly unsigned development ISO; Secure Boot will reject it')
     parser.add_argument('--calamares-partition-module',type=Path);parser.add_argument('--calamares-partition-sha256');parser.add_argument('--calamares-partition-provenance',type=Path);args=parser.parse_args()
     module_inputs=(args.calamares_partition_module,args.calamares_partition_sha256,args.calamares_partition_provenance)
     if (any(module_inputs) and not all(module_inputs)) or (args.phase in ('image','all') and not all(module_inputs)):

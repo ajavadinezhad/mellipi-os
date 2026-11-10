@@ -39,13 +39,19 @@ class BoundedLog:
     def __exit__(self,*_):
         with self.lock:self.handle.close()
 
+def drain_stream(source,log):
+    # BufferedReader.read(size) waits for size bytes or EOF on a pipe. Preserve
+    # individual diagnostic records while the compositor is still running.
+    read=getattr(source,'read1',source.read)
+    while True:
+        chunk=read(65536)
+        if not chunk:return
+        log.write(chunk)
+
 def drain_log(fd,log):
     try:
         with os.fdopen(fd,'rb',buffering=0) as source:
-            while True:
-                chunk=source.read(65536)
-                if not chunk:return
-                log.write(chunk)
+            drain_stream(source,log)
     except (OSError,ValueError):pass # owner shutdown may close the bounded sink
 
 def compositor_environment(environment=None):
@@ -132,6 +138,12 @@ def transfer_previous_state(environment,nested=False):
     # Checks, previews and failed/existing-session starts cannot consume state.
     if nested or environment.get('ORBIT_INSTALLED_SESSION')!='1':return
     try:
+        from backup_core import consume_settings_restore
+        restored=consume_settings_restore(environment)
+        if restored.get('restored'):print('Mellipi: confirmed desktop settings restored',flush=True)
+    except (OSError,ValueError,KeyError,TypeError):
+        print('Mellipi: queued settings restore could not be completed; current edits preserved',file=sys.stderr,flush=True)
+    try:
         from state_handoff import consume
         result=consume(environment)
         if result['copied']:print('Mellipi: previous desktop state transferred',flush=True)
@@ -167,10 +179,7 @@ def run(nested=False,no_shell=False,qa_seconds=None):
             ready=wait_ready(compositor,log);environment=session_environment(ready,nested=nested)
             transfer_previous_state(environment,nested=nested)
             def drain():
-                while True:
-                    chunk=compositor.stdout.read(65536)
-                    if not chunk:return
-                    log.write(chunk)
+                drain_stream(compositor.stdout,log)
             output=threading.Thread(target=drain,name='orbit-native-log',daemon=True);output.start();threads.append(output)
             # Xwayland is asynchronous; never reuse the outer desktop's DISPLAY.
             deadline=time.monotonic()+3

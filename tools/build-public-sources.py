@@ -53,19 +53,21 @@ def project_paths():
   paths.extend(path for path in (root/name).glob('LICENSE*') if path.is_file())
  paths.extend(path for path in (root/'compositor/vendor').rglob('*') if path.is_file() and 'target' not in path.parts and '.git' not in path.parts)
  paths.extend(path for path in (root/'tools').iterdir() if path.is_file() and path.suffix in ('.py','.sh','.json') and path.name!='rustup-init.sh')
- if (root/'tools/abstract-charge-limit').is_file():paths.append(root/'tools/abstract-charge-limit')
+ for name in ('abstract-charge-limit','mellipi-recover','mellipi-recovery-session','mellipi-session-wrapper'):
+  if (root/'tools'/name).is_file():paths.append(root/'tools'/name)
  for name in ('abstract-synaptic-root','abstract-package-manager'):
   if (root/'packaging'/name).is_file():paths.append(root/'packaging'/name)
  paths.extend(path for path in root.glob('run-*') if path.is_file() and path.suffix in ('.py','.sh'))
- for name in ('test_package_manager_bridge.py','test_package_manager_discovery.py','test_package_manager_launcher.py','test_permission_agent_backend.py','test_mellipi_rename.py'):
-  if (root/'tests'/name).is_file():paths.append(root/'tests'/name)
+ paths.extend(path for path in (root/'tests').glob('*.py') if path.is_file() and not path.is_symlink())
  paths=sorted(set(path for path in paths if path.is_file() and not path.is_symlink() and '__pycache__' not in path.parts and path.suffix not in ('.pyc','.log')))
  result=[(path,(Path('desktop')/path.relative_to(root) if root!=ROOT else path.relative_to(root))) for path in paths]
  if root!=ROOT:
   result.extend((path,Path('tools')/path.name) for path in sorted((ROOT/'tools').glob('*')) if path.is_file() and not path.is_symlink() and path.suffix in ('.py','.sh','.json'))
+  result.extend((path,Path('tests')/path.name) for path in sorted((ROOT/'tests').glob('*.py')) if path.is_file() and not path.is_symlink())
   result.extend((path,Path('tests/fixtures')/path.name) for path in sorted((ROOT/'tests/fixtures').glob('*.cpp')) if path.is_file() and not path.is_symlink())
   if (ROOT/'README.md').is_file():result.append((ROOT/'README.md',Path('README.md')))
-  if (ROOT/'docs/live-iso.md').is_file():result.append((ROOT/'docs/live-iso.md',Path('docs/live-iso.md')))
+  for name in ('live-iso.md','backups-and-recovery.md','hardware-validation.md','update-repository.md','system-administration.md','secure-unlocking.md','secure-boot.md'):
+   if (ROOT/'docs'/name).is_file():result.append((ROOT/'docs'/name,Path('docs')/name))
  return sorted(result,key=lambda item:str(item[1]))
 def local_source(cache,name,expected=None):
  candidates=[cache/name]
@@ -74,7 +76,7 @@ def local_source(cache,name,expected=None):
   candidates.extend(sorted((ROOT/'public/sources').glob('*/'+section+'/'+name)))
  return next((path for path in candidates if path.is_file() and not path.is_symlink() and (expected is None or sha(path)==expected)),cache/name)
 def main():
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--cache',type=Path,required=True);parser.add_argument('--version',default='0.1.8');parser.add_argument('--fetch',action='store_true');parser.add_argument('--project-root',type=Path,help='Optional application source root (default desktop/ when present)');args=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--cache',type=Path,required=True);parser.add_argument('--version',default='0.1.9');parser.add_argument('--fetch',action='store_true');parser.add_argument('--project-root',type=Path,help='Optional application source root (default desktop/ when present)');args=parser.parse_args()
  global PROJECT_ROOT
  if args.project_root:PROJECT_ROOT=args.project_root.resolve()
  source=PROJECT_ROOT/'src' if (PROJECT_ROOT/'src').is_dir() else PROJECT_ROOT

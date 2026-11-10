@@ -5,7 +5,7 @@ Creates an owned temporary runtime; never connects to the user's compositor.
 Lock ownership tests inject a PRIVATE synthetic presentation boundary, which
 checks protocol state logic, not physical output security. DRM remains untested.
 """
-import importlib.util,json,os,signal,socket,struct,subprocess,sys,tempfile,time
+import importlib.util,json,os,shutil,signal,socket,struct,subprocess,sys,tempfile,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT
 sys.path.insert(0,str(SOURCE_ROOT))
@@ -126,7 +126,7 @@ def main():
             finally:pointer.close()
             client.close()
             screenshot=directory/'capture.png'
-            grim=ROOT/'.wayland-runtime/usr/bin/grim'
+            grim=Path(shutil.which('grim') or str(ROOT/'.wayland-runtime/usr/bin/grim'))
             result=subprocess.run([str(grim),'-o','orbit-nested',str(screenshot)],env=child,capture_output=True,text=True,timeout=10)
             assert result.returncode==0,result.stderr
             assert screenshot.read_bytes().startswith(b'\x89PNG\r\n\x1a\n')

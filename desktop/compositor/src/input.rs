@@ -23,6 +23,7 @@ impl OrbitCompositor {
             self.process_locked_input(event);
             return;
         }
+        if self.process_touch_event(&event,false) { return; }
         match event {
             InputEvent::Keyboard { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();

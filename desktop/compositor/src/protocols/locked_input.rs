@@ -16,6 +16,7 @@ impl OrbitCompositor {
         if !self.protocols.is_locked() {
             return;
         }
+        if self.process_touch_event(&event,true) { return; }
         match event {
             InputEvent::Keyboard { event, .. } => {
                 // A previously trusted IME must not intercept password input.

@@ -50,16 +50,21 @@ def main():
         archive.write_bytes(data)
     if sha(archive)!=SOURCE_SHA256:raise RuntimeError('Pinned source SHA-256 does not match; refusing to build')
     with tarfile.open(archive) as source:source.extractall(BASE,filter='data')
-    # Apply only the optional presentation branch to the pinned upstream source.
-    # Authentication/input sources must remain byte-for-byte upstream.
+    # Apply the reviewed presentation and locker-owned keyboard branches.
+    # PAM, password storage and authentication sources remain byte-for-byte upstream.
+    # The separate reviewed input patch calls the unchanged upstream key handler.
     source_dir=BASE/f'swaylock-{VERSION}'
-    auth_files=('pam.c','password.c','password-buffer.c','main.c','seat.c','comm.c')
+    auth_files=('pam.c','password.c','password-buffer.c','main.c','comm.c')
     auth_hashes={name:sha(source_dir/name) for name in auth_files}
     render_patch=ROOT/'native/swaylock-textbox.patch'
     run(['patch','--batch','--forward','-p1','-i',render_patch],cwd=source_dir)
+    keyboard_patch=ROOT/'native/swaylock-keyboard.patch'
+    input_hash_before=sha(source_dir/'seat.c')
+    run(['patch','--batch','--forward','-p1','-i',keyboard_patch],cwd=source_dir)
+    shutil.copy2(ROOT/'native/lock-keyboard.h',source_dir/'include/mellipi-lock-keyboard.h')
     shutil.copy2(ROOT/'native/lock-textbox-render.h',source_dir/'include/orbit-lock-textbox.h')
     shutil.copy2(ROOT/'native/lock-status.h',source_dir/'include/orbit-lock-status.h')
-    if any(sha(source_dir/name)!=value for name,value in auth_hashes.items()):raise RuntimeError('Presentation patch changed an authentication/input source')
+    if any(sha(source_dir/name)!=value for name,value in auth_hashes.items()):raise RuntimeError('Lock patches changed a protected authentication source')
     package_info=[]
     for name in PACKAGES:
         path,version=candidates[name];run(['dpkg-deb','-x',path,sysroot]);package_info.append(dict(name=name,version=version,sha256=sha(path)))
@@ -84,6 +89,7 @@ def main():
     run(['nice','-n','15',sysroot/'usr/bin/ninja','-C',build,'-j1'],env=env)
     run(['/usr/bin/python3',ROOT/'tools/check-lock-textbox.py'],env=env)
     run(['/usr/bin/python3',ROOT/'tools/check-lock-status.py'],env=env)
+    run(['/usr/bin/python3',ROOT/'tools/check-lock-keyboard.py'],env=env)
     compile_commands=json.loads((build/'compile_commands.json').read_text())
     if not any(Path(row['file']).name=='pam.c' for row in compile_commands) or any(Path(row['file']).name=='shadow.c' for row in compile_commands):raise RuntimeError('PAM authentication was not compiled in')
     stage=BASE/'install-root';run([*meson,'install','-C',build,'--destdir',stage],env=env)
@@ -104,7 +110,7 @@ def main():
     finally:
         if temporary.exists():temporary.unlink()
     destination=installed
-    manifest=dict(presentationPatch=dict(environment='ORBIT_LOCK_TEXTBOX=1',renderPatchSha256=sha(render_patch),renderHeaderSha256=sha(ROOT/'native/lock-textbox-render.h'),statusHeaderSha256=sha(ROOT/'native/lock-status.h'),liveUpdateSeconds=60,branding='Mellipi',keyboardLayout=True,adaptiveHeight=True,networkStatus='bounded read-only carrier, no Internet claim or network identifiers',authenticationSources=auth_hashes),version=VERSION,source=SOURCE,sourceSha256=SOURCE_SHA256,pamEnabled=True,binary=str(destination),binarySha256=sha(destination),binaryBytes=destination.stat().st_size,buildPackages=package_info,linkedLibraries=libraries.splitlines(),versionOutput=version,systemFilesChanged=False)
+    manifest=dict(presentationPatch=dict(environment='ORBIT_LOCK_TEXTBOX=1',renderPatchSha256=sha(render_patch),renderHeaderSha256=sha(ROOT/'native/lock-textbox-render.h'),statusHeaderSha256=sha(ROOT/'native/lock-status.h'),liveUpdateSeconds=60,branding='Mellipi',keyboardLayout=True,adaptiveHeight=True,lockerOwnedKeyboard=dict(printableAscii=True,pointer=True,touch=True,externalVirtualKeyboard=False,inputPatchSha256=sha(keyboard_patch),keyboardHeaderSha256=sha(ROOT/'native/lock-keyboard.h'),upstreamSeatSha256=input_hash_before,patchedSeatSha256=sha(source_dir/'seat.c')),networkStatus='bounded read-only carrier, no Internet claim or network identifiers',authenticationSources=auth_hashes),version=VERSION,source=SOURCE,sourceSha256=SOURCE_SHA256,pamEnabled=True,binary=str(destination),binarySha256=sha(destination),binaryBytes=destination.stat().st_size,buildPackages=package_info,linkedLibraries=libraries.splitlines(),versionOutput=version,systemFilesChanged=False)
     (RUNTIME/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     print(json.dumps({key:manifest[key] for key in ('version','pamEnabled','binary','binaryBytes','sourceSha256','systemFilesChanged')},indent=2))
 

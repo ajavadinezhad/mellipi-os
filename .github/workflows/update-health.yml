@@ -1,0 +1,50 @@
+name: Check signed update repository health
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 9 * * 1'
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: update-repository-health
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: tools
+      - name: Verify both signed archives and warn before expiry
+        id: health
+        continue-on-error: true
+        run: python3 tools/check-update-health.py --output /tmp/update-health.json
+      - name: Maintain one actionable renewal alert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RESULT: ${{ steps.health.outcome }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,json,subprocess
+          def gh(*args):return subprocess.check_output(['gh',*args],text=True)
+          title='Signed update repository needs maintenance'
+          issues=json.loads(gh('issue','list','--state','open','--search',title+' in:title','--json','number,title,author'))
+          match=next((r for r in issues if r['title']==title and (r.get('author') or {}).get('login') in ('github-actions[bot]','github-actions')),None)
+          if os.environ['RESULT']=='success':
+              if match:gh('issue','close',str(match['number']),'--reason','completed')
+          else:
+              from pathlib import Path
+              result=Path('/tmp/update-health.json')
+              body='The scheduled signature/expiry check failed. Review the workflow and renew signed metadata using `tools/renew-update-repository.py`. Signing keys remain outside GitHub.\n\n```json\n'+(result.read_text() if result.exists() else 'Check did not produce a report.')+'\n```\n'
+              Path('/tmp/update-health-issue.md').write_text(body)
+              if match:gh('issue','edit',str(match['number']),'--body-file','/tmp/update-health-issue.md')
+              else:gh('issue','create','--title',title,'--body-file','/tmp/update-health-issue.md')
+          PY
+      - name: Fail the run when renewal or investigation is needed
+        if: steps.health.outcome != 'success'
+        run: exit 1

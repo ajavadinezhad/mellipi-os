@@ -23,11 +23,17 @@ ScrollView {
         width:panel.availableWidth;spacing:12
         SettingsSegments {
             objectName:"systemToolTabs"
-            Layout.fillWidth:true;segmentWidth:Math.floor((panel.availableWidth-6)/4);value:panel.section
+            Layout.fillWidth:true;segmentWidth:Math.floor((panel.availableWidth-6)/4);value:["users","datetime","recovery"].indexOf(panel.section)>=0 ? "tools" : panel.section
             options:[{label:"Apps",value:"defaults"},{label:"Startup",value:"startup"},{label:"Devices",value:"devices"},{label:"Tools",value:"tools"}]
             onSelected:value=>panel.section=value
         }
         Text {visible:!!panel.data.error;Layout.fillWidth:true;text:panel.data.error || "";color:Theme.muted;font.pixelSize:Theme.fontSize(11);wrapMode:Text.Wrap;textFormat:Text.PlainText}
+        OrbitButton {visible:panel.section==="users" || panel.section==="datetime" || panel.section==="recovery";text:"‹ System tools";quiet:true;implicitHeight:28;onClicked:panel.section="tools"}
+        Loader {
+            Layout.fillWidth:true;active:panel.section==="users" || panel.section==="datetime";visible:active
+            sourceComponent:Component {SystemAdministrationPanel {section:panel.section}}
+        }
+        Loader {Layout.fillWidth:true;active:panel.section==="recovery";visible:active;sourceComponent:Component {RecoveryPanel {}}}
         ColumnLayout {
             visible:panel.section==="defaults";Layout.fillWidth:true;spacing:8
             Text {Layout.fillWidth:true;text:"Default applications";color:Theme.text;font.pixelSize:Theme.fontSize(14)}

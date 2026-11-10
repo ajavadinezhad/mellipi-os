@@ -239,9 +239,13 @@ pub fn init_drm(
         match event {
             DrmEvent::VBlank(crtc) => {
                 if let Some(surface) = backend.surfaces.get_mut(&crtc) {
-                    if let Err(error) = surface.scanout.frame_submitted() {
-                        tracing::warn!(%error,"DRM pageflip completion failed");
-                        return;
+                    match surface.scanout.frame_submitted() {
+                        Ok(Some(_)) => {},
+                        Ok(None) => return,
+                        Err(error) => {
+                            tracing::warn!(%error,"DRM pageflip completion failed");
+                            return;
+                        }
                     }
                     if surface.pending && surface.queued_locked && data.state.protocols.is_locked()
                     {
@@ -305,6 +309,7 @@ pub fn init_drm(
                 return;
             }
             InputEvent::DeviceRemoved { device } => {
+                data.state.cancel_touch_sequence();
                 data.state
                     .native_system
                     .devices
@@ -372,12 +377,37 @@ pub fn init_drm(
         let _ = data.display_handle.flush_clients();
         data.state.request_redraw();
     })?;
+    // S3 can reset KMS and libinput without a libseat VT activation event.
+    // Reuse the existing event-driven swayidle/logind resume notification.
+    let recovery_backend = backend.clone();
+    let mut recovery_input = libinput.clone();
+    let recovery_handle = handle.clone();
+    let recovery_token = input_token.clone();
+    data.state.native_system.output = Some(Box::new(move |state,value| {
+        if value["command"] == "output_resume" {
+            {
+                let mut backend = recovery_backend.borrow_mut();
+                if !backend.session.is_active() {return Err("The login seat is inactive".into());}
+                if !backend.active {
+                    // A transient activation/reset error must not leave the
+                    // cached flag permanently false after libseat enabled us.
+                    backend.drm.activate(true).map_err(|error|format!("DRM resume activation failed: {error}"))?;
+                    backend.active = true;
+                }
+            }
+            recovery_input.suspend();
+            recovery_input.resume().map_err(|error| format!("Input resume failed: {error:?}"))?;
+            recovery_handle.update(&recovery_token).map_err(|error| format!("Input resume registration failed: {error}"))?;
+        }
+        recovery_backend.borrow_mut().system_control(state,value)
+    }));
     let resume = backend.clone();
     let input_handle=handle.clone();
     handle.insert_source(notifier, move |event, _, data| {
         let mut backend = resume.borrow_mut();
         match event {
             SessionEvent::PauseSession => {
+                data.state.cancel_touch_sequence();
                 backend.active = false;
                 data.state.native_system.devices.clear();
                 libinput.suspend();
@@ -401,12 +431,17 @@ pub fn init_drm(
                     tracing::error!(%error,"DRM resume failed");
                     return;
                 }
+                // activate(true) may be a duplicate already-active event.
+                // Explicit reset guarantees quiescence before slot retirement.
+                if let Err(error) = backend.drm.reset_state() {
+                    tracing::error!(%error,"DRM activation reset failed");
+                    return;
+                }
                 backend.active = true;
                 data.state.redraw_pending = false;
-                for surface in backend.surfaces.values_mut() {
-                    surface.pending = false;
-                    surface.dirty = true;
-                    surface.scanout.reset_buffers();
+                if let Err(error) = backend.reset_after_device_reset(&mut data.state) {
+                    tracing::error!(%error,"DRM resume queue reset failed");
+                    return;
                 }
                 if let Err(error) = backend.scan_outputs(&mut data.state) {
                     tracing::error!(%error,"Display rescan after resume failed");
@@ -545,6 +580,7 @@ impl Backend {
             .collect::<Vec<_>>();
         for crtc in obsolete {
             if let Some(surface) = self.surfaces.remove(&crtc) {
+                state.cancel_touch_sequence();
                 state.protocols.output_removed(&surface.output);
                 state.space.unmap_output(&surface.output);
                 for space in &mut state.workspaces {
@@ -699,6 +735,16 @@ impl Backend {
             let mut elements: Vec<DrmRenderElement<GlesRenderer>> = Vec::new();
             let locked = state.protocols.is_locked();
             if locked {
+                // Use only our own arrow while locked. A stale or malicious
+                // application cursor must never add pixels to the lock screen.
+                let pointer = state.seat.get_pointer().unwrap().current_location();
+                if state.space.output_geometry(output).is_some_and(|g|g.to_f64().contains(pointer)) {
+                    let cursor=if state.cursor_light {&self.cursor_light}else{&self.cursor};
+                    elements.push(MemoryRenderBufferRenderElement::from_buffer(
+                        renderer,(pointer-origin.to_f64()-cursor.1.to_f64()).to_physical(scale),
+                        &cursor.0,None,None,None,Kind::Cursor,
+                    )?.into());
+                }
                 let locked_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
                     state.protocols.lock_render_elements(output, renderer);
                 elements.extend(locked_elements.into_iter().map(Into::into));
@@ -914,6 +960,30 @@ impl Backend {
         state.request_redraw();
         Ok(())
     }
+    // Call only after a successful synchronous KMS reset/activation.
+    fn reset_after_device_reset(&mut self, state: &mut OrbitCompositor) -> Result<(), String> {
+            // The fd is nonblocking. With all CRTCs synchronously disabled,
+            // no old flip can be queued after this drain. No new frame is
+            // submitted until the single-threaded callback returns.
+            loop {
+                match self.drm.receive_events() {
+                    Ok(mut events) => {if events.next().is_none() {break;}},
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(error) => return Err(format!("DRM resume event drain failed: {error}")),
+                }
+            }
+            state.cancel_touch_sequence();
+            self.powered_off = false;
+            for surface in self.surfaces.values_mut() {
+                surface.scanout.reset_after_device_reset();
+                surface.pending = false;
+                surface.queued_locked = false;
+                surface.dirty = true;
+                surface.damage = OutputDamageTracker::from_output(&surface.output);
+            }
+        Ok(())
+    }
     fn system_control(
         &mut self,
         state: &mut OrbitCompositor,
@@ -922,6 +992,17 @@ impl Backend {
         use serde_json::json;
         if !self.active {
             return Err("The login seat is inactive".into());
+        }
+        if value["command"] == "output_resume" {
+            // Quiesce all KMS planes before dropping a retired in-flight slot.
+            // Lock ownership, wl_output globals and every client survive.
+            self.drm.reset_state().map_err(|error| format!("DRM state reset failed: {error}"))?;
+            self.reset_after_device_reset(state)?;
+            self.scan_outputs(state).map_err(|error| format!("Display resume rescan failed: {error}"))?;
+            state.redraw_pending = false;
+            state.request_redraw();
+            tracing::info!(locked=state.protocols.is_locked(),"Display/input recovered after system resume");
+            return Ok(json!({"ok":true}));
         }
         if value["command"] == "output_power" {
             let on = value["on"]

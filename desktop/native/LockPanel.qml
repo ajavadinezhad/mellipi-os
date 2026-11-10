@@ -29,6 +29,6 @@ ScrollView {
             Text {visible: Orbit.appearance.idleLockEnabled && Orbit.appearance.displayOffMinutes>0 && Orbit.appearance.displayOffMinutes<=Orbit.appearance.idleLockMinutes;Layout.fillWidth: true;Layout.margins: 6;text: "The display will turn off five seconds after the lock timer, so locking happens first.";wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(10)}
         }
         Text {Layout.fillWidth: true;text: Idle.state.error || (!Idle.state.available ? "Automatic locking requires the system screen-lock prerequisites. Preview sessions do not start idle timers." : Idle.state.running ? "Idle policy is active. Changes restart its timer; they do not lock the screen immediately." : "Idle timers are off.");wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText}
-        Text {Layout.fillWidth: true;text: "To unlock: type your login password, then press Enter. Esc clears a mistyped password.";wrapMode: Text.Wrap;color: Theme.faint;font.pixelSize: Theme.fontSize(10)}
+        Text {Layout.fillWidth: true;text: "To unlock: type your login password and press Enter, or choose Keyboard on the lock screen. Esc clears a mistyped password.";wrapMode: Text.Wrap;color: Theme.faint;font.pixelSize: Theme.fontSize(10)}
     }
 }

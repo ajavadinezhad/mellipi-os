@@ -245,7 +245,9 @@ class Bridge(QObject):
         self.showPanel('system-settings')
     @Slot(int,int,str)
     def openSettingsTarget(self,section,tab,target):
-        from action_targets import SETTING_TARGETS
+        from action_targets import SETTING_TARGETS,BUILTIN_TOOLS
+        if action in BUILTIN_TOOLS and getattr(self,'desktopTools',None):
+            self.openSettingsSection(16);self.desktopTools.open(BUILTIN_TOOLS[action]);return
         # Targets are an allowlist, not arbitrary QML names supplied over IPC.
         if (section,tab,target) not in SETTING_TARGETS.values():return
         self.openSettingsSection(section)
@@ -1342,7 +1344,9 @@ def main():
     store=LazyRustStore()
     bridge=Bridge(app,preferences,store)
     from desktop_tools import DesktopTools
-    desktopTools=DesktopTools();desktopTools.notice.connect(bridge.notify);app.aboutToQuit.connect(desktopTools.close)
+    desktopTools=DesktopTools();bridge.desktopTools=desktopTools;desktopTools.notice.connect(bridge.notify);app.aboutToQuit.connect(desktopTools.close)
+    from recovery_tools import RecoveryTools
+    recovery=RecoveryTools(bridge);bridge.recovery=recovery;app.aboutToQuit.connect(recovery.close)
     from desktop_icons import DesktopIcons
     desktopIcons=DesktopIcons(enabled=bridge.appearance['desktopIcons'],places=not bool(os.environ.get('ORBIT_NESTED')));bridge.desktopIcons=desktopIcons
     desktopIcons.notice.connect(bridge.notify)
@@ -1402,6 +1406,7 @@ def main():
     engine.rootContext().setContextProperty('Orbit',bridge);engine.rootContext().setContextProperty('DesktopFiles',desktopIcons);engine.rootContext().setContextProperty('Usage',usage);engine.rootContext().setContextProperty('System',services);engine.rootContext().setContextProperty('Media',media);engine.rootContext().setContextProperty('Brightness',brightness);engine.rootContext().setContextProperty('Bluetooth',bluetooth);engine.rootContext().setContextProperty('Power',power);engine.rootContext().setContextProperty('Screenshots',screenshots)
     engine.rootContext().setContextProperty('Fold',foldController)
     engine.rootContext().setContextProperty('DesktopTools',desktopTools)
+    engine.rootContext().setContextProperty('Recovery',recovery)
     engine.rootContext().setContextProperty('Arrangements',bridge.arrangements);engine.rootContext().setContextProperty('SessionExit',bridge.sessionExit)
     engine.rootContext().setContextProperty('Input',inputs);engine.rootContext().setContextProperty('Idle',idle);engine.rootContext().setContextProperty('DisplayControls',displayControls)
     engine.rootContext().setContextProperty('Shortcuts',shortcuts);engine.rootContext().setContextProperty('Network',network);engine.rootContext().setContextProperty('PowerProfiles',powerProfiles)
@@ -1409,7 +1414,7 @@ def main():
     bridge.panelChanged.connect(lambda:inputs.refresh() if bridge.panel=='system-settings' else None)
     if native_session() and not args.smoke_test:
         from settings_host import SettingsHost
-        names=('Orbit','System','Input','Idle','DisplayControls','Shortcuts','Network','PowerProfiles','Power','Bluetooth','Brightness','Media','DesktopTools','Usage')
+        names=('Orbit','System','Input','Idle','DisplayControls','Shortcuts','Network','PowerProfiles','Power','Bluetooth','Brightness','Media','DesktopTools','Recovery','Usage')
         bridge.settingsHost=SettingsHost(bridge,{name:engine.rootContext().contextProperty(name) for name in names})
     errors=[];bridge.qmlErrors=errors; engine.warnings.connect(lambda warnings:errors.extend((w.toString() if hasattr(w,"toString") else str(w)) for w in warnings))
     engine.load(QUrl.fromLocalFile(str(ROOT/'native/Desktop.qml')))

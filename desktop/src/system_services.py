@@ -503,7 +503,7 @@ class BusEvents:
     def method(self,connection,sender,path,interface,method,params,invocation):
         GLib=self.GLib
         if method=='GetCapabilities':invocation.return_value(GLib.Variant('(as)',(['body','actions'],)))
-        elif method=='GetServerInformation':invocation.return_value(GLib.Variant('(ssss)',('Mellipi','Mellipi','0.1.8','1.2')))
+        elif method=='GetServerInformation':invocation.return_value(GLib.Variant('(ssss)',('Mellipi','Mellipi','0.1.9','1.2')))
         elif method=='Notify':
             app,replaces,icon,summary,body,actions,hints,timeout=params.unpack()
             with self.records_lock:

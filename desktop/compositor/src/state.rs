@@ -100,6 +100,7 @@ impl OrbitCompositor {
         // Notify clients that we have a pointer (mouse)
         // Here we assume that there is always pointer plugged in
         seat.add_pointer();
+        seat.add_touch();
 
         // A space represents a two-dimensional plane. Windows and Outputs can be mapped onto it.
         //

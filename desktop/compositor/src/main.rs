@@ -10,6 +10,7 @@ mod dmabuf;
 mod drm;
 mod grabs;
 mod input;
+mod touch_input;
 mod ipc;
 mod motion;
 mod window_motion;

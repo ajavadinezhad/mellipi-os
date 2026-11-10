@@ -158,7 +158,7 @@ impl OrbitCompositor {
                 self.native_system.pending_output = None;
                 Ok(json!({"ok":true}))
             }
-            "output_configure" | "output_power" => {
+            "output_configure" | "output_power" | "output_resume" => {
                 let mut callback = self
                     .native_system
                     .output
@@ -361,7 +361,7 @@ impl OrbitCompositor {
         {
             use smithay::reexports::input::DeviceCapability;
             let (active_name,layout_names)=self.native_keyboard_layouts();
-            return Value::Array(self.native_system.devices.iter().map(|device|{let keyboard=device.has_capability(DeviceCapability::Keyboard);let mut row=json!({"identifier":native_device_id(device),"name":device.name(),"type":if keyboard{"keyboard"}else{"pointer"},"xkb_layout_names":layout_names,"xkb_active_layout_name":active_name,"repeat_rate":self.native_system.values["repeatRate"],"repeat_delay":self.native_system.values["repeatDelay"],"libinput":{"accel_speed":device.config_accel_speed(),"natural_scroll":if device.config_scroll_natural_scroll_enabled(){"enabled"}else{"disabled"},"tap":if device.config_tap_finger_count()>0{Some(if device.config_tap_enabled(){"enabled"}else{"disabled"})}else{None}}});if device.config_tap_finger_count()==0 {row["libinput"].as_object_mut().unwrap().remove("tap");}row}).collect());
+            return Value::Array(self.native_system.devices.iter().map(|device|{let keyboard=device.has_capability(DeviceCapability::Keyboard);let mut row=json!({"identifier":native_device_id(device),"name":device.name(),"type":if keyboard{"keyboard"}else if device.has_capability(DeviceCapability::Touch){"touch"}else{"pointer"},"xkb_layout_names":layout_names,"xkb_active_layout_name":active_name,"repeat_rate":self.native_system.values["repeatRate"],"repeat_delay":self.native_system.values["repeatDelay"],"libinput":{"accel_speed":device.config_accel_speed(),"natural_scroll":if device.config_scroll_natural_scroll_enabled(){"enabled"}else{"disabled"},"tap":if device.config_tap_finger_count()>0{Some(if device.config_tap_enabled(){"enabled"}else{"disabled"})}else{None}}});if device.config_tap_finger_count()==0 {row["libinput"].as_object_mut().unwrap().remove("tap");}row}).collect());
         }
         #[cfg(not(feature = "drm"))]
         json!([])

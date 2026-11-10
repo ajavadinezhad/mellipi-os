@@ -11,7 +11,7 @@ On Ubuntu 24.04 amd64, install the two release files together with apt. It resol
 the required libraries, login screen, hardware services and applications:
 
 ```
-sudo apt install ./mellipi-shell_0.1.8_amd64.deb ./mellipi-desktop_0.1.8_all.deb
+sudo apt install ./mellipi-shell_0.1.9_amd64.deb ./mellipi-desktop_0.1.9_all.deb
 ```
 
 On a machine that already has a desktop/login manager, install only the core
@@ -41,8 +41,10 @@ Installing this desktop never silently replaces a working network configuration.
 
 The complete profile includes optional screen-reader, input-method and on-screen
 keyboard tools, but they do not start merely because they are installed. Enable
-them in Settings when needed. The current secure lock requires keyboard entry;
-it does not provide a touchscreen keyboard or an AT-SPI password control. DDC
+them in Settings when needed. The secure lock provides its own pointer/touch on-screen keyboard for printable
+ASCII; physical keyboards retain XKB/Unicode input. It still has no AT-SPI
+password control. See [secure unlocking](secure-unlocking.md) for hardware and
+output-mapping limits. DDC
 brightness still needs a supported monitor and the distribution's I2C access
 policy; a VM cannot validate physical display or headset hardware.
 
@@ -89,8 +91,8 @@ python3 tools/qa-clean-install-vm.py run \
   --image .clean-install-cache/ubuntu-24.04-minimal-cloudimg-amd64.img \
   --sha256 IMAGE_SHA256 \
   --workdir /tmp/abstract-vm-full-minimal \
-  --package dist/mellipi-shell_0.1.8_amd64.deb \
-  --package dist/mellipi-desktop_0.1.8_all.deb \
+  --package dist/mellipi-shell_0.1.9_amd64.deb \
+  --package dist/mellipi-desktop_0.1.9_all.deb \
   --profile full --no-install-recommends --start-desktop --keep-running
 ```
 
@@ -170,9 +172,10 @@ Required acceptance beyond automated startup:
    service cleanup and retained private user data. Reinstalling the same version
    is not an upgrade test. Keep the SSH/getty recovery path before removal.
 6. Enable Orca/AT-SPI at startup and after login on a supported Qt version. Verify
-   actual accessible actions and text. The current Cairo lock is keyboard-only;
-   it has no AT-SPI password control or touchscreen keyboard. These limitations
-   are not certified away by a successful Qt Settings test.
+   actual accessible actions and text. The Cairo lock now has a locker-owned
+   pointer/touch keyboard, but no AT-SPI password control. Test actual touch and
+   password entry separately; a successful Qt Settings test does not certify
+   secure-lock screen-reader access.
 
 The initial JSON report deliberately leaves lock/unlock, accessibility and
 lifecycle as **not tested** until their real workflows are exercised. It is not a

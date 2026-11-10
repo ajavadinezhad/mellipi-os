@@ -1,0 +1,16 @@
+#!/usr/bin/python3 -I
+"""Route the authenticated recovery entry before LightDM user startup scripts."""
+import os,sys
+
+RECOVERY='/usr/bin/mellipi-recovery-session'
+NORMAL='/usr/sbin/lightdm-session'
+
+def main():
+    if os.geteuid()==0:raise SystemExit('The session wrapper runs only after normal user authentication.')
+    arguments=sys.argv[1:]
+    # LightDM passes the desktop Exec as arguments. Never split a shell string,
+    # accept appended commands or infer Recovery from user-controlled settings.
+    if arguments==[RECOVERY]:os.execve(RECOVERY,[RECOVERY],dict(os.environ))
+    else:os.execve(NORMAL,[NORMAL,*arguments],dict(os.environ))
+
+if __name__=='__main__':main()
