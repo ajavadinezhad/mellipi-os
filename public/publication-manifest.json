@@ -1172,8 +1172,8 @@
       "sha256": "3ca04dfc25b1f61e479f8bd3191af748dd25071c9f1c633fa339d5484c1460bd"
     },
     "site-config.json": {
-      "bytes": 319,
-      "sha256": "d2e355d066b8780baff6275e4e2f0b8deb9d346ecf7e570efca9c8617bcb02de"
+      "bytes": 803,
+      "sha256": "26da7f0cda2721825e96c6c8ed72e9a8c6ef8b5c93b6bba04e5a4ac6a6f0f648"
     },
     "site.js": {
       "bytes": 7559,
