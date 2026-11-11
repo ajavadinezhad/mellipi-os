@@ -200,7 +200,7 @@ class DesktopTools(QObject):
     def setSystemTime(self,value):self._system_submit('set_time',value)
     @Slot()
     def changeMyPassword(self):
-        terminal=next((self._which(n) for n in ('x-terminal-emulator','foot','xfce4-terminal','gnome-terminal','konsole','xterm') if self._which(n)),None)
+        terminal=next((self._which(n) for n in ('mellipi-terminal','x-terminal-emulator','foot','xfce4-terminal','gnome-terminal','konsole','xterm') if self._which(n)),None)
         if not terminal:self.fail('Install a terminal emulator to change your password securely.');return
         command=[terminal,*(['--'] if Path(terminal).name=='gnome-terminal' else [] if Path(terminal).name=='foot' else ['-e']),'/usr/bin/passwd']
         self.monitor.submit(lambda Gio:launch_tool(Gio,command,'Change my password'))

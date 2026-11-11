@@ -136,7 +136,11 @@ impl OrbitCompositor {
                 handle.insert_source(Timer::from_duration(Duration::from_secs_f64(seconds+4.)), move |_, _, data| {
                     if !data.state.native_system.pending_output.as_ref().is_some_and(|(token,_)|token == &timer_token) { return TimeoutAction::Drop; }
                     let result = data.state.native_system_control(&json!({"command":"output_rollback","token":timer_token}));
-                    if result["ok"] == true { TimeoutAction::Drop } else { TimeoutAction::ToDuration(Duration::from_millis(500)) }
+                    if result["ok"] == true || data.state.native_system.pending_output.is_none() {
+                        TimeoutAction::Drop
+                    } else {
+                        TimeoutAction::ToDuration(Duration::from_millis(500))
+                    }
                 }).map_err(|e|e.to_string())?;
                 self.native_system.pending_output = Some((token.clone(), settings));
                 Ok(json!({"ok":true,"token":token}))
@@ -152,7 +156,14 @@ impl OrbitCompositor {
                     let mut callback = self.native_system.output.take().ok_or("Display hardware controls require DRM")?;
                     let result = callback(self, &json!({"command":"output_power","on":true})).and_then(|_|callback(self, &json!({"command":"output_configure","settings":settings})));
                     self.native_system.output = Some(callback);
-                    result?;
+                    if let Err(error) = result {
+                        // A disconnected or replaced monitor may no longer accept
+                        // the checkpoint mode. Release it so the new output can be configured.
+                        if !error.to_ascii_lowercase().contains("pageflip pending") {
+                            self.native_system.pending_output = None;
+                        }
+                        return Err(error);
+                    }
                 }
                 if value["command"] == "output_rollback" { self.native_system.completed_rollback = value["token"].as_str().map(str::to_string); }
                 self.native_system.pending_output = None;

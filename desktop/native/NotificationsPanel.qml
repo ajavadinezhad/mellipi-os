@@ -35,9 +35,14 @@ ColumnLayout {
             Column {
                 id: noteColumn;x: 12;y: 12;width: parent.width-24;spacing: 6
                 RowLayout {
-                    width: parent.width;height: 22
+                    width: parent.width;height: dismissButton.implicitHeight
                     Text { text: modelData.app;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.faint;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText }
-                    OrbitButton { objectName: "notificationDismiss"+index;text: "×";hint: "Dismiss "+modelData.summary;Accessible.name: hint;quiet: true;implicitHeight: Math.max(22,Theme.fontSize(12)+8);onClicked: System.dismissNotification(modelData.id) }
+                    IconButton {
+                        id: dismissButton;objectName: "notificationDismiss"+index
+                        iconName: "close";hint: "Dismiss "+modelData.summary
+                        glyphColor: Theme.muted
+                        onClicked: System.dismissNotification(modelData.id)
+                    }
                 }
                 Text { text: modelData.summary;color: Theme.text;font.pixelSize: Theme.fontSize(12);width: parent.width;wrapMode: Text.Wrap;textFormat: Text.PlainText }
                 Text { text: modelData.body;color: Theme.muted;font.pixelSize: Theme.fontSize(11);width: parent.width;wrapMode: Text.Wrap;maximumLineCount: 3;elide: Text.ElideRight;textFormat: Text.PlainText }
@@ -46,7 +51,7 @@ ColumnLayout {
                     Repeater {
                         id: actionRepeater
                         model: (modelData.actions || []).filter(a => a.key!=="default")
-                        OrbitButton { required property var modelData;text: modelData.label;Accessible.name: text+", "+noteCard.modelData.summary;height: Math.max(26,Theme.fontSize(12)+12);width: parent.width;onClicked: {Orbit.dismiss();System.invokeNotificationAction(noteCard.modelData.id,modelData.key);} }
+                        OrbitButton { required property var modelData;text: modelData.label;Accessible.name: text+", "+noteCard.modelData.summary;height: Math.max(26,Theme.fontSize(12)+12);width: parent.width;onClicked: System.invokeNotificationAction(noteCard.modelData.id,modelData.key) }
                     }
                 }
             }

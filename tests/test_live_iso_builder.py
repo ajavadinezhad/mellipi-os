@@ -54,6 +54,11 @@ class CalamaresModuleInputTest(unittest.TestCase):
 class InstallerDefaultsTest(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory(prefix='abstract-iso-defaults-');self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
+  theme = self.root/'usr/lib/abstract/themes/forest.json'
+  theme.parent.mkdir(parents=True)
+  self.theme=json.loads((ROOT/'desktop/themes/forest.json').read_text())
+  self.theme['accent']='#a8cf94'
+  theme.write_text(json.dumps(self.theme))
   builder.configure_installer(self.root,'0.1.6');builder.configure_live(self.root,'0.1.6')
  def module(self,name):return yaml.safe_load((self.root/'etc/calamares/modules'/name).read_text())
  def test_partitioning_requires_explicit_choice_and_final_confirmation(self):
@@ -79,7 +84,10 @@ class InstallerDefaultsTest(unittest.TestCase):
   self.assertEqual(packages['operations'],[{'remove':['casper','calamares']}])
  def test_live_lock_override_does_not_disable_installed_lock_defaults(self):
   prefs=json.loads((self.root/'etc/skel/.config/abstract/settings.json').read_text());self.assertNotIn('idleLockEnabled',prefs);self.assertNotIn('lockBeforeSleep',prefs)
-  self.assertIn('org.codeberg.dnkl.foot.desktop',prefs['pins']);self.assertEqual(prefs['wallpaper'],'theme-forest')
+  self.assertIn('mellipi-terminal.desktop',prefs['pins'])
+  self.assertIn('mellipi-files.desktop',prefs['pins'])
+  self.assertEqual(prefs['wallpaper'],'theme-forest')
+  self.assertEqual(prefs['accent'],self.theme['accent'])
   hook=(self.root/'usr/share/initramfs-tools/scripts/casper-bottom/99mellipi-live').read_text();self.assertIn('"idleLockEnabled": false',hook);self.assertIn('"lockBeforeSleep": false',hook)
   self.assertIn('Locking is unavailable in the password-free live session.',hook)
   cleanup=(self.root/'usr/lib/abstract/iso-target-cleanup').read_text();self.assertIn('casper-bottom/99mellipi-live',cleanup)
@@ -92,6 +100,16 @@ class InstallerDefaultsTest(unittest.TestCase):
   directory=self.root/'etc/calamares/branding/abstract';branding=yaml.safe_load((directory/'branding.desc').read_text())
   self.assertEqual(branding['slideshow'],['abstract.svg'])
   for name in [*branding['slideshow'],*branding['images'].values()]:self.assertTrue((directory/name).is_file(),name)
+  style=(directory/'stylesheet.qss').read_text()
+  forest=self.theme
+  self.assertEqual(branding['style']['SidebarBackgroundCurrent'],forest['accent'])
+  self.assertFalse(branding['welcomeExpandingLogo'])
+  self.assertIn(forest['accent'],(directory/branding['images']['productWelcome']).read_text())
+  for color in ('background','surface','raised','text'):
+   self.assertIn(forest['palette'][color],style)
+  self.assertIn('QPushButton:focus',style)
+  self.assertIn('QPushButton#view-button-next:enabled',style)
+  self.assertIn('QProgressBar::chunk',style)
  def test_installer_entry_has_no_unattended_partition_command(self):
   entry=(self.root/'usr/share/applications/mellipi-install.desktop').read_text();self.assertIn('Exec=/usr/bin/mellipi-install',entry)
   launcher=(self.root/'usr/bin/mellipi-install').read_text();self.assertIn('boot=casper',launcher);self.assertIn('/usr/lib/abstract/iso-installer-root',launcher)

@@ -22,8 +22,7 @@ Rectangle {
         }
     }
     implicitWidth: segmentRow.implicitWidth+4;implicitHeight: 28
-    radius: Theme.corner(10);color: Theme.fold ? "transparent" : Theme.background;border.color: Theme.border;border.width: Theme.fold ? 0 : 1
-    Rectangle {visible: Theme.fold;anchors.left: parent.left;anchors.right: parent.right;anchors.bottom: parent.bottom;height: 1;color: Theme.border}
+    radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
     Rectangle {
         id: selection;objectName: "segmentSelection"
         visible: segments.selectedIndex>=0
@@ -31,7 +30,7 @@ Rectangle {
         onTargetXChanged:segments.updateIndicator()
         x:2;y:2
         width:segments.segmentWidth;height:24;radius:Theme.corner(8)
-        color:Theme.fold ? Theme.surface : Theme.raised
+        color:Theme.selectedSurface
         Rectangle {visible:Theme.fold;anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.leftMargin:4;anchors.rightMargin:4;height:2;color:Theme.accent}
     }
     NumberAnimation {id:segmentSlide;objectName:"segmentSlide";target:selection;property:"x";duration:Theme.motion;easing.type:Easing.OutCubic}

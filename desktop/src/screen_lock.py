@@ -1,5 +1,5 @@
 """One lightweight, shared locker launcher for idle, suspend and manual locking."""
-import argparse,hashlib,json,os,shutil,subprocess,sys,tempfile,threading,socket
+import argparse,hashlib,json,os,shutil,subprocess,sys,tempfile,threading,socket,time
 from pathlib import Path
 from project_paths import PROJECT_ROOT as ROOT, SOURCE_ROOT
 
@@ -55,7 +55,7 @@ def command(environment=None,binary=None):
         fallback=ROOT/'native/lock-background.png'
         if fallback.is_file():images=[('',fallback)]
     def color(key):return style[key].lstrip('#')
-    args=[flock,'--nonblock','--no-fork','--conflict-exit-code','0',str(lock),binary,'--daemonize','--ignore-empty-password','--show-failed-attempts','--show-keyboard-layout','--indicator-caps-lock','--color',color('background'),
+    args=[flock,'--nonblock','--no-fork','--conflict-exit-code','75',str(lock),binary,'--daemonize','--ignore-empty-password','--show-failed-attempts','--show-keyboard-layout','--indicator-caps-lock','--color',color('background'),
         '--indicator-idle-visible','--indicator-radius',str(round(58*min(1.2,style['textScale']))),'--indicator-thickness','3','--font','Sans','--font-size',str(round(16*style['textScale'])),
         '--inside-color',color('surface'),'--inside-clear-color',color('surface'),'--inside-ver-color',color('surface'),'--inside-wrong-color',color('surface'),'--inside-caps-lock-color',color('surface'),
         '--ring-color',color('accent'),'--ring-clear-color',color('accent'),'--ring-ver-color',color('warning'),'--ring-wrong-color',color('error'),'--ring-caps-lock-color',color('warning'),
@@ -93,6 +93,17 @@ def launch_and_wait(environment=None,timeout=8):
                 except OSError:pass
             threading.Thread(target=reap,name='orbit-lock-reaper',daemon=True).start()
             raise RuntimeError('Screen lock startup did not confirm readiness. It may still appear; do not assume the session is locked.') from error
+        control=environment.get('ORBIT_NATIVE_CONTROL')
+        if control and code in (0,75):
+            from native_compositor import NativeCompositor
+            compositor=NativeCompositor(control)
+            deadline=time.monotonic()+timeout
+            while True:
+                if compositor.status().get('locked'):
+                    return
+                if code==0 or time.monotonic()>=deadline:
+                    raise RuntimeError('The compositor did not confirm the screen lock')
+                time.sleep(.1)
         if code:
             errors.seek(0);details=' '.join(errors.read(1024).decode('utf-8','replace').split())[:240]
             raise RuntimeError('Screen lock failed'+(f': {details}' if details else f' (exit {code})'))

@@ -181,7 +181,7 @@ QtObject {
                     Text { visible: shell.sw>=900;text: Usage.username;width: Math.min(80,implicitWidth);elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.fontSize(11);height: 16;verticalAlignment: Text.AlignVCenter;textFormat: Text.PlainText }
                 }
             }
-            OrbitButton { text: "☷";quiet: true;implicitHeight: 28;hint: "Quick settings";onClicked: Orbit.showPanel("quick") }
+            IconButton { iconName: "settings";implicitHeight: 28;hint: "Quick settings";onClicked: Orbit.showPanel("quick") }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
         }
@@ -209,7 +209,7 @@ QtObject {
             x: !Orbit.isWayland || Orbit.appearance.dockAlign==="left" ? 0 : Orbit.appearance.dockAlign==="right" ? parent.width-width : Math.round((parent.width-width)/2)
             readonly property real logicalLeft: shell.sx+(Orbit.appearance.dockAlign==="left" ? 12 : Orbit.appearance.dockAlign==="right" ? shell.sw-12-width : (shell.sw-width)/2)
             readonly property real logicalTop: shell.sy+shell.sh-height-10
-            radius: Theme.corner(shell.foldStyle ? 6 : 14);color: Theme.surface;border.color: Theme.border
+            radius: Theme.corner(shell.foldStyle ? 6 : 14);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
             function screenPoint(item,px,py) {
                 var local=item.mapToItem(dockBody,px,py);
                 return {x:Math.round(logicalLeft+local.x),y:Math.round(logicalTop+local.y)};
@@ -231,7 +231,7 @@ QtObject {
                         Image {
                             id: dockAppIcon
                             x: shell.foldStyle ? 8 : (parent.width-width)/2;y: (parent.height-height)/2
-                            source: "image://icons/"+modelData.icon;width: shell.foldStyle ? 22 : Theme.compact ? 28 : 36;height: width
+                            source: Theme.iconSource(modelData.icon);width: shell.foldStyle ? 22 : Theme.compact ? 28 : 36;height: width
                             sourceSize: shell.foldStyle ? Qt.size(24,24) : Qt.size(40,40)
                         }
                         Text {
@@ -346,7 +346,7 @@ QtObject {
                 visible: Orbit.tooltip.inline === true && Orbit.tooltip.text !== undefined
                 x: Orbit.tooltip.localX || 0;y: Orbit.tooltip.localY || 0
                 width: Orbit.tooltip.width || 160;height: 34
-                radius: Theme.corner(7);color: Theme.surface;border.color: Theme.border
+                radius: Theme.corner(7);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
                 onVisibleChanged: if(visible){opacity=0;panelTipEnter.restart();}
                 Text { anchors.centerIn: parent;width: parent.width-18;text: Orbit.tooltip.text || "";font.pixelSize: Theme.fontSize(11);color: Theme.text;elide: Text.ElideRight;horizontalAlignment: Text.AlignHCenter;textFormat: Text.PlainText }
                 NumberAnimation { id: panelTipEnter;target: panelTooltip;property: "opacity";to: 1;duration: Theme.motion }
@@ -380,7 +380,7 @@ QtObject {
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
         onVisibleChanged: if(visible){tipBody.opacity=0;tipEnter.restart();}
         NumberAnimation { id: tipEnter;target: tipBody;property: "opacity";to: 1;duration: Theme.motion }
-        Rectangle { id: tipBody;width: Orbit.tooltip.width || 160;height: parent.height;radius: Theme.corner(7);color: Theme.surface;border.color: Theme.border
+        Rectangle { id: tipBody;width: Orbit.tooltip.width || 160;height: parent.height;radius: Theme.corner(7);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
             Text { anchors.centerIn: parent;width: parent.width-18;text: Orbit.tooltip.text || "";font.pixelSize: Theme.fontSize(11);color: Theme.text;elide: Text.ElideRight;horizontalAlignment: Text.AlignHCenter;textFormat: Text.PlainText }
         }
     }
@@ -401,13 +401,24 @@ QtObject {
             Rectangle {
                 id: contextPopup;objectName: "contextPopup";visible: Orbit.context.items !== undefined
                 onVisibleChanged: if(visible){Orbit.syncContextSurface();contextRoot.forceActiveFocus();contextList.currentIndex=0;opacity=0;contextEnter.restart();}
-                width: 250;height: contextList.contentHeight+12;radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border
+                width: 250;height: contextList.contentHeight+12;radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
                 x: Math.max(8,Math.min((Orbit.context.x || 0)-shell.sx-(Orbit.context.placement === "above" ? width/2 : 0),parent.width-width-8));y: Math.max(36,Math.min((Orbit.context.y || 0)-shell.sy-(Orbit.context.placement === "above" ? height+8 : 0),parent.height-height-12))
                 ListView {
                     id: contextList;anchors.fill: parent;anchors.margins: 6;interactive: false;model: Orbit.context.items || []
                     delegate: Rectangle {
                         required property var modelData;required property int index;width: ListView.view.width;height: 32;radius: Theme.corner(6);color: index===contextList.currentIndex ? Theme.hover : "transparent"
-                        Text { anchors.fill: parent;anchors.leftMargin: 9;anchors.rightMargin: 9;verticalAlignment: Text.AlignVCenter;text: modelData.label;color: modelData.enabled === false ? Theme.faint : Theme.text;font.pixelSize: Theme.fontSize(12);elide: Text.ElideRight;textFormat: Text.PlainText }
+                        Accessible.role: Accessible.MenuItem
+                        Accessible.name: modelData.label
+                        Accessible.focused: index===contextList.currentIndex
+                        Accessible.onPressAction: if(modelData.enabled!==false)Orbit.contextAction(index)
+                        Image {
+                            id: menuIcon
+                            visible: !!modelData.icon
+                            anchors.left: parent.left;anchors.leftMargin: 9;anchors.verticalCenter: parent.verticalCenter
+                            width: 16;height: 16;sourceSize: Qt.size(16,16)
+                            source: visible ? Theme.symbolicIconSource(modelData.icon) : ""
+                        }
+                        Text { anchors.fill: parent;anchors.leftMargin: menuIcon.visible ? 33 : 9;anchors.rightMargin: 9;verticalAlignment: Text.AlignVCenter;text: modelData.label;color: modelData.enabled === false ? Theme.faint : Theme.text;font.pixelSize: Theme.fontSize(12);elide: Text.ElideRight;textFormat: Text.PlainText }
                         MouseArea { enabled: modelData.enabled !== false;anchors.fill: parent;hoverEnabled: true;onEntered: contextList.currentIndex=index;onClicked: Orbit.contextAction(index) }
                     }
                 }
@@ -428,7 +439,7 @@ QtObject {
             OrbitField { id: noteTitle; Layout.fillWidth: true; placeholderText: "Give this thought a name"; Component.onCompleted: forceActiveFocus() }
             TextArea {
                 id: noteBody; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "A thought, a text selection, a link…"; color: Theme.text; placeholderTextColor: Theme.muted; wrapMode: TextEdit.Wrap; selectByMouse: true; padding: 18
-                background: Rectangle { color: Theme.surface; radius: Theme.corner(13); border.color: Theme.border }
+                background: Rectangle { color: Theme.surface; radius: Theme.corner(13); border.color: Theme.border; border.width: Theme.surfaceOutline }
             }
             RowLayout {
                 Text { text: "Stored locally in " + Orbit.workspace; color: Theme.muted; font.pixelSize: Theme.fontSize(11) }

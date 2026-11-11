@@ -1,6 +1,8 @@
 """On-demand PNG screenshots; no background captures, thumbnails, or polling."""
 import os
+import json
 import math
+import socket
 import struct
 import re
 import subprocess
@@ -137,12 +139,58 @@ def save_png(folder, image=None, data=None):
         raise
 
 
-def capture_wayland(folder, screen_name, bounds, kind, rect=None, window_id='', pixel_ratio=1):
+def capture_native_window(folder, ident):
+    from native_compositor import NativeCompositor
+    if not re.fullmatch(r'[1-9][0-9]*', str(ident)):
+        raise ValueError('Invalid selected window')
+    client = NativeCompositor(os.environ['ORBIT_NATIVE_CONTROL'])
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(10)
+        connection.connect(str(client.path))
+        request = {'command': 'capture_window', 'id': int(ident)}
+        connection.sendall((json.dumps(request) + '\n').encode())
+        with connection.makefile('rb') as stream:
+            header = stream.readline(4096)
+            if not header.endswith(b'\n'):
+                raise RuntimeError('Incomplete window screenshot response')
+            reply = json.loads(header)
+            if reply.get('ok') is not True:
+                error = reply.get('error', 'Window screenshot failed')
+                if error == 'Unknown command':
+                    error = 'Window screenshots require the updated compositor. Log out and sign in again.'
+                raise RuntimeError(error)
+            width, height = reply['width'], reply['height']
+            validate_dimensions(width, height)
+            length = width * height * 4
+            pixels = stream.read(length)
+            if len(pixels) != length:
+                raise RuntimeError('Incomplete window screenshot pixels')
+    image = QImage(pixels, width, height, width * 4, QImage.Format.Format_ARGB32_Premultiplied)
+    return save_png(folder, image=image)
+
+
+def capture_wayland(folder, screen_name, bounds, kind, rect=None, window_id='', pixel_ratio=1, window_outputs=()):
+    if kind == 'window' and os.environ.get('ORBIT_NATIVE_CONTROL'):
+        return capture_native_window(folder, window_id)
     from desktop import application_environment
     validate_dimensions(bounds[2], bounds[3], pixel_ratio)
     if kind == 'window':
         focus_wayland_window(window_id)
-        rect = clamp_rect(sway_window_rect(window_id), bounds)
+        window_rect = sway_window_rect(window_id)
+        if window_outputs:
+            x, y, width, height = window_rect
+            overlapping = [(box, ratio) for box, ratio in window_outputs
+                           if box[0] < x + width and x < box[0] + box[2]
+                           and box[1] < y + height and y < box[1] + box[3]]
+            if overlapping:
+                left = min(box[0] for box, _ in overlapping)
+                top = min(box[1] for box, _ in overlapping)
+                right = max(box[0] + box[2] for box, _ in overlapping)
+                bottom = max(box[1] + box[3] for box, _ in overlapping)
+                bounds = left, top, right - left, bottom - top
+                pixel_ratio = max(ratio for _, ratio in overlapping)
+        rect = clamp_rect(window_rect, bounds)
+        validate_dimensions(rect[2], rect[3], pixel_ratio)
     arguments = ['grim', '-t', 'png']
     if kind == 'screen':
         if not screen_name:raise ValueError('The selected display has no capture identifier')
@@ -209,18 +257,21 @@ class ScreenshotController(QObject):
     def begin(self, kind, rect=None, window_id=''):
         if self._closed or not self.enabled or self._state['busy']:return
         try:
-            screen = self.screen()
-            bounds = self.bounds(screen)
-            pixel_ratio = self.pixel_ratio(screen)
-            validate_dimensions(bounds[2], bounds[3], pixel_ratio)
             ident=self.selected_window(window_id) if kind=='window' else ''
-            self._pending = dict(kind=kind, rect=rect, window_id=ident, bounds=bounds, screen_name=screen.name(), pixel_ratio=pixel_ratio)
+            if kind == 'window' and os.environ.get('ORBIT_NATIVE_CONTROL'):
+                self._pending = dict(kind=kind, window_id=ident)
+            else:
+                screen = self.screen()
+                bounds = self.bounds(screen)
+                pixel_ratio = self.pixel_ratio(screen)
+                validate_dimensions(bounds[2], bounds[3], pixel_ratio)
+                self._pending = dict(kind=kind, rect=rect, window_id=ident, bounds=bounds, screen_name=screen.name(), pixel_ratio=pixel_ratio)
         except Exception as error:
             self.error(error)
             return
         self._state.update(busy=True, selecting=False, error='')
         self.bridge.dismiss()
-        if kind=='window' and hasattr(self.bridge,'focusWindow'):self.bridge.focusWindow(ident)
+        if kind=='window' and not os.environ.get('ORBIT_NATIVE_CONTROL') and hasattr(self.bridge,'focusWindow'):self.bridge.focusWindow(ident)
         self.changed.emit()
         self.timer.start()
 
@@ -279,11 +330,18 @@ class ScreenshotController(QObject):
         if self._closed or not self._pending:return
         request, self._pending = self._pending, None
         try:
+            if request['kind']=='window':
+                self.selected_window(request['window_id'])
+                if os.environ.get('ORBIT_NATIVE_CONTROL'):
+                    self.submit(lambda:capture_native_window(self.folder, request['window_id']))
+                    return
             screen = self.screen()
             if self.bounds(screen) != request['bounds'] or screen.name() != request['screen_name'] or self.pixel_ratio(screen) != request['pixel_ratio']:raise ValueError('The selected display changed; try capturing again')
             validate_dimensions(request['bounds'][2], request['bounds'][3], request['pixel_ratio'])
-            if request['kind']=='window':self.selected_window(request['window_id'])
             if os.environ.get('SWAYSOCK') or os.environ.get('ORBIT_NATIVE_CONTROL'):
+                if request['kind']=='window':
+                    request['window_outputs'] = tuple((self.bounds(output), self.pixel_ratio(output))
+                                                      for output in self.app.screens())
                 self.submit(lambda:capture_wayland(self.folder, **request))
                 return
             rect = request['rect']

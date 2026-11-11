@@ -187,7 +187,7 @@ def notification_target(note,apps,windows):
 
 def dock_groups(apps,windows,pins=None):
     pinned=[]
-    for alternatives in [('firefox.desktop','com.google.Chrome.desktop'),('thunar.desktop','org.gnome.Nautilus.desktop'),('xfce4-terminal.desktop','org.gnome.Terminal.desktop'),('org.xfce.mousepad.desktop','xed.desktop')]:
+    for alternatives in [('firefox.desktop','com.google.Chrome.desktop'),('mellipi-files.desktop','thunar.desktop','org.gnome.Nautilus.desktop'),('mellipi-terminal.desktop','xfce4-terminal.desktop','org.gnome.Terminal.desktop'),('org.xfce.mousepad.desktop','xed.desktop')]:
         app=next((a for a in apps if a['id'] in alternatives),None)
         if app:pinned.append(app)
     if pins is not None:pinned=[a for ident in pins for a in apps if a['id']==ident]
@@ -229,10 +229,12 @@ def terminal_gio():
 
 def launch_terminal():
     """Use the system terminal; GIO owns activation and child reaping."""
-    executable=next((value for name in ('x-terminal-emulator','foot','xfce4-terminal','gnome-terminal','konsole','xterm') if (value:=shutil.which(name))),None)
+    executable=next((value for name in ('mellipi-terminal','x-terminal-emulator','foot','xfce4-terminal','gnome-terminal','konsole','xterm') if (value:=shutil.which(name))),None)
     if not executable:raise RuntimeError('Install a terminal emulator to use the terminal shortcut')
     try:
         Gio,GLib=terminal_gio();environment=application_environment();context=Gio.AppLaunchContext()
+        if os.path.basename(executable)=='mellipi-terminal' and os.environ.get('ORBIT_SETTINGS_FILE'):
+            environment['ORBIT_SETTINGS_FILE']=os.environ['ORBIT_SETTINGS_FILE']
         for key in os.environ:
             if key not in environment:context.unsetenv(key)
         for key,value in environment.items():context.setenv(key,value)

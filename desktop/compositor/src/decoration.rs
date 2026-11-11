@@ -122,10 +122,18 @@ impl OutlinePixels {
             &color,Fourcc::Argb8888,(1,1),1,Transform::Normal,None)).collect();
     }
 }
-fn outline_rects(mut geometry: Rectangle<i32, Logical>, header: bool) -> Vec<Rectangle<i32, Logical>> {
+fn outline_rects(mut geometry: Rectangle<i32, Logical>, header: bool, inset: bool) -> Vec<Rectangle<i32, Logical>> {
     if geometry.size.w <= 0 || geometry.size.h <= 0 || geometry.size.w > 16384 || geometry.size.h > 16384 { return vec![]; }
     if header {geometry.loc.y=geometry.loc.y.saturating_sub(HEIGHT);geometry.size.h=geometry.size.h.saturating_add(HEIGHT);}
     let (x,y,w,h)=(geometry.loc.x,geometry.loc.y,geometry.size.w,geometry.size.h);
+    if inset {
+        return [
+            Rectangle::new((x, y).into(), (w, 1).into()),
+            Rectangle::new((x, y.saturating_add(h - 1)).into(), (w, 1).into()),
+            Rectangle::new((x, y).into(), (1, h).into()),
+            Rectangle::new((x.saturating_add(w - 1), y).into(), (1, h).into()),
+        ].into();
+    }
     [Rectangle::new((x.saturating_sub(1),y.saturating_sub(1)).into(),(w+2,1).into()),
         Rectangle::new((x.saturating_sub(1),y.saturating_add(h)).into(),(w+2,1).into()),
         Rectangle::new((x.saturating_sub(1),y).into(),(1,h).into()),
@@ -158,7 +166,10 @@ fn outline_color(active: bool) -> [u8;4] {
 fn outline_elements(renderer: &mut GlesRenderer,window: &Window,body: Point<i32, Physical>,scale: f64,alpha:f32) -> Vec<MemoryRenderBufferRenderElement<GlesRenderer>> {
     if !FRAMES.with(|frames|frames.borrow().outline) {return vec![];}
     let Some(active)=outline_active(window) else {return vec![];};
-    let rects=outline_rects(window.geometry(),needs_header(window));
+    use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
+    let maximized = window.x11_surface().is_some_and(|surface| surface.is_maximized())
+        || window.toplevel().is_some_and(|surface| surface.current_state().states.contains(State::Maximized));
+    let rects=outline_rects(window.geometry(),needs_header(window),maximized);
     if rects.is_empty() {return vec![];}
     let color=outline_color(active);
     window.user_data().insert_if_missing(||RefCell::new(OutlinePixels::default()));
@@ -524,18 +535,26 @@ mod tests {
     #[test]
     fn outline_is_four_thin_strips_without_covering_client_pixels() {
         let geometry=Rectangle::new((10,20).into(),(400,300).into());
-        let strips=outline_rects(geometry,false);
+        let strips=outline_rects(geometry,false,false);
         assert_eq!(strips.len(),4);
         assert!(strips.iter().all(|r|r.size.w==1 || r.size.h==1));
         assert!(strips.iter().all(|r|geometry.intersection(*r).is_none()));
         assert_eq!(strips.iter().map(|r|r.size.w*r.size.h).sum::<i32>(),2*(400+300)+4);
-        let legacy=outline_rects(geometry,true);
+        let legacy=outline_rects(geometry,true,false);
         assert_eq!(legacy[0].loc.y,20-HEIGHT-1);
         assert_eq!(legacy[1].loc.y,320);
-        assert!(outline_rects(Rectangle::new((0,0).into(),(0,10).into()),false).is_empty());
-        assert!(outline_rects(Rectangle::new((0,0).into(),(20000,10).into()),false).is_empty());
-        assert!(outline_rects(Rectangle::new((0,0).into(),(1,1).into()),false).iter().all(|r|r.size.w>0 && r.size.h>0));
+        assert!(outline_rects(Rectangle::new((0,0).into(),(0,10).into()),false,false).is_empty());
+        assert!(outline_rects(Rectangle::new((0,0).into(),(20000,10).into()),false,false).is_empty());
+        assert!(outline_rects(Rectangle::new((0,0).into(),(1,1).into()),false,false).iter().all(|r|r.size.w>0 && r.size.h>0));
     }
+    #[test]
+    fn maximized_outline_stays_inside_the_window_bounds() {
+        let geometry = Rectangle::new((80, 0).into(), (1920, 1080).into());
+        let strips = outline_rects(geometry, false, true);
+        assert_eq!(strips.len(), 4);
+        assert!(strips.iter().all(|strip| geometry.intersection(*strip) == Some(*strip)));
+    }
+
     #[test]
     fn outline_cache_has_only_four_pixels_and_reuses_unchanged_colors() {
         let theme:serde_json::Value=serde_json::from_str(include_str!("../../themes/forest.json")).unwrap();

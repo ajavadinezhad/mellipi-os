@@ -22,12 +22,27 @@ class Icons(QQuickImageProvider):
     def __init__(self): super().__init__(QQuickImageProvider.Image if QT5 else QQuickImageProvider.ImageType.Image)
     def requestImage(self,ident,*sizes):
         requested=sizes[-1]
+        tint=None
+        if ident.startswith('menu/'):
+            _,color,name=ident.split('/',2)
+            tint=QColor('#'+color)
+            for category in ('actions','places','status','devices','legacy','apps','categories','mimetypes'):
+                path=Path('/usr/share/icons/Adwaita/symbolic')/category/(name+'-symbolic.svg')
+                if path.is_file():
+                    ident=str(path)
+                    break
         icon=QIcon(ident) if ident.startswith('/') else QIcon.fromTheme(ident)
         if icon.isNull(): icon=QIcon.fromTheme('application-x-executable')
         side=max(16,min(64,requested.width() if requested.width()>0 else 40))
         image=icon.pixmap(QSize(side,side)).toImage()
         if image.isNull():
             image=QImage(64,64,QImage.Format.Format_ARGB32); image.fill(QColor('#486b61'))
+        if tint is not None and tint.isValid():
+            image=image.convertToFormat(QImage.Format.Format_ARGB32)
+            painter=QPainter(image)
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+            painter.fillRect(image.rect(),tint)
+            painter.end()
         if QT5:return image,image.size()
         size=sizes[0];size.setWidth(image.width()); size.setHeight(image.height())
         return image
@@ -245,9 +260,7 @@ class Bridge(QObject):
         self.showPanel('system-settings')
     @Slot(int,int,str)
     def openSettingsTarget(self,section,tab,target):
-        from action_targets import SETTING_TARGETS,BUILTIN_TOOLS
-        if action in BUILTIN_TOOLS and getattr(self,'desktopTools',None):
-            self.openSettingsSection(16);self.desktopTools.open(BUILTIN_TOOLS[action]);return
+        from action_targets import SETTING_TARGETS
         # Targets are an allowlist, not arbitrary QML names supplied over IPC.
         if (section,tab,target) not in SETTING_TARGETS.values():return
         self.openSettingsSection(section)
@@ -266,12 +279,12 @@ class Bridge(QObject):
             ('displays','Display settings','Resolution, scaling and monitor layout','video-display','screen monitor hdmi resolution scale'),
             ('network','Network settings','Wi-Fi and saved connections','network-wireless','wifi internet wireless ethernet vpn'),
             ('bluetooth','Bluetooth devices','Pair or connect a device','bluetooth','headphones wireless pair battery'),
-            ('appearance','Appearance','Theme, colors and desktop layout','preferences-desktop-theme','dark light black theme accent wallpaper'),
+            ('appearance','Appearance','Theme, colors and desktop layout','color-select','dark light black theme accent wallpaper'),
             ('shortcuts','Keyboard shortcuts','Find and change keyboard shortcuts','preferences-desktop-keyboard-shortcuts','hotkeys keys bindings'),
             ('help','Getting around Mellipi','Learn where actions are and how to use the desktop','help-browser','help guide how login logout shortcuts'),
             ('lock','Lock screen','Lock this session; apps stay open','system-lock-screen','lock password privacy'),
             ('logout','Log out','Review apps before returning to the login screen','system-log-out','logout log out sign out login sign in'),
-            ('suspend','Sleep','Open the Power menu to confirm sleep','system-suspend','suspend sleep standby'),
+            ('suspend','Sleep','Open the Power menu to confirm sleep','weather-clear-night','suspend sleep standby'),
             ('reboot','Restart','Review apps before restarting the computer','system-reboot','restart reboot power'),
             ('shutdown','Shut down','Review apps before turning off the computer','system-shutdown','shutdown shut down power off turn off'),
         ]
@@ -287,7 +300,9 @@ class Bridge(QObject):
     systemActions=Property('QVariantList',actionCatalog,notify=systemActionsChanged)
     @Slot(str)
     def activateSystemAction(self,action):
-        from action_targets import SETTING_TARGETS
+        from action_targets import SETTING_TARGETS,BUILTIN_TOOLS
+        if action in BUILTIN_TOOLS and getattr(self,'desktopTools',None):
+            self.openSettingsSection(16);self.desktopTools.open(BUILTIN_TOOLS[action]);return
         if action in SETTING_TARGETS:return self.openSettingsTarget(*SETTING_TARGETS[action])
         if action in ('screenshot','do-not-disturb'):
             panel='screenshot' if action=='screenshot' else 'notifications'
@@ -611,7 +626,23 @@ class Bridge(QObject):
     @Slot(str,str,int,int)
     def openContext(self,kind,ident,x,y):
         self.hideTooltip();items=[]
-        def add(label,action,value=''):items.append(dict(label=label,action=action,value=value))
+        menu_icons={
+            'desktop-new-folder':'folder-new','desktop-arrange':'view-sort-ascending',
+            'desktop-refresh':'view-refresh','desktop-paste':'edit-paste',
+            'show-desktop':'user-desktop','launcher':'view-app-grid',
+            'settings':'color-select','system-settings':'preferences-system',
+            'desktop-open':'document-open','desktop-open-with':'system-run',
+            'desktop-reveal':'folder-open','desktop-copy-files':'edit-copy',
+            'desktop-cut-files':'edit-cut','desktop-rename':'document-edit',
+            'desktop-trash-files':'user-trash','desktop-properties':'document-properties',
+            'desktop-copy':'edit-copy',
+        } if kind in ('desktop','desktop-file') else {}
+        def add(label,action,value=''):
+            item=dict(label=label,action=action,value=value)
+            icon=menu_icons.get(value if action=='panel' else action)
+            if icon:
+                item['icon']=icon
+            items.append(item)
         if kind in ('dock','app','window') and ident=='orbit-settings':
             add('Open Settings','settings-task');add('Close Settings','close-settings-task')
         elif kind=='desktop':
@@ -950,16 +981,14 @@ class Bridge(QObject):
 
     @Slot(str)
     def showPanel(self,name):
+        hardware_sections={'bluetooth':9,'battery':7}
+        if name in hardware_sections:
+            return self.openSettingsSection(hardware_sections[name])
         if name in ('settings','system-settings') and getattr(self,'settingsHost',None):
             section=10 if name=='settings' else self._settingsSection
             self._settingsOpen=False;self.dismiss();self.settingsHost.show(section);return
         if name!='session-exit' and self.sessionExit.state['active']:self.sessionExit.cancel()
         if name=='shelf':return self.notify('Sharing has been removed')
-        hardwareSections={'bluetooth':9,'battery':7}
-        if name in hardwareSections:
-            self._settingsSection=hardwareSections[name];self.interactionChanged.emit();name='system-settings'
-            # A deep link selects a page even if settings is already visible.
-            if self._panel==name:self._panel=''
         if name=='fold' or (name=='overview' and self.appearance.get('shellLayout')=='fold'):name='launcher'
         if name=='launcher' and self._windowFilter:self._windowFilter=[];self.windowsChanged.emit()
         if name=='ai' and not self.aiEnabled:name='launcher'
@@ -972,7 +1001,6 @@ class Bridge(QObject):
         if name=='overview':self._windowFilter=[];self.windowsChanged.emit()
         self._panel='' if self._panel==name and name!='session-exit' else name
         if self._panel!='system-settings':self._settingsPage=''
-        if fold:fold.setActive(bool(self._panel in ('launcher','overview') and self.appearance.get('shellLayout')=='fold' and fold.state['view']=='work'))
         if self._panel:self.positionPanel(self._panel)
         else:self.settlePanelFocus()
         self.panelChanged.emit()
@@ -1097,13 +1125,15 @@ class Bridge(QObject):
         import subprocess
         from app_catalog import launch_result
         environment=desktop.application_environment()
+        if ident in ('mellipi-files.desktop','mellipi-terminal.desktop'):
+            environment['ORBIT_SETTINGS_FILE']=str(self.preferences.path)
         if self.appearance['matchApps']:
             from application_theme import launch_environment
             environment=launch_environment(self.themeMode,environment)
         try:
             # Keep application processes independent of shell recovery. gio parses
             # desktop field codes and returns when activation is accepted.
-            process=subprocess.Popen(['gio','launch',desktop.application_launch_path(app,environment)],env=environment,start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            process=subprocess.Popen(['gio','launch',desktop.application_launch_path(app,environment)],env=environment,cwd=Path.home(),start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         except OSError as error:return self.notify('Could not start '+app['name']+': '+str(error)[:120])
         pending.add(ident)
         def accepted(_):

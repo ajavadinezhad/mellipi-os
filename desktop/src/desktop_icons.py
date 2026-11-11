@@ -438,6 +438,12 @@ class DesktopIcons(QObject):
     def open(self,value):
         item=self.place(value)
         if item:
+            if item['url'].startswith('trash:') and (executable:=shutil.which('mellipi-files')):
+                def open_trash():
+                    subprocess.Popen([executable,'trash:///'],env=desktop.application_environment(),
+                                     start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                self.action('open:trash',open_trash)
+                return
             if not self.opener(QUrl(item['url'])):self.notice.emit('Could not open '+item['name'])
             return
         try:
@@ -464,7 +470,14 @@ class DesktopIcons(QObject):
         if self.place(value):self.open(value);return
         try:
             path=self.validate(value);url=QUrl.fromLocalFile(str(path)).toString()
-            self.action('reveal:'+value,lambda:reveal_item(url),lambda shown:None if shown else self.opener(QUrl.fromLocalFile(str(self.root))))
+            def reveal():
+                executable=shutil.which('mellipi-files')
+                if executable:
+                    subprocess.Popen([executable,'--select',str(path)],env=desktop.application_environment(),
+                                     start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                    return True
+                return reveal_item(url)
+            self.action('reveal:'+value,reveal,lambda shown:None if shown else self.opener(QUrl.fromLocalFile(str(path.parent))))
         except (OSError,ValueError) as error:self.notice.emit(str(error))
     @Slot(str)
     def addShortcut(self,app_id):

@@ -70,7 +70,7 @@ ScrollView {
                             Accessible.name: modelData.name;Accessible.role: Accessible.Button;Accessible.onPressAction: Orbit.setPreference("accent",modelData.color)
                         }
                     }
-                    OrbitButton { text: "…";quiet: true;implicitWidth: 24;implicitHeight: 26;hint: "Custom accent";onClicked: view.customAccent=!view.customAccent }
+                    IconButton { iconName: "more";implicitWidth: 24;implicitHeight: 26;hint: "Custom accent";onClicked: view.customAccent=!view.customAccent }
                 }
                 RowLayout {
                     visible: view.customAccent;Layout.fillWidth: true;Layout.margins: 4

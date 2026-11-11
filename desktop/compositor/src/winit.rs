@@ -83,6 +83,11 @@ pub fn init_winit(
     let (formats,device)={let mut backend=backend.borrow_mut();let renderer=backend.renderer();(renderer.dmabuf_formats().iter().copied().collect(),crate::dmabuf::renderer_device(renderer))};
     let importer=backend.clone();
     data.state.setup_dmabuf(formats,device,Box::new(move|buffer|importer.try_borrow_mut().is_ok_and(|mut backend|crate::dmabuf::validate(backend.renderer(),buffer))));
+    let capture_backend = backend.clone();
+    data.state.ipc.capture_window = Some(Box::new(move |window, scale| {
+        let mut backend = capture_backend.try_borrow_mut().map_err(|_| "Display is busy")?;
+        crate::window_capture::capture(backend.renderer(), window, scale)
+    }));
     let redraw = backend.clone();
     data.state.redraw = Some(Box::new(move || redraw.borrow().window().request_redraw()));
     let mut damage_tracker = OutputDamageTracker::from_output(&output);

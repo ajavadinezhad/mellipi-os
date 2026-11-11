@@ -42,7 +42,11 @@ class SignedImageGates(unittest.TestCase):
 
 class SignedInstallerGates(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name);builder.configure_installer(self.root,'0.1.9')
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
+        theme = self.root/'usr/lib/abstract/themes/forest.json'
+        theme.parent.mkdir(parents=True)
+        theme.write_bytes((ROOT/'desktop/themes/forest.json').read_bytes())
+        builder.configure_installer(self.root,'0.1.9')
         self.helper={'__name__':'secure_installer_unit_test'};exec(compile((self.root/'usr/lib/abstract/iso-grub-install').read_text(),'iso-grub-install','exec'),self.helper)
         self.arguments=['--target=x86_64-efi','--efi-directory=/boot/efi','--bootloader-id=ubuntu','--force']
     def test_uefi_plan_demands_signed_install_and_removes_force(self):

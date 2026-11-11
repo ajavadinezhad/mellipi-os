@@ -4,6 +4,7 @@ import "."
 OrbitButton {
     id: button
     property string iconName: ""
+    property color glyphColor: Theme.highContrast ? Theme.text : Theme.accent
     property string accessibleLabel: hint
     implicitWidth: 30
     implicitHeight: 30
@@ -12,20 +13,24 @@ OrbitButton {
     text: ""
     Accessible.name: accessibleLabel
     Accessible.role: Accessible.Button
-    function repaintGlyph() {if(glyph)glyph.requestPaint();}
-    onIconNameChanged: repaintGlyph()
-    onEnabledChanged: repaintGlyph()
-    onAccentChanged: repaintGlyph()
     contentItem: Canvas {
         id: glyph
         implicitWidth: 16;implicitHeight: 16
+        readonly property string symbol: button.iconName
+        readonly property color ink: !button.enabled ? Theme.disabled : button.accent ? Theme.accentText : button.glyphColor
+        onSymbolChanged: requestPaint()
+        onInkChanged: requestPaint()
         onWidthChanged: requestPaint()
         onHeightChanged: requestPaint()
         onPaint: {
-            var c=getContext("2d");c.clearRect(0,0,width,height);c.save();
-            c.translate(Math.round((width-16)/2),Math.round((height-16)/2));
-            var ink=!button.enabled ? Theme.disabled : button.accent ? Theme.accentText : Theme.text;
-            c.strokeStyle=ink;c.fillStyle=ink;c.lineWidth=1.5;c.lineCap="round";c.lineJoin="round";
+            var c=getContext("2d");
+            c.clearRect(0,0,width,height);
+            var size=Math.min(16,width,height);
+            if(size<=0)return;
+            c.save();
+            c.translate(Math.round((width-size)/2),Math.round((height-size)/2));
+            c.scale(size/16,size/16);
+            c.strokeStyle=glyph.ink;c.fillStyle=glyph.ink;c.lineWidth=1.5;c.lineCap="round";c.lineJoin="round";
             c.beginPath();
             if(button.iconName==="camera" || button.iconName==="screenshot") {
                 c.moveTo(2,5);c.lineTo(5,5);c.lineTo(6,3);c.lineTo(10,3);c.lineTo(11,5);c.lineTo(14,5);c.lineTo(14,13);c.lineTo(2,13);c.closePath();c.stroke();c.beginPath();c.arc(8,9,2.5,0,Math.PI*2);
@@ -70,15 +75,28 @@ OrbitButton {
                 c.moveTo(5,2);c.lineTo(11,2);c.lineTo(10,5);c.lineTo(10,8);c.lineTo(13,10);c.lineTo(3,10);c.lineTo(6,8);c.lineTo(6,5);c.closePath();
                 if(button.iconName==="pinned")c.fill();
                 c.stroke();c.beginPath();c.moveTo(8,10);c.lineTo(8,15);
+            } else if(button.iconName==="folder") {
+                c.moveTo(1.5,13);c.lineTo(1.5,3.5);c.lineTo(6,3.5);c.lineTo(8,5.5);c.lineTo(14.5,5.5);c.lineTo(14.5,13);c.closePath();
+            } else if(button.iconName==="layouts" || button.iconName==="apps") {
+                c.rect(2,2,12,12);c.moveTo(8,2);c.lineTo(8,14);
+                c.moveTo(button.iconName==="apps" ? 2 : 8,8);c.lineTo(14,8);
             } else if(button.iconName==="refresh") {
                 c.arc(8,8,5,Math.PI*.15,Math.PI*1.9);c.moveTo(12.8,3);c.lineTo(12.8,6.5);c.lineTo(9.3,6.5);
+            } else if(button.iconName==="updates") {
+                c.moveTo(8,2);c.lineTo(8,9);
+                c.moveTo(5,6);c.lineTo(8,9);c.lineTo(11,6);
+                c.moveTo(2.5,10);c.lineTo(2.5,13.5);c.lineTo(13.5,13.5);c.lineTo(13.5,10);
             } else if(button.iconName==="check") {
                 c.moveTo(3,8);c.lineTo(6.5,11.5);c.lineTo(13,4.5);
+            } else if(button.iconName==="more") {
+                for (var x=4;x<=12;x+=4) {
+                    c.moveTo(x+1,8);c.arc(x,8,1,0,Math.PI*2);
+                }
+                c.fill();c.beginPath();
             } else if(button.iconName==="close") {
                 c.moveTo(4,4);c.lineTo(12,12);c.moveTo(12,4);c.lineTo(4,12);
             }
             c.stroke();c.restore();
         }
-        Connections { target: Orbit;function onSettingsChanged(){button.repaintGlyph();} }
     }
 }

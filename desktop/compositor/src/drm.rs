@@ -200,6 +200,14 @@ pub fn init_drm(
     let device=crate::dmabuf::renderer_device(&backend.borrow().renderer).or_else(||std::fs::metadata(&backend.borrow().path).ok().map(|meta|meta.rdev()));
     let importer=backend.clone();
     data.state.setup_dmabuf(formats,device,Box::new(move|buffer|importer.try_borrow_mut().is_ok_and(|mut backend|crate::dmabuf::validate(&mut backend.renderer,buffer))));
+    let capture_backend = backend.clone();
+    data.state.ipc.capture_window = Some(Box::new(move |window, scale| {
+        let mut backend = capture_backend.try_borrow_mut().map_err(|_| "Display is busy")?;
+        if !backend.active || backend.powered_off {
+            return Err("Wake the display before capturing a window".into());
+        }
+        crate::window_capture::capture(&mut backend.renderer, window, scale)
+    }));
     backend.borrow_mut().scan_outputs(&mut data.state)?;
     data.state.load_native_input();
     let system_backend = backend.clone();
@@ -592,9 +600,13 @@ impl Backend {
             }
         }
         plans.sort_by_key(|(_, info, _)| format!("{:?}-{}", info.interface(), info.interface_id()));
-        let mut x = 0;
+        let mut x = state.space.outputs()
+            .filter_map(|output| state.space.output_geometry(output))
+            .map(|geometry| geometry.loc.x.saturating_add(geometry.size.w))
+            .max().unwrap_or(0).max(0);
         for (crtc, info, mode) in plans {
-            if !self.surfaces.contains_key(&crtc) {
+            let newly_connected = !self.surfaces.contains_key(&crtc);
+            if newly_connected {
                 let drm_surface = self.drm.create_surface(crtc, mode, &[info.handle()])?;
                 let allocator = GbmAllocator::new(
                     self.gbm.clone(),
@@ -662,7 +674,11 @@ impl Backend {
             }
             layer_map_for_output(&surface.output).arrange();
             state.reconfigure_output_windows(&surface.output);
-            x += surface.output.current_mode().unwrap().size.w;
+            if newly_connected {
+                if let Some(geometry) = state.space.output_geometry(&surface.output) {
+                    x = x.saturating_add(geometry.size.w);
+                }
+            }
         }
         // Keep windows reachable when an unplugged monitor disappears.
         let outputs = state

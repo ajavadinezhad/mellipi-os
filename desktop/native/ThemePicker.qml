@@ -21,7 +21,7 @@ ComboBox {
         Text {Layout.fillWidth:true;text:picker.displayText;color:Theme.text;font.pixelSize:Theme.fontSize(12);elide:Text.ElideRight}
     }
     indicator:Text {x:picker.width-width-12;y:(picker.height-height)/2;text:"⌄";color:Theme.muted;font.pixelSize:16}
-    background:Rectangle {color:picker.down ? Theme.hover : Theme.surface;radius:Theme.corner(8);border.width:picker.activeFocus && Theme.highContrast ? 2 : 1;border.color:picker.activeFocus ? Theme.focusColor : Theme.border}
+    background:Rectangle {color:picker.down ? Theme.hover : Theme.raised;radius:Theme.corner(8);border.width:picker.activeFocus ? (Theme.highContrast ? 2 : 1) : Theme.surfaceOutline;border.color:picker.activeFocus ? Theme.focusColor : Theme.border}
     delegate:ItemDelegate {
         required property var modelData
         required property int index
@@ -48,6 +48,6 @@ ComboBox {
             currentIndex:picker.highlightedIndex;boundsBehavior:Flickable.StopAtBounds
             ScrollBar.vertical:ScrollBar {}
         }
-        background:Rectangle {color:Theme.raised;border.color:Theme.border;radius:Theme.corner(8)}
+        background:Rectangle {color:Theme.raised;border.color:Theme.border;border.width:Theme.surfaceOutline;radius:Theme.corner(8)}
     }
 }

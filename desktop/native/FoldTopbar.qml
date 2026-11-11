@@ -26,13 +26,13 @@ Item {
     Rectangle {
         objectName: "foldTopConnectedStrip"
         x: 6;y: 2;width: parent.width-12;height: parent ? parent.height-4 : 0
-        visible: perimeter.connected;color: Theme.background;border.color: Theme.border;radius: 0
+        visible: perimeter.connected;color: Theme.background;border.color: Theme.border;border.width: Theme.surfaceOutline;radius: 0
     }
 
     Rectangle {
         id: leftPaper;objectName: "foldTopLeft"
         x: 6;y: 2;width: leftRow.width+12;height: parent ? parent.height-4 : 0
-        color: perimeter.connected ? "transparent" : Theme.background;border.color: Theme.border;border.width: perimeter.connected ? 0 : 1;radius: 0
+        color: perimeter.connected ? "transparent" : Theme.background;border.color: Theme.border;border.width: perimeter.connected ? 0 : Theme.surfaceOutline;radius: 0
         Row {
             id: leftRow;anchors.centerIn: parent;spacing: 8
             IconButton {padding: 4;
@@ -44,7 +44,7 @@ Item {
                 color: Theme.text;font.pixelSize: Theme.fontSize(10);font.letterSpacing: 1.3
                 visible: perimeter.screenWidth>=700
             }
-            Rectangle {width: 1;height: 12;anchors.verticalCenter: parent ? parent.verticalCenter : undefined;color: Theme.border}
+            Rectangle {width: 1;height: 12;anchors.verticalCenter: parent ? parent.verticalCenter : undefined;color: Theme.separator}
             Row {
                 objectName: "foldWorkspaceIndicators";spacing: 2
                 Repeater {
@@ -85,17 +85,17 @@ Item {
     Rectangle {
         id: rightPaper;objectName: "foldTopRight"
         anchors.right: parent ? parent.right : undefined;anchors.rightMargin: 6;y: 2
-        width: rightRow.width+12;height: parent ? parent.height-4 : 0;color: perimeter.connected ? "transparent" : Theme.background;border.color: Theme.border;border.width: perimeter.connected ? 0 : 1;radius: 0
+        width: rightRow.width+12;height: parent ? parent.height-4 : 0;color: perimeter.connected ? "transparent" : Theme.background;border.color: Theme.border;border.width: perimeter.connected ? 0 : Theme.surfaceOutline;radius: 0
         Row {
             id: rightRow;anchors.centerIn: parent;spacing: perimeter.screenWidth<700 ? 2 : 4
             IconButton {padding: 4;objectName: "foldTopCamera";iconName: "camera";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Screenshot · Print Screen";onClicked: perimeter.openPanel("screenshot")}
             IconButton {padding: 4;objectName: "foldTopMusic";iconName: System.values.muted ? "mute" : "volume";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Music and sound"+(System.values.audioAvailable ? " · "+System.values.volume+"%" : "");onClicked: perimeter.openPanel("music")}
-            Rectangle {width: 1;height: 12;anchors.verticalCenter: parent ? parent.verticalCenter : undefined;color: Theme.border}
+            Rectangle {width: 1;height: 12;anchors.verticalCenter: parent ? parent.verticalCenter : undefined;color: Theme.separator}
             IconButton {padding: 4;objectName: "foldTopNotifications";iconName: "bell";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Notifications"+(System.notifications.length ? " · "+System.notifications.length : "");onClicked: perimeter.openPanel("notifications")
                 Rectangle {anchors.right: parent ? parent.right : undefined;anchors.top: parent ? parent.top : undefined;anchors.margins: 2;width: 3;height: 3;color: Theme.accent;visible: System.notifications.length>0}
             }
             IconButton {padding: 4;objectName: "foldTopBackground";iconName: Orbit.panel==="tray" ? "chevron-up" : "chevron-down";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;visible: perimeter.backgroundCount>0;hint: "Background apps · "+perimeter.backgroundCount;onClicked: perimeter.openPanel("tray")}
-            Rectangle {width: 1;height: 12;anchors.verticalCenter: parent ? parent.verticalCenter : undefined;color: Theme.border}
+            Rectangle {width: 1;height: 12;anchors.verticalCenter: parent ? parent.verticalCenter : undefined;color: Theme.separator}
             OrbitButton {objectName: "foldTopBattery";text: perimeter.batteryText;quiet: true;visible: perimeter.batteryPresent;implicitHeight: perimeter.controlHeight;implicitWidth: Math.max(38,contentItem.implicitWidth+8);padding: 3;font.pixelSize: Theme.fontSize(10);hint: "Battery and charging limit";Accessible.name: hint+" · "+text;onClicked: perimeter.openPanel("battery")}
             IconButton {padding: 4;objectName: "foldTopUsage";iconName: "usage";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "System usage · Signed in as "+Usage.username;onClicked: perimeter.openPanel("usage")}
             OrbitButton {text: Usage.username;quiet: true;visible: perimeter.screenWidth>=1000;implicitWidth: Math.min(70,contentItem.implicitWidth+8);implicitHeight: perimeter.controlHeight;padding: 3;font.pixelSize: Theme.fontSize(10);hint: "Signed in as "+Usage.username;onClicked: perimeter.openPanel("usage")}

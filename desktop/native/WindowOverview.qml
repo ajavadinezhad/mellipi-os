@@ -66,10 +66,11 @@ ColumnLayout {
             Rectangle {
                 id: card;width: parent.width-8;height: 96;radius: Theme.corner(8)
                 color: windowHit.containsMouse || (windowGrid.activeFocus && windowGrid.currentIndex===index) ? Theme.hover : Theme.surface
-                border.color: windowGrid.activeFocus && windowGrid.currentIndex===index ? Theme.accent : Theme.border
+                border.color: Theme.focusColor
+                border.width: windowGrid.activeFocus && windowGrid.currentIndex===index ? 1 : Theme.surfaceOutline
                 Rectangle { visible: !!modelData.active;x: 0;y: 12;width: 2;height: parent.height-24;radius: 1;color: Theme.accent }
                 Image {
-                    x: 12;y: 14;width: 28;height: 28;source: "image://icons/"+(modelData.icon || "application-x-executable")
+                    x: 12;y: 14;width: 28;height: 28;source: Theme.iconSource(modelData.icon || "application-x-executable")
                     sourceSize: Qt.size(32,32);fillMode: Image.PreserveAspectFit
                 }
                 Text {
@@ -90,10 +91,10 @@ ColumnLayout {
                         else overview.activate(index);
                     }
                 }
-                OrbitButton {
+                IconButton {
                     x: parent.width-width-5;y: 5;implicitWidth: 24;implicitHeight: 24;padding: 0
-                    text: "×";quiet: true;font.pixelSize: Theme.fontSize(15);hint: "Close window";onClicked: Orbit.closeWindow(modelData.id)
-                    Accessible.name: "Close "+(modelData.title || "window")
+                    iconName: "close";hint: "Close window";onClicked: Orbit.closeWindow(modelData.id)
+                    accessibleLabel: "Close "+(modelData.title || "window")
                 }
                 Accessible.name: modelData.title || "Window";Accessible.role: Accessible.Button
                 Accessible.onPressAction: overview.activate(index)

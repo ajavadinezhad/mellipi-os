@@ -309,7 +309,6 @@ class FoldState(QObject):
     @Slot(str)
     def setView(self, view):
         if view not in ('work', 'unfold', 'apps'):return
-        self.setActive(view=='work')
         if view != self._state['view']:
             self._state['view'] = view
             self.changed.emit()

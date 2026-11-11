@@ -36,7 +36,8 @@ ColumnLayout {
     onMotionDisabledChanged:if(motionDisabled)launcher.settleView();
     onMotionEconomyChanged:launcher.settleView();
     function rebuild() {
-        var text=query.trim().toLowerCase(), words=text.split(/\s+/).filter(Boolean), rows=[], running={};
+        var text=query.trim().toLowerCase(), words=text.split(/\s+/).filter(Boolean), rows=[], nearby=[], elsewhere=[], running={};
+        var activeSpace=Orbit.desktops.find(function(space){return space.active;});
         function matches(value){var haystack=value.toLowerCase();return words.every(function(word){return haystack.indexOf(word)>=0;});}
         if(text) {
             function compact(value){return value.toLowerCase().replace(/[\s_-]+/g,"");}
@@ -65,11 +66,14 @@ ColumnLayout {
             var metadata=Orbit.launcherApps.find(function(app){return group && app.id===group.id;});
             var terms=metadata ? metadata.searchText || [metadata.name,metadata.description,metadata.genericName || "",(metadata.keywords || []).join(" ")].join(" ") : "";
             if(!matches(name+" "+window.title+" "+terms))return;
-            rows.push({kind:"window",id:String(window.id),appId:group ? group.id : "",name:window.title || name,description:name+" · "+(window.minimized ? "Minimized" : "Workspace "+(window.desktop+1)),icon:window.icon || "application-x-executable",category:"Open windows"});
+            var here=window.desktop<0 || (activeSpace && window.desktop===activeSpace.id);
+            var spaceLabel=window.desktop<0 ? "All workspaces" : "Workspace "+(window.desktop+1);
+            (here ? nearby : elsewhere).push({kind:"window",id:String(window.id),appId:group ? group.id : "",name:window.title || name,description:name+" · "+(window.minimized ? "Minimized · " : "")+spaceLabel,icon:window.icon || "application-x-executable",category:here ? "This workspace" : "Other workspaces"});
         });
         Orbit.dockApps.filter(function(task){return task.id==="orbit-settings";}).forEach(function(task){
-            if(!settingsAction && !settingsWindow && !pinnedOnly && matches(task.name+" settings preferences"))rows.push({kind:"task",id:task.id,appId:"",name:task.name,description:"Return to settings",icon:task.icon,category:"Open windows"});
+            if(!settingsAction && !settingsWindow && !pinnedOnly && matches(task.name+" settings preferences"))nearby.push({kind:"task",id:task.id,appId:"",name:task.name,description:"Return to settings",icon:task.icon,category:"This workspace"});
         });
+        rows=rows.concat(nearby,elsewhere);
         Orbit.launcherApps.forEach(function(app){
             if(app.id==="orbit-settings.desktop" && (settingsAction || settingsWindow))return;
             if((pinnedOnly && Orbit.appearance.pins.indexOf(app.id)<0) || running[app.id] || !matches(app.searchText || [app.name,app.description,app.genericName || "",(app.keywords || []).join(" ")].join(" ")))return;
@@ -97,19 +101,19 @@ ColumnLayout {
         Layout.fillWidth: true;spacing: 8
         OrbitField {
             visible: !launcher.showLayouts;id: search;objectName: "foldAppSearch";Layout.fillWidth: true;implicitHeight: 36
-            placeholderText: "Search apps, windows or actions";font.pixelSize: Theme.fontSize(12)
+            placeholderText: "Search apps, windows, actions…";font.pixelSize: Theme.fontSize(12)
             onTextChanged: launcher.query=text
             onAccepted: if(!launcher.showLayouts && launcher.results.length)launcher.activate(launcher.results[0])
             Keys.onDownPressed: if(!launcher.showLayouts && resultsList.count){resultsList.currentIndex=0;resultsList.forceActiveFocus();}
         }
-        OrbitButton {text: launcher.showLayouts ? "Apps & windows" : "Saved layouts";enabled: Arrangements.available;implicitHeight:36;onClicked:launcher.showLayouts=!launcher.showLayouts}
-        OrbitButton {objectName: "foldToolsButton";text: "Files & notes";implicitHeight: 36;hint: "Browse files and keep a local note";onClicked: launcher.toolsRequested()}
+        IconButton {objectName: "foldLayoutsButton";iconName: launcher.showLayouts ? "apps" : "layouts";hint: launcher.showLayouts ? "Apps & windows" : "Saved layouts";accessibleLabel: launcher.showLayouts ? "Return to app and window search" : "Open saved layouts";enabled: Arrangements.available;implicitHeight:36;onClicked:launcher.showLayouts=!launcher.showLayouts}
+        IconButton {objectName: "foldToolsButton";iconName: "folder";implicitHeight: 36;hint: "Files & notes";accessibleLabel: "Open files and notes";onClicked: launcher.toolsRequested()}
     }
-    Text {visible:!launcher.showLayouts;text:"Sort apps";color:Theme.muted;font.pixelSize:Theme.fontSize(10)}
+    Text {visible:!launcher.showLayouts;text:"Sort";color:Theme.muted;font.pixelSize:Theme.fontSize(10)}
     RowLayout {
         visible:!launcher.showLayouts
         Layout.fillWidth: true;spacing: 8
-        OrbitButton {objectName: "launcherPinnedFilter";text: "Pinned apps";quiet: !launcher.pinnedOnly;implicitHeight: 28;hint: "Pinned apps and their open windows";onClicked: launcher.pinnedOnly=!launcher.pinnedOnly}
+        OrbitButton {objectName: "launcherPinnedFilter";text: "Pinned";quiet: !launcher.pinnedOnly;implicitHeight: 28;hint: "Pinned apps and their open windows";onClicked: launcher.pinnedOnly=!launcher.pinnedOnly}
         SettingsSegments {
             objectName: "launcherSortOptions"
             value: Orbit.appearance.launcherSort || "frequent"
@@ -132,7 +136,28 @@ ColumnLayout {
         model: launcher.results;clip: true;cacheBuffer: 0;reuseItems: true;spacing: 4
         boundsBehavior: Flickable.StopAtBounds;activeFocusOnTab: true;keyNavigationEnabled: true
         section.property: "category";section.criteria: ViewSection.FullString
-        section.delegate: Text {width: resultsList.width;height: 29;verticalAlignment: Text.AlignVCenter;text: section;color: Theme.muted;font.pixelSize: Theme.fontSize(10)}
+        section.delegate: Item {
+            width: resultsList.width
+            height: Math.max(30, heading.implicitHeight + 12)
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                spacing: 12
+                Text {
+                    id: heading
+                    text: section
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSize(11)
+                    font.weight: Font.DemiBold
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 1
+                    color: Theme.separator
+                }
+            }
+        }
         onCountChanged: currentIndex=count ? Math.max(0,Math.min(currentIndex,count-1)) : -1
         Keys.onPressed:event=>{if(event.key===Qt.Key_Menu || (event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))){event.accepted=launcher.openResultMenu(currentIndex);}}
         Keys.onReturnPressed: launcher.activate(launcher.results[currentIndex])
@@ -142,8 +167,9 @@ ColumnLayout {
         delegate: Rectangle {
             id: result;objectName: "unifiedResult";required property var modelData;required property int index
             width: resultsList.width;height: Theme.extraCompact ? 44 : Theme.compact ? 56 : 68;radius: Theme.corner(5)
-            color: hit.containsMouse ? Theme.hover : Theme.surface
-            border.color: resultsList.activeFocus && resultsList.currentIndex===index ? Theme.focusColor : Theme.border
+            color: resultsList.currentIndex===index ? Theme.selectedSurface : hit.containsMouse ? Theme.hover : "transparent"
+            border.color: Theme.focusColor
+            border.width: resultsList.activeFocus && resultsList.currentIndex===index ? 1 : 0
             onActiveFocusChanged:if(activeFocus)resultsList.currentIndex=index
             Accessible.role: Accessible.Button;Accessible.name: modelData.name;Accessible.description: modelData.description
             Accessible.onPressAction: launcher.activate(modelData)
@@ -153,7 +179,7 @@ ColumnLayout {
             }
             RowLayout {
                 anchors.fill: parent;anchors.margins: Theme.extraCompact ? 6 : Theme.compact ? 9 : 12;spacing: Theme.extraCompact ? 7 : 10
-                Image {Layout.preferredWidth: 26;Layout.preferredHeight: 26;source: "image://icons/"+modelData.icon;sourceSize: Qt.size(32,32);fillMode: Image.PreserveAspectFit}
+                Image {Layout.preferredWidth: 26;Layout.preferredHeight: 26;source: modelData.kind==="action" ? Theme.symbolicIconSource(modelData.icon) : Theme.iconSource(modelData.icon);sourceSize: Qt.size(32,32);fillMode: Image.PreserveAspectFit}
                 ColumnLayout {
                     Layout.fillWidth: true;Layout.minimumWidth: 0;spacing: 3
                     Text {text: modelData.name;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.fontSize(12);textFormat: Text.PlainText}
@@ -173,7 +199,7 @@ ColumnLayout {
         visible: !launcher.showLayouts;Layout.fillWidth: true
         Text {text: launcher.results.length+" results";color: Theme.faint;font.pixelSize: Theme.fontSize(10);Layout.fillWidth: true}
         OrbitButton {objectName: "launcherShowDesktop";text: "Show desktop";quiet: true;implicitHeight: 24;onClicked: Orbit.showDesktop()}
-        OrbitButton {objectName:"launcherHistoryOptions";text:"App history…";quiet:true;implicitHeight:24;onClicked:{launcher.historyOptions=!launcher.historyOptions;launcher.confirmHistoryReset=false;}}
+        OrbitButton {objectName:"launcherHistoryOptions";text:"History…";quiet:true;implicitHeight:24;onClicked:{launcher.historyOptions=!launcher.historyOptions;launcher.confirmHistoryReset=false;}}
     }
     Loader {id:layoutsLoader;opacity:launcher.viewOpacity;transform:Translate {y:launcher.viewOffset}
         Layout.fillWidth:true;Layout.fillHeight:true;visible:launcher.showLayouts;active:launcher.showLayouts;sourceComponent:Component{LayoutsPanel{}}}

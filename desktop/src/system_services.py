@@ -73,10 +73,10 @@ def audio_snapshot(include_cards=True):
     except (RuntimeError,OSError,ValueError,subprocess.SubprocessError):sources=[]
     sink=next((s for s in sinks if s['name']==info.get('default_sink_name')),None)
     source=next((s for s in sources if s['name']==info.get('default_source_name')),None)
-    catalog=lambda rows:[dict(name=r['name'],description=audio_label(r)) for r in rows]
+    catalog=lambda rows,inputs=False:[dict(name=r['name'],description=audio_label(r),available=not inputs or not audio_unplugged(r)) for r in rows]
     unplugged=bool(sources) and all(audio_unplugged(s) for s in sources)
     state=dict(audioAvailable=bool(sink),volume=audio_volume(sink) if sink else 0,muted=bool(sink.get('mute',False)) if sink else False,audioName=(sink.get('description') or sink['name']) if sink else 'No output device',
-        audioOutputs=catalog(sinks),audioInputs=catalog(sources),defaultOutput=sink['name'] if sink else '',defaultInput=source['name'] if source else '',inputAvailable=bool(source) and not audio_unplugged(source),inputName=audio_label(source) if source else 'No microphone',inputReason='Microphone jack reports unplugged. Reconnect your wired headset.' if unplugged else ('Choose a microphone above.' if sources and not source else 'No active microphone. Check the connection and Device profiles below.' if not sources else ''),inputVolume=audio_volume(source) if source else 0,inputMuted=bool(source.get('mute',False)) if source else False)
+        audioOutputs=catalog(sinks),audioInputs=catalog(sources,True),defaultOutput=sink['name'] if sink else '',defaultInput=source['name'] if source else '',inputAvailable=bool(source) and not audio_unplugged(source),inputName=audio_label(source) if source else 'No microphone',inputReason='Microphone jack reports unplugged. Reconnect your wired headset.' if unplugged else ('Choose a connected microphone.' if sources and (not source or audio_unplugged(source)) else 'No active microphone. Check the connection and Device profiles below.' if not sources else ''),inputVolume=audio_volume(source) if source else 0,inputMuted=bool(source.get('mute',False)) if source else False)
     if include_cards:
         try:state['audioCards']=audio_cards()
         except (RuntimeError,OSError,ValueError,subprocess.SubprocessError):state['audioCards']=[]
@@ -88,13 +88,15 @@ def set_audio_device(name,input_device=False):
     selected=next((d for d in devices if d['name']==name and (not input_device or not is_monitor(d))),None)
     if selected is None:raise ValueError('Audio device is no longer available')
     if input_device and audio_unplugged(selected):raise ValueError('Microphone jack reports unplugged. Reconnect your wired headset, then select it again.')
-    streams=json.loads(run(['pactl','-f','json','list','source-outputs' if input_device else 'sink-inputs']))
-    run(['pactl','set-default-source' if input_device else 'set-default-sink',name])
-    monitors={value for d in devices if is_monitor(d) for value in (str(d.get('index')),d['name'])} if input_device else set()
+    if input_device:
+        run(['pactl','set-default-source',name])
+        return
+    streams=json.loads(run(['pactl','-f','json','list','sink-inputs']))
+    run(['pactl','set-default-sink',name])
     for stream in streams[:128]:
         index=stream.get('index')
-        if not str(index).isdigit() or (input_device and str(stream.get('source')) in monitors):continue
-        try:run(['pactl','move-source-output' if input_device else 'move-sink-input',str(index),name])
+        if not str(index).isdigit():continue
+        try:run(['pactl','move-sink-input',str(index),name])
         except RuntimeError:pass # A stream may end while its route is being changed.
 
 def set_input_control(action,value):
@@ -364,7 +366,15 @@ class SystemServices(QObject):
         # Called only by the explicit confirmation control, never from model output.
         if os.environ.get('ORBIT_NESTED'):return self.notice.emit('Power actions are disabled in the nested test session')
         choices={'suspend':['systemctl','suspend'],'reboot':['systemctl','reboot'],'shutdown':['systemctl','poweroff']}
-        if action in choices:self.submit('power',lambda:run(choices[action]))
+        if action not in choices:return
+        def work():
+            if action=='suspend':
+                from preferences import Preferences
+                if Preferences().values['lockBeforeSleep']:
+                    from screen_lock import launch_and_wait
+                    launch_and_wait()
+            return run(choices[action])
+        self.submit('power',work)
     @Slot()
     def lock(self):
         if os.environ.get('SWAYSOCK') or os.environ.get('ORBIT_NATIVE_CONTROL'):
@@ -407,7 +417,9 @@ class SystemServices(QObject):
         offered=any(a['key']==action for a in note.get('actions',[]))
         if offered:
             if not self.bus or not self.bus.invokeAction(note,action):
-                self.notice.emit('This notification action is no longer available');return
+                if action!='default':
+                    self.notice.emit('This notification action is no longer available');return
+                self.openNotification.emit(note)
         elif action=='default':self.openNotification.emit(note)
         else:return
         self.hideNotification()
@@ -487,9 +499,19 @@ class BusEvents:
             if result==1:
                 self.owns_notifications=True;info=Gio.DBusNodeInfo.new_for_xml(NOTIFICATION_XML)
                 self.registration=self.connection.register_object('/org/freedesktop/Notifications',info.interfaces[0],self.method,None,None)
+                self.sender_subscription=self.connection.signal_subscribe(
+                    'org.freedesktop.DBus','org.freedesktop.DBus','NameOwnerChanged',
+                    '/org/freedesktop/DBus',None,Gio.DBusSignalFlags.NONE,self.sender_changed)
                 self.owner.update.emit(dict(notificationServer=True))
             self.loop.run();context.pop_thread_default()
         except Exception:pass
+    def sender_changed(self,connection,sender,path,interface,member,params):
+        name,old,new=params.unpack()
+        if not name.startswith(':') or new:return
+        with self.records_lock:
+            for ident,note in list(self.records.items()):
+                if note.get('sender')==old:
+                    self.records.pop(ident,None)
     def device_added(self,connection,sender,path,interface,member,params):
         if self.owner.closed:return
         try:
@@ -547,6 +569,8 @@ class BusEvents:
                 except Exception:pass
             self.device_subscriptions=[]
         if self.owns_notifications and self.connection:
+            if getattr(self,'sender_subscription',None):
+                self.connection.signal_unsubscribe(self.sender_subscription)
             try:
                 self.connection.unregister_object(self.registration)
                 self.connection.call_sync('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus','ReleaseName',self.GLib.Variant('(s)',('org.freedesktop.Notifications',)),None,self.Gio.DBusCallFlags.NONE,1000,None)

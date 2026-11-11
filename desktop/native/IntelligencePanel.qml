@@ -72,7 +72,7 @@ ColumnLayout {
                         required property var modelData;width: contextList.width;height: 48;radius: Theme.corner(6);color: Theme.raised
                         Text { x: 8;y: 8;width: parent.width-38;text: modelData.title || "Untitled";color: Theme.text;font.pixelSize: Theme.fontSize(11);elide: Text.ElideRight;textFormat: Text.PlainText }
                         Text { x: 8;y: 26;width: parent.width-38;text: modelData.kind=== "file" ? "File" : modelData.kind==="result" ? "Answer" : "Note";color: Theme.faint;font.pixelSize: Theme.fontSize(10) }
-                        OrbitButton { anchors.right: parent.right;anchors.rightMargin: 2;anchors.verticalCenter: parent.verticalCenter;text: "×";quiet: true;implicitWidth: 26;implicitHeight: 26;hint: "Detach context";onClicked: Orbit.attach(modelData.id) }
+                        IconButton { anchors.right: parent.right;anchors.rightMargin: 2;anchors.verticalCenter: parent.verticalCenter;iconName: "close";implicitWidth: 26;implicitHeight: 26;hint: "Detach context";onClicked: Orbit.attach(modelData.id) }
                     }
                     Text { anchors.centerIn: parent;width: parent.width;text: "No attached items";visible: contextList.count===0;color: Theme.faint;font.pixelSize: Theme.fontSize(11);horizontalAlignment: Text.AlignHCenter;wrapMode: Text.Wrap }
                 }

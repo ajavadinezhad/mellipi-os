@@ -67,7 +67,7 @@ ScrollView {
             Row {
                 anchors.right: parent.right;anchors.rightMargin: 6;anchors.verticalCenter: parent.verticalCenter;spacing: 2
                 OrbitButton { text: modelData.connected ? "Disconnect" : modelData.paired ? "Connect" : "Pair";quiet: true;implicitHeight: 28;enabled: Bluetooth.state.powered && !Bluetooth.state.busy;onClicked: {if(modelData.connected)Bluetooth.disconnectDevice(modelData.path);else if(modelData.paired)Bluetooth.connectDevice(modelData.path);else Bluetooth.pairDevice(modelData.path);} }
-                OrbitButton { visible: modelData.paired;text: "×";hint: "Forget device";quiet: true;implicitWidth: 26;implicitHeight: 28;enabled: !Bluetooth.state.busy;onClicked: panel.forgetPath=modelData.path }
+                IconButton { visible: modelData.paired;iconName: "close";hint: "Forget device";quiet: true;implicitWidth: 26;implicitHeight: 28;enabled: !Bluetooth.state.busy;onClicked: panel.forgetPath=modelData.path }
             }
         }
         Text { anchors.centerIn: parent;visible: devices.count===0 && Bluetooth.state.powered;text: Bluetooth.state.discovering ? "Searching…" : "Search to find nearby devices";color: Theme.muted;font.pixelSize: Theme.fontSize(11) }

@@ -58,15 +58,17 @@ def run():
             if current is None:raise RuntimeError('Display disconnected before confirmation')
             if any(current[key]!=new[key] for key in ('mode','transform','x','y')) or abs(current['scale']-new['scale'])>.001:
                 raise RuntimeError('Display settings changed or were rejected before confirmation')
+            if native:
+                native.request('output_commit',token=token)
+                token=None
             (persist_native if native else persist)(job['config_path'],new);persisted=True
-            if native:native.request('output_commit',token=token)
             applied=False;emit({'ok':True,'kept':True});return
     except Exception as error:
         emit({'ok':False,'error':str(error)[:240]})
     finally:
         if applied and old:
             try:
-                if native:
+                if native and token:
                     deadline=time.monotonic()+3
                     while True:
                         try:native.request('output_rollback',token=token);break

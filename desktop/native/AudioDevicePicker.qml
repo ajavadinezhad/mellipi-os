@@ -50,7 +50,8 @@ ColumnLayout {
             id: choice
             objectName: picker.objectName+"Choice"+index
             width: ListView.view.width;height: 30;implicitHeight: 30
-            text: modelData.description;hint: modelData.description
+            text: modelData.description;hint: modelData.available===false ? "Device unplugged" : modelData.description
+            enabled: modelData.available!==false
             readonly property bool selectedDevice: modelData.name===picker.selectedName
             quiet: true
             Accessible.name: text+(selectedDevice ? ", selected" : "")

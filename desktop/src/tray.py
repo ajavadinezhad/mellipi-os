@@ -195,7 +195,12 @@ class TrayBus:
             p=self.call(r['bus'],r['path'],'org.freedesktop.DBus.Properties','GetAll','(s)',(ITEM,))[0]
             r['menu']=p.get('Menu','/');r['menuOnly']=p.get('ItemIsMenu',False)
             attention=p.get('Status')=='NeedsAttention'
-            self.owner.received.emit(dict(key=key,pid=r.get('pid',0),name=str(p.get('Title') or p.get('Id') or 'Background app')[:160],status=p.get('Status','Active'),icon=p.get('AttentionIconName' if attention else 'IconName',''),pix=p.get('AttentionIconPixmap' if attention else 'IconPixmap',[])))
+            icon=p.get('AttentionIconName') if attention else None
+            pix=p.get('AttentionIconPixmap') if attention else None
+            if not icon and not pix:
+                icon=p.get('IconName','')
+                pix=p.get('IconPixmap',[])
+            self.owner.received.emit(dict(key=key,pid=r.get('pid',0),name=str(p.get('Title') or p.get('Id') or 'Background app')[:160],status=p.get('Status','Active'),icon=icon or '',pix=pix or []))
         except Exception:self.remove(key)
     def remove(self,key):
         if key not in self.records:return

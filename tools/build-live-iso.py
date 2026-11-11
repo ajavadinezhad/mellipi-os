@@ -6,6 +6,7 @@ accepts a disk device. Installation choices belong to the interactive installer.
 """
 import argparse,contextlib,hashlib,importlib.util,json,os,re,shutil,struct,subprocess,time
 from pathlib import Path
+from string import Template
 
 ARCHIVE='https://ajavadinezhad.github.io/mellipi-os/apt'
 FINGERPRINT='7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF'
@@ -99,7 +100,19 @@ def bootstrap(work,args):
     write(work,'bootstrap-origin.json',json.dumps({'method':'debootstrap-minbase','suite':'noble','architecture':'amd64','created_at':int(time.time()),'copied_builder_filesystem':False},indent=2)+'\n')
     return root
 
+def live_theme(root):
+    theme = json.loads((root / 'usr/lib/abstract/themes/forest.json').read_text())
+    palette = theme['palette']
+    colors = [theme['accent'], theme['background'], *palette.values()]
+    if not all(isinstance(color, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', color)
+               for color in colors):
+        raise ValueError('Invalid color in the packaged live theme')
+    return theme
+
 def configure_installer(root,version):
+    theme = live_theme(root)
+    colors = dict(theme['palette'], accent=theme['accent'])
+
     settings='''modules-search: [ local ]
 instances:
   - id: abstracttargetcheck
@@ -310,8 +323,9 @@ def main():
 
 if __name__=='__main__':main()
 ''',0o755)
-    branding=f'''componentName: abstract
+    branding=Template(f'''componentName: abstract
 welcomeStyleCalamares: false
+welcomeExpandingLogo: false
 windowExpanding: normal
 windowSize: 900px,620px
 windowPlacement: center
@@ -334,14 +348,75 @@ images:
   productLogo: abstract.svg
   productWelcome: abstract.svg
 style:
-  SidebarBackground: "#17221f"
-  SidebarText: "#f0f3eb"
-  SidebarBackgroundCurrent: "#d1ebbb"
-  SidebarTextCurrent: "#17221f"
+  SidebarBackground: "$surface"
+  SidebarText: "$muted"
+  SidebarBackgroundCurrent: "$accent"
+  SidebarTextCurrent: "$background"
 uploadServer: {{ type: none }}
-'''
+''').substitute(colors)
     write(root,'etc/calamares/branding/abstract/branding.desc',branding)
-    write(root,'etc/calamares/branding/abstract/abstract.svg','<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#111a14"/><path d="m32 11 20 21-20 21L12 32Z" fill="none" stroke="#b8d893" stroke-width="3"/><path d="M32 12v40M22 32h20" stroke="#b8d893" stroke-width="3"/></svg>\n')
+    # Calamares reads this stylesheet alongside branding.desc. Use the same
+    # Forest palette as the live desktop, including dialogs and storage views.
+    write(root,'etc/calamares/branding/abstract/stylesheet.qss',Template('''
+QWidget {
+    background-color: $background;
+    color: $text;
+    selection-background-color: $accent;
+    selection-color: $background;
+}
+#sidebarApp, #logoApp { background-color: $surface; }
+QLabel, QCheckBox, QRadioButton, QGroupBox { background-color: transparent; }
+QToolTip { background-color: $raised; color: $text; border: 1px solid $border; }
+QPushButton, QToolButton {
+    background-color: $raised;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 4px 10px;
+}
+QPushButton:hover, QToolButton:hover { background-color: $hover; }
+QPushButton:default:enabled, QPushButton#view-button-next:enabled {
+    background-color: $accent; color: $background;
+}
+QPushButton:default:enabled:hover, QPushButton#view-button-next:enabled:hover {
+    border-color: $text;
+}
+QPushButton:disabled, QToolButton:disabled {
+    background-color: $surface; color: $faint;
+}
+QLineEdit, QComboBox, QSpinBox, QDateTimeEdit {
+    background-color: $surface;
+    border: 1px solid $border;
+    border-radius: 4px;
+    padding: 3px 6px;
+}
+QPushButton:focus, QToolButton:focus, QLineEdit:focus, QComboBox:focus,
+QSpinBox:focus, QDateTimeEdit:focus { border: 1px solid $accent; }
+QPushButton:default:enabled:focus, QPushButton#view-button-next:enabled:focus {
+    border-color: $background;
+}
+QAbstractItemView, QTextEdit, QPlainTextEdit, QMenu {
+    background-color: $surface;
+    alternate-background-color: $raised;
+}
+/* Calamares paints this legend with fixed black and gray text. */
+PartitionLabelsView { background-color: $text; }
+QMenu::item:selected { background-color: $accent; color: $background; }
+QHeaderView::section {
+    background-color: $raised;
+    color: $text;
+    border: 0;
+    padding: 4px 6px;
+}
+QProgressBar {
+    background-color: $raised;
+    color: $text;
+    border: 1px solid $border;
+    border-radius: 4px;
+    text-align: center;
+}
+QProgressBar::chunk { background-color: $border; border-radius: 3px; }
+''').substitute(colors))
+    write(root,'etc/calamares/branding/abstract/abstract.svg',Template('<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="$background"/><path d="m32 11 20 21-20 21L12 32Z" fill="none" stroke="$accent" stroke-width="3"/><path d="M32 12v40M22 32h20" stroke="$accent" stroke-width="3"/></svg>\n').substitute(colors))
 
 def install(work,root,args):
     apt_sources(root,args.mirror,args.security_mirror)
@@ -374,7 +449,13 @@ def install(work,root,args):
         # Private QA candidates can be rebuilt at the same unpublished version.
         # Refresh only the local pair, never every base/firmware package.
         chroot(root,'apt-get','-y','--no-install-recommends','--reinstall','install',*copied)
-        chroot(root,'update-alternatives','--set','x-terminal-emulator','/usr/bin/foot')
+        # Reused build roots can still contain the previous desktop defaults.
+        old_apps = [name for name in ('thunar', 'foot')
+                    if (root / 'usr/bin' / name).is_file()]
+        if old_apps:
+            chroot(root, 'apt-get', '-y', 'purge', *old_apps)
+        chroot(root, 'update-alternatives', '--set', 'x-terminal-emulator',
+               '/usr/bin/mellipi-terminal')
         write(root,'etc/locale.gen','en_US.UTF-8 UTF-8\n');chroot(root,'locale-gen')
         chroot(root,'update-locale','LANG=en_US.UTF-8')
         project_source.with_suffix('.pending').rename(project_source)
@@ -412,8 +493,10 @@ def configure_live(root,version):
     write(root,'etc/default/grub','GRUB_DEFAULT=0\nGRUB_TIMEOUT=3\nGRUB_DISTRIBUTOR="Mellipi"\nGRUB_CMDLINE_LINUX_DEFAULT="quiet"\nGRUB_CMDLINE_LINUX=""\n')
     for link,target in [('etc/systemd/system/default.target','/lib/systemd/system/graphical.target'),('etc/systemd/system/display-manager.service','/lib/systemd/system/lightdm.service')]:
         path=root/link;path.parent.mkdir(parents=True,exist_ok=True);path.unlink(missing_ok=True);path.symlink_to(target)
-    prefs={'pins':['org.codeberg.dnkl.foot.desktop','thunar.desktop','org.xfce.mousepad.desktop','org.gnome.Epiphany.desktop'],'density':'compact','themePreset':'forest','mode':'dark','darkLevel':'normal','accent':'#b8d893','backgroundColor':'#111a14','wallpaper':'theme-forest','taskbarLength':'fit','taskbarFloating':True}
+    theme = live_theme(root)
+    prefs={'pins':['mellipi-terminal.desktop','mellipi-files.desktop','org.xfce.mousepad.desktop','org.gnome.Epiphany.desktop'],'density':'compact','themePreset':theme['id'],'mode':theme['mode'],'darkLevel':theme['darkLevel'],'accent':theme['accent'],'backgroundColor':theme['background'],'wallpaper':'theme-'+theme['id'],'taskbarLength':'fit','taskbarFloating':True}
     write(root,'etc/skel/.config/abstract/settings.json',json.dumps(prefs)+'\n')
+    write(root,'etc/skel/.config/mimeapps.list','[Default Applications]\ninode/directory=mellipi-files.desktop;\n')
     # This runs only from Casper at live boot; the installed user keeps normal lock defaults.
     hook='''#!/bin/sh
 PREREQ=""
@@ -470,7 +553,7 @@ def main():
         environment=dict(os.environ)
         for key in ('DISPLAY','XAUTHORITY','DBUS_SESSION_BUS_ADDRESS','QT_PLUGIN_PATH','QML2_IMPORT_PATH','PYTHONPATH','LD_LIBRARY_PATH'):
             environment.pop(key,None)
-        environment.update(HOME='/root',XDG_RUNTIME_DIR=runtime,WAYLAND_DISPLAY=socket,QT_QPA_PLATFORM='wayland',QT_WAYLAND_SHELL_INTEGRATION='xdg-shell',XDG_CONFIG_DIRS='/etc/xdg',XDG_DATA_DIRS='/usr/local/share:/usr/share')
+        environment.update(HOME='/root',XDG_RUNTIME_DIR=runtime,WAYLAND_DISPLAY=socket,QT_QPA_PLATFORM='wayland',QT_WAYLAND_SHELL_INTEGRATION='xdg-shell',QT_STYLE_OVERRIDE='Fusion',XDG_CONFIG_DIRS='/etc/xdg',XDG_DATA_DIRS='/usr/local/share:/usr/share')
         return subprocess.call(['/usr/bin/calamares'],env=environment,cwd='/')
 
 if __name__=='__main__':sys.exit(main())

@@ -11,7 +11,6 @@ ColumnLayout {
     function choices() {var term=query.trim().toLowerCase();return windows.filter(w => !w.minimized && (!term || (w.title || "").toLowerCase().indexOf(term)>=0));}
     function chooseCurrent() {if(windowList.currentIndex>=0 && windowList.currentIndex<windowList.count)selected(String(windowList.model[windowList.currentIndex].id));}
     spacing: 10
-    Text { text: "Choose the window to capture.";color: Theme.muted;font.pixelSize: Theme.fontSize(11);Layout.fillWidth: true }
     OrbitField {
         objectName: "windowCaptureSearch";Layout.fillWidth: true;implicitHeight: 34;placeholderText: "Find a window…";onTextChanged: picker.query=text
         Component.onCompleted: forceActiveFocus()
@@ -25,9 +24,10 @@ ColumnLayout {
         Keys.onReturnPressed: picker.chooseCurrent()
         delegate: Rectangle {
             required property var modelData;required property int index
-            width: windowList.width;height: 54;radius: Theme.corner(8);color: hit.containsMouse || (windowList.activeFocus && ListView.isCurrentItem) ? Theme.hover : Theme.surface
-            border.color: Theme.border
-            Image { x: 10;anchors.verticalCenter: parent.verticalCenter;width: 28;height: 28;source: "image://icons/"+(modelData.icon || "application-x-executable");sourceSize: Qt.size(32,32) }
+            width: windowList.width;height: 54;radius: Theme.corner(8);color: windowList.activeFocus && ListView.isCurrentItem ? Theme.selectedSurface : hit.containsMouse ? Theme.hover : "transparent"
+            border.width: windowList.activeFocus && ListView.isCurrentItem ? 1 : Theme.surfaceOutline
+            border.color: windowList.activeFocus && ListView.isCurrentItem ? Theme.focusColor : Theme.border
+            Image { x: 10;anchors.verticalCenter: parent.verticalCenter;width: 28;height: 28;source: Theme.iconSource(modelData.icon || "application-x-executable");sourceSize: Qt.size(32,32) }
             Text { x: 48;anchors.verticalCenter: parent.verticalCenter;width: parent.width-60;text: modelData.title || "Application window";color: Theme.text;font.pixelSize: Theme.fontSize(12);wrapMode: Text.Wrap;maximumLineCount: 2;elide: Text.ElideRight;textFormat: Text.PlainText }
             MouseArea { id: hit;anchors.fill: parent;hoverEnabled: true;onClicked: picker.selected(String(modelData.id)) }
             Accessible.name: modelData.title || "Application window";Accessible.role: Accessible.Button;Accessible.onPressAction: picker.selected(String(modelData.id))

@@ -62,7 +62,7 @@ QtObject {
             id: body;objectName: "secondaryDockBody"
             width: output.dock.bodyWidth;height: output.dock.bodyHeight;y: parent.height-height
             x: Orbit.appearance.dockAlign==="left" ? 0 : Orbit.appearance.dockAlign==="right" ? parent.width-width : Math.round((parent.width-width)/2)
-            color: Theme.surface;border.color: Theme.border;radius: Theme.corner(6)
+            color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline;radius: Theme.corner(6)
             onXChanged: Orbit.maskSecondaryDock(edge,Math.floor(x),Math.floor(y),Math.ceil(width),Math.ceil(height))
             onYChanged: Orbit.maskSecondaryDock(edge,Math.floor(x),Math.floor(y),Math.ceil(width),Math.ceil(height))
             onWidthChanged: Orbit.maskSecondaryDock(edge,Math.floor(x),Math.floor(y),Math.ceil(width),Math.ceil(height))
@@ -77,7 +77,7 @@ QtObject {
                         width: output.dock.slot;implicitWidth: output.dock.slot;height: Theme.compact ? 38 : 50;padding: 5;quiet: true
                         Accessible.name: modelData.name;hint: modelData.name
                         contentItem: Item {
-                            Image {id: icon;width: 22;height: 22;anchors.verticalCenter: parent.verticalCenter;x: Theme.fold ? 2 : (parent.width-width)/2;source: "image://icons/"+task.modelData.icon;sourceSize: Qt.size(32,32)}
+                            Image {id: icon;width: 22;height: 22;anchors.verticalCenter: parent.verticalCenter;x: Theme.fold ? 2 : (parent.width-width)/2;source: Theme.iconSource(task.modelData.icon);sourceSize: Qt.size(32,32)}
                             Text {visible: Theme.fold;anchors.left: icon.right;anchors.leftMargin: 6;anchors.right: parent.right;anchors.verticalCenter: parent.verticalCenter;text: task.modelData.name;font.pixelSize: Theme.fontSize(10);color: Theme.text;elide: Text.ElideRight;textFormat: Text.PlainText}
                             Rectangle {anchors.horizontalCenter: parent.horizontalCenter;anchors.bottom: parent.bottom;width: 4;height: 2;color: Theme.accent;visible: task.modelData.windows.length>0}
                         }

@@ -5,7 +5,7 @@ ColumnLayout {
     spacing: 8
     ListView {
         id: apps;Layout.fillWidth: true;Layout.fillHeight: true
-        clip: true;spacing: 4;model: Tray.items.concat(Background.items.map(o => ({key:o.id,desktopId:o.id,name:o.name,pid:o.pid,iconSource:"image://icons/"+o.icon,fallback:true})));reuseItems: true
+        clip: true;spacing: 4;model: Tray.items.concat(Background.items.map(o => ({key:o.id,desktopId:o.id,name:o.name,pid:o.pid,iconSource:Theme.iconSource(o.icon),fallback:true})));reuseItems: true
         delegate: Rectangle {
             id: entry;objectName: "trayEntry";required property var modelData
             activeFocusOnTab: true
@@ -27,7 +27,7 @@ ColumnLayout {
                 onClicked: mouse => {var p=Orbit.itemScreenPoint(hit,mouse.x,mouse.y);if(modelData.fallback){if(mouse.button===Qt.RightButton)Orbit.openContext("app",modelData.desktopId,p.x,p.y);else Orbit.launch(modelData.desktopId);}else if(mouse.button===Qt.RightButton)Tray.menu(modelData.key,p.x,p.y);else{Tray.activate(modelData.key,p.x,p.y);Orbit.dismiss();}}
                 onWheel: wheel => Tray.scroll(modelData.key,wheel.angleDelta.y)
             }
-            OrbitButton { id: trayActions;anchors.right: parent.right;anchors.verticalCenter: parent.verticalCenter;text: "⋯";quiet: true;implicitWidth: 32;implicitHeight: 30;hint: "App actions";onClicked: {var p=Orbit.itemScreenPoint(trayActions,width,height);if(modelData.fallback)Orbit.openContext("app",modelData.desktopId,p.x,p.y);else Tray.menu(modelData.key,p.x,p.y);} }
+            IconButton { id: trayActions;anchors.right: parent.right;anchors.verticalCenter: parent.verticalCenter;iconName: "more";implicitWidth: 32;implicitHeight: 30;hint: "App actions";onClicked: {var p=Orbit.itemScreenPoint(trayActions,width,height);if(modelData.fallback)Orbit.openContext("app",modelData.desktopId,p.x,p.y);else Tray.menu(modelData.key,p.x,p.y);} }
         }
         Text { anchors.centerIn: parent;visible: apps.count===0;text: Tray.legacyCount ? "" : "No background apps";color: Theme.muted;font.pixelSize: Theme.fontSize(12) }
     }

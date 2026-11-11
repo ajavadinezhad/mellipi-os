@@ -35,13 +35,14 @@ class DesktopPackageTest(unittest.TestCase):
    self.assertFalse((stage/'etc/pam.d/swaylock').exists())
    # Exercise maintainer cleanup against fake commands, never host services.
    commands=base/'commands';commands.mkdir();calls=base/'calls'
-   for command in ('deb-systemd-helper','systemctl','udevadm'):
+   for command in ('deb-systemd-helper','systemctl','udevadm','update-alternatives'):
     script=commands/command;script.write_text('#!/bin/sh\nprintf \"%s:%s\\n\" '+command+' \"$*\" >> \"$CALL_LOG\"\n');script.chmod(0o755)
    env=dict(os.environ,PATH=str(commands)+':/usr/bin:/bin',CALL_LOG=str(calls))
    subprocess.run(['/bin/sh',str(stage/'DEBIAN/postrm'),'upgrade'],env=env,check=True);self.assertFalse(calls.exists())
    subprocess.run(['/bin/sh',str(stage/'DEBIAN/postrm'),'purge'],env=env,check=True)
    self.assertIn('deb-systemd-helper:purge abstract-charge-limits.service',calls.read_text())
    self.assertIn('systemctl:daemon-reload',calls.read_text())
+   self.assertIn('update-alternatives:--remove x-terminal-emulator /usr/bin/mellipi-terminal',calls.read_text())
    for path in stage.rglob('*'):
     if not path.is_symlink():self.assertEqual(path.stat().st_mode & 0o022,0,str(path))
    control=(stage/'DEBIAN/control').read_text();self.assertIn('python3-pyqt5.qtquick',control);self.assertNotIn('mintupdate',control);self.assertIn('qtwayland5',control);self.assertIn('pipewire-pulse | pulseaudio',control);self.assertIn('pkexec',control)
@@ -61,7 +62,8 @@ class DesktopPackageTest(unittest.TestCase):
   self.assertNotIn('lightdm',builder.DEPENDENCIES)
   with tempfile.TemporaryDirectory() as directory:
    stage=builder.stage_desktop_package(Path(directory)/'desktop','0.1.5');control=(stage/'DEBIAN/control').read_text()
-   for name in ('mellipi-shell (= 0.1.5)','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','foot','mousepad','epiphany-browser','synaptic','wvkbd','orca','fcitx5','fcitx5-config-qt','ddcutil','accountsservice'):self.assertIn(name,control)
+   for name in ('mellipi-shell (= 0.1.5)','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','xterm','mousepad','epiphany-browser','synaptic','wvkbd','orca','fcitx5','fcitx5-config-qt','ddcutil','accountsservice'):self.assertIn(name,control)
+   for name in ('thunar', 'foot'):self.assertNotIn(name,builder.DESKTOP_DEPENDENCIES)
    self.assertFalse((stage/'DEBIAN/postinst').exists());self.assertFalse((stage/'etc/pam.d').exists());self.assertFalse((stage/'etc/lightdm/lightdm.conf').exists());self.assertFalse((stage/'etc/lightdm/lightdm-gtk-greeter.conf').exists())
    for path in stage.rglob('*'):self.assertEqual(path.stat().st_mode & 0o022,0,str(path))
  def test_shlibdeps_includes_all_elfs_and_private_search_paths_without_suppressing_missing_info(self):

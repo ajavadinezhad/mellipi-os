@@ -14,6 +14,8 @@ use smithay::{
     },
 };
 use std::collections::HashMap;
+use crate::window_capture::WindowCapture;
+type CaptureWindow = Box<dyn FnMut(&Window, f64) -> Result<WindowCapture, String>>;
 #[derive(Default)]
 pub struct NativeIpc {
     subscribers: Vec<(u64, std::sync::mpsc::SyncSender<Value>)>,
@@ -24,6 +26,7 @@ pub struct NativeIpc {
     show_desktop: HashMap<usize, Vec<u64>>,
     suspend_publish: bool,
     fullscreen_restore: HashMap<u64, Rectangle<i32, Logical>>,
+    pub capture_window: Option<CaptureWindow>,
 }
 
 #[derive(Clone)]
@@ -154,13 +157,63 @@ fn parse_shortcuts(value: &Value) -> Result<Vec<NativeShortcut>, String> {
 
 use std::{
     io::{BufRead, BufReader, Read, Write},
-    os::unix::{fs::PermissionsExt, net::UnixListener},
-    time::Duration,
+    os::unix::{fs::PermissionsExt, net::{UnixListener, UnixStream}},
+    sync::{Arc, atomic::{AtomicBool, Ordering}},
+    time::{Duration, Instant},
 };
-struct Request {
-    value: Value,
-    reply: std::sync::mpsc::SyncSender<Value>,
-    subscription: bool,
+struct CapturePermit(Arc<AtomicBool>);
+impl Drop for CapturePermit {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+enum Request {
+    Json {
+        value: Value,
+        reply: std::sync::mpsc::SyncSender<Value>,
+        subscription: bool,
+    },
+    Capture {
+        id: u64,
+        reply: std::sync::mpsc::SyncSender<Result<WindowCapture, String>>,
+        permit: Arc<CapturePermit>,
+    },
+}
+fn write_capture_bytes(stream: &mut UnixStream, mut bytes: &[u8], deadline: Instant) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    while !bytes.is_empty() {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(Error::new(ErrorKind::TimedOut, "Window capture reply timed out"));
+        }
+        stream.set_write_timeout(Some(remaining))?;
+        match stream.write(bytes) {
+            Ok(0) => return Err(Error::new(ErrorKind::WriteZero, "Window capture stream closed")),
+            Ok(written) => bytes = &bytes[written..],
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+fn reply_window_capture(
+    mut stream: UnixStream,
+    rx: std::sync::mpsc::Receiver<Result<WindowCapture, String>>,
+    _permit: Arc<CapturePermit>,
+) {
+    let response = rx.recv_timeout(Duration::from_secs(8));
+    let (header, pixels) = match response {
+        Ok(Ok(image)) => (
+            json!({"ok":true,"width":image.width,"height":image.height}),
+            image.pixels,
+        ),
+        Ok(Err(error)) => (json!({"ok":false,"error":error}), Vec::new()),
+        Err(_) => (json!({"ok":false,"error":"Window capture timed out"}), Vec::new()),
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let header = format!("{header}\n");
+    let _ = write_capture_bytes(&mut stream, header.as_bytes(), deadline)
+        .and_then(|_| write_capture_bytes(&mut stream, &pixels, deadline));
 }
 pub fn install(
     event_loop: &mut EventLoop<'static, CalloopData>,
@@ -178,7 +231,14 @@ pub fn install(
         .handle()
         .insert_source(receiver, |event, _, data| {
             if let channel::Event::Msg(request) = event {
-                if request.subscription {
+                let (value, reply, subscription) = match request {
+                    Request::Json { value, reply, subscription } => (value, reply, subscription),
+                    Request::Capture { id, reply, permit: _permit } => {
+                        let _ = reply.try_send(data.state.capture_window(id));
+                        return;
+                    }
+                };
+                if subscription {
                     let snapshot = data.state.snapshot();
                     data.state.ipc.subscribers.retain(|(_, subscriber)| {
                         subscriber
@@ -186,28 +246,27 @@ pub fn install(
                             .is_ok()
                     });
                     if data.state.ipc.subscribers.len() >= 8 {
-                        let _ = request
-                            .reply
-                            .try_send(json!({"ok":false,"error":"too many subscribers"}));
+                        let _ = reply.try_send(json!({"ok":false,"error":"too many subscribers"}));
                         return;
                     }
                     data.state.ipc.next_subscription += 1;
                     let subscription = data.state.ipc.next_subscription;
-                    let _ = request.reply.try_send(
+                    let _ = reply.try_send(
                         json!({"event":"snapshot","subscription":subscription,"snapshot":snapshot}),
                     );
                     data.state
                         .ipc
                         .subscribers
-                        .push((subscription, request.reply));
+                        .push((subscription, reply));
                     return;
                 }
-                let result = data.state.control(request.value);
+                let result = data.state.control(value);
                 let _ = data.display_handle.flush_clients();
-                let _ = request.reply.try_send(result);
+                let _ = reply.try_send(result);
             }
         })?;
     std::thread::spawn(move || {
+        let capture_in_flight = Arc::new(AtomicBool::new(false));
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { break };
             let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
@@ -220,10 +279,29 @@ pub fn install(
             let Ok(value) = serde_json::from_str::<Value>(&text) else {
                 continue;
             };
+            if value["command"] == "capture_window" {
+                if capture_in_flight.swap(true, Ordering::AcqRel) {
+                    let _ = writeln!(stream, "{}", json!({"ok":false,"error":"A window capture is already in progress"}));
+                    continue;
+                }
+                let permit = Arc::new(CapturePermit(capture_in_flight.clone()));
+                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                if sender.send(Request::Capture {
+                    id: window_id(&value), reply: tx, permit: permit.clone(),
+                }).is_err() {
+                    break;
+                }
+                if let Err(error) = std::thread::Builder::new().name("orbit-window-capture".into())
+                    .spawn(move || reply_window_capture(stream, rx, permit))
+                {
+                    tracing::warn!(%error, "Could not start window capture reply worker");
+                }
+                continue;
+            }
             let subscription = value["command"] == "subscribe";
             let (tx, rx) = std::sync::mpsc::sync_channel(if subscription { 4 } else { 1 });
             if sender
-                .send(Request {
+                .send(Request::Json {
                     value,
                     reply: tx,
                     subscription,
@@ -248,6 +326,29 @@ pub fn install(
     Ok(())
 }
 impl OrbitCompositor {
+    fn capture_window(&mut self, id: u64) -> Result<WindowCapture, String> {
+        if self.protocols.is_locked() {
+            return Err("The session is locked".into());
+        }
+        let window = self.windows.iter().find(|(candidate, _)| *candidate == id)
+            .map(|(_, window)| window.clone()).ok_or("The selected window has closed")?;
+        if window.x11_surface().is_some_and(|surface| surface.is_override_redirect()) {
+            return Err("The selected surface is not an application window".into());
+        }
+        let (workspace, location, minimized) = self.window_location(id, &window)
+            .ok_or("The selected window is not mapped")?;
+        if minimized || workspace != self.current_workspace {
+            return Err("The selected window is no longer on this workspace".into());
+        }
+        let bounds = Rectangle::new(location, window.geometry().size);
+        let scale = self.space.outputs()
+            .filter(|output| self.space.output_geometry(output).is_some_and(|r| r.overlaps(bounds)))
+            .map(|output| output.current_scale().fractional_scale())
+            .reduce(f64::max).unwrap_or(1.0);
+        let capture = self.ipc.capture_window.as_mut().ok_or("Window capture is unavailable")?;
+        capture(&window, scale)
+    }
+
     fn control(&mut self, value: Value) -> Value {
         if self.protocols.is_locked()
             && !matches!(
@@ -536,7 +637,15 @@ impl OrbitCompositor {
             let active=!minimized&&window.wl_surface().is_some_and(|surface|focus.as_ref()==Some(surface.as_ref()));
             let mut geometry=window.geometry();geometry.loc=location;
             if let Some(surface)=window.x11_surface(){geometry=surface.geometry();}
-            let area=outputs.iter().find(|o|{let r=&o["rect"];location.x>=r["x"].as_i64().unwrap_or(0) as i32&&location.x<(r["x"].as_i64().unwrap_or(0)+r["width"].as_i64().unwrap_or(0)) as i32}).map(|o|o["workarea"].clone()).unwrap_or(default_area.clone());
+            let area = outputs.iter().find(|output| {
+                let rect = &output["rect"];
+                let contains = |axis: &str, extent: &str, point: i32| {
+                    let start = rect[axis].as_i64().unwrap_or_default();
+                    let end = start + rect[extent].as_i64().unwrap_or_default();
+                    (start..end).contains(&i64::from(point))
+                };
+                contains("x", "width", location.x) && contains("y", "height", location.y)
+            }).map(|output| output["workarea"].clone()).unwrap_or(default_area.clone());
             let frame=if !minimized&&crate::decoration::needs_header(window){json!({"x":geometry.loc.x,"y":geometry.loc.y-crate::decoration::HEIGHT,"width":geometry.size.w,"height":crate::decoration::HEIGHT})}else{json!({})};
             Some(json!({"id":id.to_string(),"workspace":workspace+1,"desktop":workspace,"pid":pid,"klass":klass.chars().take(256).collect::<String>().to_lowercase(),"app_id":klass.chars().take(256).collect::<String>(),"title":title.chars().take(512).collect::<String>(),"active":active,"minimized":minimized,"maximized":maximized,"fullscreen":fullscreen,"workarea":area,"rect":rect_value(geometry),"x":geometry.loc.x,"y":geometry.loc.y,"width":geometry.size.w,"height":geometry.size.h,"frame":frame,"native":true}))
         }).take(256).collect()
@@ -651,6 +760,12 @@ impl OrbitCompositor {
             self.refocus_after_unmap(&window);
             return json!({"ok":true});
         }
+        if command == "focus"
+            && self.window_location(id, &window).is_some_and(|(workspace, _, _)| workspace != self.current_workspace)
+            && self.seat.get_pointer().is_some_and(|pointer| pointer.is_grabbed())
+        {
+            return json!({"ok":false,"error":"finish the pointer interaction before switching workspaces"});
+        }
         self.restore_native(id);
         if command == "restore" {
             return json!({"ok":true});
@@ -670,6 +785,9 @@ impl OrbitCompositor {
                         -1
                     },
                 );
+            }
+            if workspace != self.current_workspace {
+                return json!({"ok":false,"error":"workspace did not switch"});
             }
             self.space.raise_element(&window, true);
             self.seat.get_keyboard().unwrap().set_focus(

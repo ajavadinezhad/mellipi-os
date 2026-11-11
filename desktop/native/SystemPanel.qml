@@ -52,20 +52,20 @@ RowLayout {
         id: index;objectName: "systemSettingsIndex";Layout.fillHeight: true;Layout.preferredWidth: implicitWidth
         current: settings.section
         sections: [
-            {value:12,label:"Getting around",group:"START",description:"Find actions and learn the everyday shortcuts"},
-            {value:10,label:"Appearance",group:"DESKTOP"},
-            {value:2,label:"Displays",group:"DESKTOP"},
-            {value:15,label:"Brightness",group:"DESKTOP"},
-            {value:8,label:"Sound",group:"DEVICES"},
-            {value:9,label:"Bluetooth",group:"DEVICES"},
-            {value:5,label:"Network",group:"DEVICES"},
-            {value:0,label:"Input",group:"DEVICES"},
-            {value:6,label:"Power mode",group:"POWER"},
-            {value:7,label:"Battery health",group:"POWER"},
-            {value:1,label:"Lock",group:"POWER"},
-            {value:4,label:"Accessibility",group:"ACCESS"},
-            {value:3,label:"Shortcuts",group:"ACCESS"},
-            {value:16,label:"System tools",group:"SYSTEM"},
+            {value:12,label:"Getting around",icon:"help-browser",group:"START",description:"Find actions and learn the everyday shortcuts"},
+            {value:10,label:"Appearance",icon:"color-select",group:"DESKTOP"},
+            {value:2,label:"Displays",icon:"video-display",group:"DESKTOP"},
+            {value:15,label:"Brightness",icon:"display-brightness",group:"DESKTOP"},
+            {value:8,label:"Sound",icon:"audio-volume-high",group:"DEVICES"},
+            {value:9,label:"Bluetooth",icon:"bluetooth-active",group:"DEVICES"},
+            {value:5,label:"Network",icon:"network-wireless",group:"DEVICES"},
+            {value:0,label:"Input",icon:"input-keyboard",group:"DEVICES"},
+            {value:6,label:"Power mode",icon:"system-shutdown",group:"POWER"},
+            {value:7,label:"Battery health",icon:"battery-good",group:"POWER"},
+            {value:1,label:"Lock",icon:"system-lock-screen",group:"POWER"},
+            {value:4,label:"Accessibility",icon:"preferences-desktop-accessibility",group:"ACCESS"},
+            {value:3,label:"Shortcuts",icon:"preferences-desktop-keyboard-shortcuts",group:"ACCESS"},
+            {value:16,label:"System tools",icon:"preferences-system",group:"SYSTEM"},
         ]
         onSelected: value => settings.section=value
     }

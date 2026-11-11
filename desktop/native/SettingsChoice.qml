@@ -5,7 +5,7 @@ ComboBox {
     id:choice;textRole:"name";implicitHeight:34;implicitWidth:180;leftPadding:10;rightPadding:28
     contentItem:Text {text:choice.displayText;color:choice.enabled ? Theme.text : Theme.disabled;font.pixelSize:Theme.fontSize(12);verticalAlignment:Text.AlignVCenter;elide:Text.ElideRight;textFormat:Text.PlainText}
     indicator:Text {x:choice.width-width-10;y:(choice.height-height)/2;text:"⌄";color:Theme.muted;font.pixelSize:16}
-    background:Rectangle {color:choice.down ? Theme.hover : Theme.surface;radius:Theme.corner(8);border.color:choice.activeFocus ? Theme.focusColor : Theme.border;border.width:choice.activeFocus && Theme.highContrast ? 2 : 1}
+    background:Rectangle {color:choice.down ? Theme.hover : Theme.raised;radius:Theme.corner(8);border.color:choice.activeFocus ? Theme.focusColor : Theme.border;border.width:choice.activeFocus ? (Theme.highContrast ? 2 : 1) : Theme.surfaceOutline}
     delegate:ItemDelegate {
         required property var modelData
         required property int index
@@ -16,6 +16,6 @@ ComboBox {
     popup:Popup {
         y:choice.height+2;width:choice.width;padding:1;implicitHeight:Math.min(240,choices.contentHeight+2)
         contentItem:ListView {id:choices;clip:true;implicitHeight:contentHeight;model:choice.popup.visible ? choice.delegateModel : null;currentIndex:choice.highlightedIndex;boundsBehavior:Flickable.StopAtBounds;ScrollBar.vertical:ScrollBar {}}
-        background:Rectangle {color:Theme.raised;border.color:Theme.border;radius:Theme.corner(8)}
+        background:Rectangle {color:Theme.raised;border.color:Theme.border;border.width:Theme.surfaceOutline;radius:Theme.corner(8)}
     }
 }

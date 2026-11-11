@@ -20,6 +20,24 @@ QtObject {
     readonly property int padding: extraCompact ? 12 : compact ? 18 : 28
     function corner(n) { return Orbit.appearance.corners === "square" ? 0 : Orbit.appearance.corners === "soft" ? Math.min(6,n) : n; }
     readonly property int radius: corner(compact ? 12 : 20)
+    function symbolicIconSource(name) {
+        return "image://icons/menu/"+String(highContrast ? text : accent).slice(1)+"/"+name;
+    }
+    function iconSource(name) {
+        var symbolic = {
+            "system-file-manager": "folder",
+            "folder": "folder",
+            "user-home": "user-home",
+            "drive-harddisk": "drive-harddisk",
+            "user-trash": "user-trash",
+            "system-software-install": "system-software-install",
+            "mellipi-files": "folder",
+            "utilities-terminal": "utilities-terminal",
+            "mellipi-terminal": "utilities-terminal",
+            "preferences-system": "preferences-system"
+        }[name];
+        return symbolic ? symbolicIconSource(symbolic) : "image://icons/"+name;
+    }
     readonly property color accent: Orbit.accentColor
     readonly property color accentHover: Qt.lighter(accent, 1.12)
     function linear(c) { return c <= .04045 ? c/12.92 : Math.pow((c+.055)/1.055,2.4); }
@@ -29,6 +47,9 @@ QtObject {
     readonly property color raised: highContrast ? (light ? "#e6e6e6" : "#161616") : themeColor("raised",Qt.tint(light ? "#e1e8ee" : black ? "#1a2027" : "#203037", Qt.rgba(accent.r,accent.g,accent.b,black ? .018 : .075)))
     readonly property color hover: highContrast ? (light ? "#d0d0d0" : "#202020") : themeColor("hover",Qt.tint(light ? "#d7e2e8" : black ? "#242d37" : "#2b3c43", Qt.rgba(accent.r,accent.g,accent.b,black ? .03 : .12)))
     readonly property color border: highContrast ? (light ? "#000000" : "#ffffff") : themeColor("border",Qt.tint(light ? "#bac8d3" : black ? "#38424d" : "#3d5058", Qt.rgba(accent.r,accent.g,accent.b,black ? .05 : .2)))
+    readonly property color separator: highContrast ? border : Qt.tint(background, Qt.rgba(border.r,border.g,border.b,.35))
+    readonly property color selectedSurface: highContrast ? raised : Qt.tint(surface, Qt.rgba(accent.r,accent.g,accent.b,.16))
+    readonly property int surfaceOutline: highContrast ? 1 : 0
     readonly property color text: highContrast ? (light ? "#000000" : "#ffffff") : themeColor("text",light ? "#15222d" : "#e1e8ed")
     readonly property color muted: highContrast ? (light ? "#222222" : "#eeeeee") : themeColor("muted",light ? "#526473" : black ? "#adb7c4" : "#a2b0bb")
     readonly property color faint: highContrast ? (light ? "#333333" : "#dddddd") : themeColor("faint",light ? "#647582" : black ? "#8b97a7" : "#788b9b")

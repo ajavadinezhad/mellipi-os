@@ -49,7 +49,12 @@ Item {
         else if(ctrl && event.key===Qt.Key_V && typeof controller.pasteFiles==="function"){controller.pasteFiles();event.accepted=true;}
         else if(event.key===Qt.Key_Delete && typeof controller.trashFiles==="function"){controller.trashFiles(selectedPaths);event.accepted=true;}
         else if(event.key===Qt.Key_F2 && selectedPath && typeof controller.requestRename==="function"){controller.requestRename(selectedPath);event.accepted=true;}
-        else if(event.key===Qt.Key_Menu && grid.currentIndex>=0){var item=repeater.itemAt(grid.currentIndex);requestContext(selectedPath,item,item.width/2,item.height/2);event.accepted=true;}
+        else if(event.key===Qt.Key_Menu || (event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))){
+            var item=grid.currentIndex>=0 ? repeater.itemAt(grid.currentIndex) : null;
+            if(item)requestContext(selectedPath,item,item.width/2,item.height/2);
+            else requestContext("",icons,16,16);
+            event.accepted=true;
+        }
     }
     function selectRectangle(x,y,w,h){
         var paths=[];
@@ -152,7 +157,7 @@ Item {
                     x:4;y:2;width:parent.width-8;height:icons.iconCell-6;radius:Theme.corner(7)
                     color:icons.selectedPaths.indexOf(modelData.path)>=0?Qt.rgba(0.208,0.518,0.894,0.22):hit.containsMouse?Theme.hover:"transparent"
                     border.color:icons.selectedPaths.indexOf(modelData.path)>=0?icons.selectionBlue:"transparent"
-                    Image{anchors.horizontalCenter:parent.horizontalCenter;y:8;width:icons.iconSize;height:icons.iconSize;source:"image://icons/"+modelData.icon;sourceSize:Qt.size(40,40);fillMode:Image.PreserveAspectFit}
+                    Image{anchors.horizontalCenter:parent.horizontalCenter;y:8;width:icons.iconSize;height:icons.iconSize;source:Theme.iconSource(modelData.icon);sourceSize:Qt.size(40,40);fillMode:Image.PreserveAspectFit}
                     Text{x:4;y:icons.iconSize+13;width:parent.width-8;height:Math.max(24,icons.iconCell-icons.iconSize-28);text:modelData.name;textFormat:Text.PlainText;color:Theme.text;font.pixelSize:Theme.fontSize(11);horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;maximumLineCount:2;elide:Text.ElideRight}
                     MouseArea {
                         id:hit;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.LeftButton|Qt.RightButton
@@ -187,13 +192,22 @@ Item {
         color:Qt.rgba(0.208,0.518,0.894,0.18);border.color:icons.selectionBlue;border.width:1
     }
     Rectangle {
-        id:editBox;visible:false;anchors.centerIn:parent;width:Math.min(320,icons.width-24);height:134;z:10;radius:Theme.corner(8);color:Theme.raised;border.color:Theme.accent
-        Text{x:14;y:12;text:icons.creatingFolder?"New folder":"Rename item";color:Theme.text;font.pixelSize:14}
-        Rectangle{x:12;y:39;width:parent.width-24;height:34;color:Theme.hover;radius:4
-            TextInput{id:editor;anchors.fill:parent;anchors.margins:7;color:Theme.text;selectByMouse:true;clip:true;maximumLength:200;Accessible.name:icons.creatingFolder?"Folder name":"File name";Keys.onReturnPressed:icons.commitEdit();Keys.onEscapePressed:{editBox.visible=false;grid.forceActiveFocus();}}
+        id:editBox;visible:false;anchors.centerIn:parent;width:Math.min(360,icons.width-24);height:form.implicitHeight+24;z:10;radius:Theme.corner(8);color:Theme.raised;border.color:Theme.accent
+        Column {
+            id:form;anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:12;spacing:8
+            Text {text:icons.creatingFolder?"New folder":"Rename item";color:Theme.text;font.pixelSize:Theme.fontSize(14)}
+            OrbitField {
+                id:editor;width:parent.width;implicitHeight:Math.max(34,Theme.fontSize(13)+14)
+                maximumLength:200;Accessible.name:icons.creatingFolder?"Folder name":"File name"
+                onAccepted:icons.commitEdit()
+                Keys.onEscapePressed:{editBox.visible=false;grid.forceActiveFocus();}
+            }
+            Row {
+                anchors.right:parent.right;spacing:8
+                OrbitButton {text:"Cancel";quiet:true;onClicked:{editBox.visible=false;grid.forceActiveFocus();}}
+                OrbitButton {text:icons.creatingFolder?"Create":"Rename";accent:true;onClicked:icons.commitEdit()}
+            }
         }
-        Rectangle{x:12;y:86;width:84;height:32;radius:4;color:Theme.hover;Text{anchors.centerIn:parent;text:"Cancel";color:Theme.text}MouseArea{anchors.fill:parent;onClicked:editBox.visible=false}Accessible.name:"Cancel";Accessible.role:Accessible.Button;Accessible.onPressAction:editBox.visible=false}
-        Rectangle{anchors.right:parent.right;anchors.rightMargin:12;y:86;width:84;height:32;radius:4;color:Theme.hover;Text{anchors.centerIn:parent;text:icons.creatingFolder?"Create":"Rename";color:Theme.text}MouseArea{anchors.fill:parent;onClicked:icons.commitEdit()}Accessible.name:icons.creatingFolder?"Create folder":"Rename item";Accessible.role:Accessible.Button;Accessible.onPressAction:icons.commitEdit()}
     }
     Rectangle {
         id:transferCard;objectName:"desktopTransferCard";z:12

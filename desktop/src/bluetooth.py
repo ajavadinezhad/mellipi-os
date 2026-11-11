@@ -35,17 +35,18 @@ def inventory(objects, busy=False, status=''):
     adapters = [(path, interfaces[ADAPTER]) for path, interfaces in objects.items() if ADAPTER in interfaces]
     adapters.sort(key=lambda row: (not bool(row[1].get('Powered')), row[0]))
     adapter_path, adapter = adapters[0] if adapters else ('', {})
+    adapter_paths = {path for path, _ in adapters}
     devices = []
     for path, interfaces in objects.items():
         values = interfaces.get(DEVICE)
-        if values is None or (values.get('Adapter') and values['Adapter'] != adapter_path):
+        if values is None or (values.get('Adapter') and values['Adapter'] not in adapter_paths):
             continue
         percentage = interfaces.get(BATTERY, {}).get('Percentage')
         battery_present = type(percentage) is int and 0 <= percentage <= 100
         devices.append(dict(path=path, name=plain(values.get('Alias') or values.get('Name') or values.get('Address') or 'Bluetooth device'), paired=values.get('Paired') is True, connected=values.get('Connected') is True, trusted=values.get('Trusted') is True, batteryPresent=battery_present, batteryPercent=percentage if battery_present else 0))
     devices.sort(key=lambda row: (not row['connected'], not row['paired'], row['name'].casefold(), row['path']))
     powered = adapter.get('Powered') is True
-    discovering = adapter.get('Discovering') is True
+    discovering = any(row.get('Discovering') is True for _, row in adapters)
     state = dict(available=bool(adapters), powered=powered, discovering=discovering, busy=bool(busy), status=plain(status or ('Bluetooth unavailable' if not adapters else 'Working…' if busy else 'Bluetooth off' if not powered else 'Scanning for devices' if discovering else 'Ready')))
     return state, devices[:64], adapter_path
 
@@ -310,8 +311,15 @@ class BluetoothBus:
     def set_powered(self, value):
         path = self.adapter()
         if not path:return self.error('No Bluetooth adapter available')
-        if not value:self.stop_discovery();self.cancel_pairing()
-        self.call(path, PROPERTIES, 'Set', '(ssv)', (ADAPTER, 'Powered', self.GLib.Variant('b', bool(value))), key='power')
+        if not value:
+            self.stop_discovery();self.cancel_pairing()
+            targets=[name for name, interfaces in self.objects.items()
+                     if interfaces.get(ADAPTER, {}).get('Powered') is True]
+        else:
+            targets=[path]
+        for target in targets:
+            self.call(target, PROPERTIES, 'Set', '(ssv)',
+                      (ADAPTER, 'Powered', self.GLib.Variant('b', bool(value))), key='power:'+target)
 
     def start_discovery(self):
         path = self.adapter()

@@ -61,7 +61,7 @@ ColumnLayout {
                 title: "Wi-Fi"
                 SettingRow {
                     label: System.values.networkAvailable ? System.values.networkState : "Unavailable"
-                    OrbitButton { text: "↻";quiet: true;implicitWidth: 26;implicitHeight: 26;hint: "Refresh networks";enabled: System.values.networkAvailable && System.values.wifiEnabled && !quick.wifiBusy && !quick.wifiScanning;onClicked: System.refreshWifi() }
+                    IconButton {iconName: "refresh";implicitWidth: 26;implicitHeight: 26;hint: "Refresh Wi-Fi networks";enabled: System.values.networkAvailable && System.values.wifiEnabled && !quick.wifiBusy && !quick.wifiScanning;onClicked: System.refreshWifi()}
                     SettingToggle { label: "Wi-Fi power";checked: System.values.wifiEnabled;enabled: System.values.networkAvailable && !quick.wifiBusy;onClicked: System.setWifi(checked) }
                 }
                 ListView {
@@ -86,7 +86,7 @@ ColumnLayout {
                         RowLayout {
                             anchors.fill: parent;anchors.leftMargin: 8;anchors.rightMargin: 8
                             Text { text: modelData.ssid;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.fontSize(11);textFormat: Text.PlainText }
-                            Text { text: modelData.active ? "✓" : (modelData.secure ? "⌑ " : "")+modelData.signal+"%";color: Theme.muted;font.pixelSize: Theme.fontSize(10) }
+                            Text {text: modelData.active ? "Connected" : (modelData.secure ? "Secured · " : "")+modelData.signal+"%";color: Theme.muted;font.pixelSize: Theme.fontSize(10)}
                         }
                         MouseArea { id: wifiHit;anchors.fill: parent;hoverEnabled: true;onClicked: parent.selectNetwork() }
                     }
@@ -149,7 +149,8 @@ ColumnLayout {
         id:settingsLink;Layout.fillWidth:true;spacing:6
         OrbitButton {objectName:"systemSettingsLink";text:"System settings…";quiet:true;implicitHeight:28;Layout.fillWidth:true;onClicked:Orbit.showPanel("system-settings")}
         IconButton {
-            objectName:"quickUpdates";iconName:"refresh";implicitWidth:28;implicitHeight:28
+            objectName:"quickUpdates";iconName:"updates";implicitWidth:28;implicitHeight:28
+            accessibleLabel:"Software updates"
             readonly property bool available:typeof DesktopTools!=="undefined" && DesktopTools!==null && !!DesktopTools.tools.updates && DesktopTools.tools.updates.available
             enabled:available;hint:available ? "Software updates" : "Install a software update manager to check for updates"
             onClicked:DesktopTools.open("updates")

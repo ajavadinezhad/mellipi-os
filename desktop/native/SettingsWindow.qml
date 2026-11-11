@@ -21,7 +21,7 @@ Window {
         if(settingsWindow.visibility===Window.Maximized)settingsWindow.showNormal();
         else settingsWindow.showMaximized();
     }
-    Rectangle {objectName:"settingsWindowBackground";anchors.fill:parent;color:Theme.background;radius:settingsWindow.visibility===Window.Maximized ? 0 : Theme.corner(16);border.width:1;border.color:Theme.border}
+    Rectangle {objectName:"settingsWindowBackground";anchors.fill:parent;color:Theme.background;radius:settingsWindow.visibility===Window.Maximized ? 0 : Theme.corner(16);border.width:Orbit.appearance.matchWindows ? 1 : Theme.surfaceOutline;border.color:Orbit.appearance.matchWindows && settingsWindow.active && !Theme.highContrast ? Theme.accent : Theme.border}
     ColumnLayout {
         anchors.fill:parent;anchors.margins:Theme.extraCompact ? 6 : Theme.compact ? 8 : 12;spacing:Theme.extraCompact ? 5 : 8
         Item {
@@ -46,7 +46,7 @@ Window {
                     objectName:"settingsMinimize";text:"−";Accessible.name:"Minimize Settings";width:32;height:30
                     onClicked:settingsWindow.showMinimized()
                     contentItem:Text{text:parent.text;color:Theme.text;horizontalAlignment:Text.AlignHCenter;verticalAlignment:Text.AlignVCenter}
-                    background:Rectangle{color:parent.hovered?Theme.hover:"transparent"}
+                    background:Rectangle{radius:Theme.corner(6);color:parent.hovered?Theme.hover:"transparent";border.width:parent.activeFocus?2:0;border.color:Theme.focusColor}
                 }
                 ToolButton {
                     objectName:"settingsMaximize";text:settingsWindow.visibility===Window.Maximized?"❐":"□"
@@ -56,17 +56,17 @@ Window {
                         settingsWindow.toggleMaximized();
                     }
                     contentItem:Text{text:parent.text;color:Theme.text;horizontalAlignment:Text.AlignHCenter;verticalAlignment:Text.AlignVCenter}
-                    background:Rectangle{color:parent.hovered?Theme.hover:"transparent"}
+                    background:Rectangle{radius:Theme.corner(6);color:parent.hovered?Theme.hover:"transparent";border.width:parent.activeFocus?2:0;border.color:Theme.focusColor}
                 }
                 ToolButton {
                     objectName:"settingsClose";text:"×";Accessible.name:"Close Settings";width:32;height:30
                     onClicked:settingsWindow.close()
                     contentItem:Text{text:parent.text;color:Theme.text;horizontalAlignment:Text.AlignHCenter;verticalAlignment:Text.AlignVCenter}
-                    background:Rectangle{color:parent.hovered?Theme.hover:"transparent"}
+                    background:Rectangle{radius:Theme.corner(6);color:parent.hovered?Theme.hover:"transparent";border.width:parent.activeFocus?2:0;border.color:Theme.focusColor}
                 }
             }
         }
-        Rectangle {Layout.fillWidth:true;Layout.preferredHeight:1;color:Theme.border}
+        Rectangle {Layout.fillWidth:true;Layout.preferredHeight:1;color:Theme.separator}
         SystemPanel {Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:8}
         Text {
             visible:!!Orbit.notice;Layout.fillWidth:true;Layout.leftMargin:8;Layout.rightMargin:8
