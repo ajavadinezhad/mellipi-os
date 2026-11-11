@@ -35,7 +35,7 @@ Window {
     }
     Rectangle {objectName:"settingsWindowBackground";anchors.fill:parent;color:Theme.background;radius:settingsWindow.visibility===Window.Maximized ? 0 : Theme.corner(16);border.width:Orbit.appearance.matchWindows ? 1 : Theme.surfaceOutline;border.color:Orbit.appearance.matchWindows && settingsWindow.active && !Theme.highContrast ? Theme.accent : Theme.border}
     ColumnLayout {
-        anchors.fill:parent;anchors.margins:Theme.extraCompact ? 6 : Theme.compact ? 8 : 12;spacing:Theme.extraCompact ? 5 : 8
+        anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;anchors.bottomMargin:8;spacing:0
         Item {
             id: titlebar
             objectName: "settingsWindowTitlebar"
@@ -49,7 +49,7 @@ Window {
                 onActiveChanged: if(active)settingsWindow.startSystemMove()
             }
             Text {
-                anchors.left:parent.left;anchors.leftMargin:10;anchors.verticalCenter:parent.verticalCenter
+                anchors.left:parent.left;anchors.leftMargin:2;anchors.verticalCenter:parent.verticalCenter
                 text:"Settings";color:Theme.text;font.pixelSize:Theme.fontSize(13);font.weight:Font.Medium
             }
             Row {

@@ -51,7 +51,7 @@ class TerminalWindow(Gtk.Window):
         self.connect('destroy', lambda *_: Gtk.main_quit())
         self.connect('key-press-event', self.key_pressed)
         self.connect('delete-event', self.confirm_window_close)
-        self.header = Gtk.HeaderBar(show_close_button=False)
+        self.header = Gtk.HeaderBar(show_close_button=False, spacing=4)
         self.set_titlebar(self.header)
         new_tab = Gtk.Button.new_from_icon_name('tab-new-symbolic', Gtk.IconSize.MENU)
         new_tab.set_relief(Gtk.ReliefStyle.NONE)
@@ -59,7 +59,7 @@ class TerminalWindow(Gtk.Window):
         new_tab.get_accessible().set_name('New tab')
         new_tab.connect('clicked', lambda *_: self.new_tab())
         title = Gtk.Label(label='Mellipi Terminal')
-        title.set_margin_start(5)
+        title.set_margin_start(2)
         self.header.pack_start(title)
         self.controls = {}
         self.control_ink = '#ffffff'
@@ -129,12 +129,12 @@ class TerminalWindow(Gtk.Window):
         Gtk.Settings.get_default().set_property('gtk-application-prefer-dark-theme', prefs['mode'] == 'dark')
         pad = {'comfortable': 8, 'compact': 5, 'extra': 3}[prefs['density']]
         radius = {'square': 0, 'soft': 4, 'rounded': 8}[prefs['corners']]
-        header_height = HEADER_HEIGHTS[prefs['density']] - 5
+        header_height = HEADER_HEIGHTS[prefs['density']] - 1
         focus = palette['text'] if prefs['highContrast'] else palette['accent']
         self.update_controls(focus, self.is_maximized())
         self.css.load_from_data(('''
             window, notebook, notebook stack { background: %(background)s; color: %(text)s; }
-            headerbar { min-height: %(header_height)dpx; padding: 2px 6px; background: %(background)s;
+            headerbar { min-height: %(header_height)dpx; padding: 0 8px; background: %(background)s;
                         color: %(text)s; border: 0; border-bottom: 1px solid %(separator)s;
                         box-shadow: none; text-shadow: none; }
             headerbar .title { font-weight: normal; }
@@ -143,7 +143,9 @@ class TerminalWindow(Gtk.Window):
                         border: 0; box-shadow: none; text-shadow: none; }
             headerbar button.mellipi-window-control { padding: 0; }
             headerbar button:hover, notebook tab button:hover { background: %(hover)s; }
-            decoration { border-radius: %(radius)dpx; }
+            decoration, decoration:backdrop {
+                border: 0; box-shadow: none; border-radius: %(radius)dpx;
+            }
             menu, messagedialog { background: %(surface)s; color: %(text)s; }
             menuitem:hover { background: %(selected_surface)s; color: %(text)s; }
             headerbar button:focus, notebook tab button:focus {
