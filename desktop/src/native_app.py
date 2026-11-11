@@ -14,6 +14,7 @@ from x11_events import DesktopEvents
 from storage import LazyRustStore, PythonStore
 
 from project_paths import PROJECT_ROOT as ROOT, SOURCE_ROOT
+from window_controls import PATHS as WINDOW_CONTROL_PATHS, glyph_svg
 
 def native_session():return bool(os.environ.get('ORBIT_NATIVE_CONTROL'))
 def wayland_session():return native_session() or bool(os.environ.get('SWAYSOCK'))
@@ -23,6 +24,16 @@ class Icons(QQuickImageProvider):
     def requestImage(self,ident,*sizes):
         requested=sizes[-1]
         tint=None
+        if ident.startswith('window-control/'):
+            _, color, name = ident.split('/', 2)
+            color = QColor('#' + color)
+            if name in WINDOW_CONTROL_PATHS and color.isValid():
+                image = QImage.fromData(glyph_svg(name, color.name()), b'SVG')
+                if QT5:
+                    return image, image.size()
+                sizes[0].setWidth(image.width())
+                sizes[0].setHeight(image.height())
+                return image
         if ident.startswith('menu/'):
             _,color,name=ident.split('/',2)
             tint=QColor('#'+color)

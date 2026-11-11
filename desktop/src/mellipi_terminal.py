@@ -12,10 +12,12 @@ GLib.set_prgname('mellipi-terminal')
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
+gi.require_version('GdkPixbuf', '2.0')
 gi.require_version('Vte', '2.91')
-from gi.repository import Gdk, Gio, Gtk, Pango, Vte
+from gi.repository import Gdk, GdkPixbuf, Gio, Gtk, Pango, Vte
 
 from app_palette import HEADER_HEIGHTS, colors
+from window_controls import glyph_svg
 from preferences import Preferences
 
 
@@ -49,8 +51,7 @@ class TerminalWindow(Gtk.Window):
         self.connect('destroy', lambda *_: Gtk.main_quit())
         self.connect('key-press-event', self.key_pressed)
         self.connect('delete-event', self.confirm_window_close)
-        self.header = Gtk.HeaderBar(show_close_button=True)
-        self.header.set_decoration_layout(':minimize,maximize,close')
+        self.header = Gtk.HeaderBar(show_close_button=False)
         self.set_titlebar(self.header)
         new_tab = Gtk.Button.new_from_icon_name('tab-new-symbolic', Gtk.IconSize.MENU)
         new_tab.set_relief(Gtk.ReliefStyle.NONE)
@@ -60,7 +61,18 @@ class TerminalWindow(Gtk.Window):
         title = Gtk.Label(label='Mellipi Terminal')
         title.set_margin_start(5)
         self.header.pack_start(title)
+        self.controls = {}
+        self.control_ink = '#ffffff'
+        for glyph, action in (('close', self.close), ('maximize', self.toggle_maximized),
+                              ('minimize', self.iconify)):
+            button = Gtk.Button()
+            button.get_style_context().add_class('mellipi-window-control')
+            button.set_size_request(32, 28)
+            button.connect('clicked', lambda _button, callback=action: callback())
+            self.controls[glyph] = button
+            self.header.pack_end(button)
         self.header.pack_end(new_tab)
+        self.connect('window-state-event', self.window_state_changed)
         self.notebook = Gtk.Notebook()
         self.notebook.set_scrollable(True)
         self.notebook.set_show_tabs(False)
@@ -80,6 +92,28 @@ class TerminalWindow(Gtk.Window):
         self.apply_theme()
         self.add_tab(args.working_directory, args.execute or [shell()])
 
+    def toggle_maximized(self):
+        if self.is_maximized():
+            self.unmaximize()
+        else:
+            self.maximize()
+
+    def window_state_changed(self, _window, event):
+        if event.changed_mask & Gdk.WindowState.MAXIMIZED:
+            self.update_controls(self.control_ink, bool(event.new_window_state & Gdk.WindowState.MAXIMIZED))
+        return False
+
+    def update_controls(self, ink, maximized):
+        self.control_ink = ink
+        for name, button in self.controls.items():
+            glyph = 'restore' if name == 'maximize' and maximized else name
+            loader = GdkPixbuf.PixbufLoader.new_with_type('svg')
+            loader.write(glyph_svg(glyph, ink))
+            loader.close()
+            button.set_image(Gtk.Image.new_from_pixbuf(loader.get_pixbuf()))
+            button.set_tooltip_text(glyph.capitalize())
+            button.get_accessible().set_name(glyph.capitalize())
+
     def settings_changed(self, _monitor, file, other_file, _event):
         if any(item and item.get_path() == str(self.settings_path) for item in (file, other_file)):
             self.preferences = Preferences(self.settings_path)
@@ -97,6 +131,7 @@ class TerminalWindow(Gtk.Window):
         radius = {'square': 0, 'soft': 4, 'rounded': 8}[prefs['corners']]
         header_height = HEADER_HEIGHTS[prefs['density']] - 5
         focus = palette['text'] if prefs['highContrast'] else palette['accent']
+        self.update_controls(focus, self.is_maximized())
         self.css.load_from_data(('''
             window, notebook, notebook stack { background: %(background)s; color: %(text)s; }
             headerbar { min-height: %(header_height)dpx; padding: 2px 6px; background: %(background)s;
@@ -106,6 +141,7 @@ class TerminalWindow(Gtk.Window):
             headerbar button, notebook tab button { min-width: 20px; min-height: 20px;
                         padding: 2px; background: transparent; color: %(focus)s;
                         border: 0; box-shadow: none; text-shadow: none; }
+            headerbar button.mellipi-window-control { padding: 0; }
             headerbar button:hover, notebook tab button:hover { background: %(hover)s; }
             decoration { border-radius: %(radius)dpx; }
             menu, messagedialog { background: %(surface)s; color: %(text)s; }

@@ -5,6 +5,18 @@ import QtQuick.Layouts 1.15
 import "."
 Window {
     id: settingsWindow
+    component TitleBarButton: OrbitButton {
+        required property string glyph
+        quiet: true
+        width: 32
+        height: 28
+        padding: 6
+        Accessible.name: glyph.charAt(0).toUpperCase() + glyph.slice(1) + " Settings"
+        contentItem: Image {
+            source: "image://icons/window-control/" + String(Theme.focusColor).slice(1) + "/" + glyph
+            fillMode: Image.PreserveAspectFit
+        }
+    }
     objectName: "settingsApplicationWindow"
     title: "Settings — Mellipi"
     width: 760; height: 620; minimumWidth: 480; minimumHeight: 420
@@ -42,27 +54,20 @@ Window {
             }
             Row {
                 anchors.right:parent.right;anchors.verticalCenter:parent.verticalCenter;spacing:4
-                ToolButton {
-                    objectName:"settingsMinimize";text:"−";Accessible.name:"Minimize Settings";width:32;height:30
-                    onClicked:settingsWindow.showMinimized()
-                    contentItem:Text{text:parent.text;color:Theme.text;horizontalAlignment:Text.AlignHCenter;verticalAlignment:Text.AlignVCenter}
-                    background:Rectangle{radius:Theme.corner(6);color:parent.hovered?Theme.hover:"transparent";border.width:parent.activeFocus?2:0;border.color:Theme.focusColor}
+                TitleBarButton {
+                    objectName: "settingsMinimize"
+                    glyph: "minimize"
+                    onClicked: settingsWindow.showMinimized()
                 }
-                ToolButton {
-                    objectName:"settingsMaximize";text:settingsWindow.visibility===Window.Maximized?"❐":"□"
-                    Accessible.name:settingsWindow.visibility===Window.Maximized?"Restore Settings":"Maximize Settings"
-                    width:32;height:30
-                    onClicked: {
-                        settingsWindow.toggleMaximized();
-                    }
-                    contentItem:Text{text:parent.text;color:Theme.text;horizontalAlignment:Text.AlignHCenter;verticalAlignment:Text.AlignVCenter}
-                    background:Rectangle{radius:Theme.corner(6);color:parent.hovered?Theme.hover:"transparent";border.width:parent.activeFocus?2:0;border.color:Theme.focusColor}
+                TitleBarButton {
+                    objectName: "settingsMaximize"
+                    glyph: settingsWindow.visibility === Window.Maximized ? "restore" : "maximize"
+                    onClicked: settingsWindow.toggleMaximized()
                 }
-                ToolButton {
-                    objectName:"settingsClose";text:"×";Accessible.name:"Close Settings";width:32;height:30
-                    onClicked:settingsWindow.close()
-                    contentItem:Text{text:parent.text;color:Theme.text;horizontalAlignment:Text.AlignHCenter;verticalAlignment:Text.AlignVCenter}
-                    background:Rectangle{radius:Theme.corner(6);color:parent.hovered?Theme.hover:"transparent";border.width:parent.activeFocus?2:0;border.color:Theme.focusColor}
+                TitleBarButton {
+                    objectName: "settingsClose"
+                    glyph: "close"
+                    onClicked: settingsWindow.close()
                 }
             }
         }

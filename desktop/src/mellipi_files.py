@@ -12,7 +12,7 @@ from PyQt5.QtCore import (
     QDir, QEvent, QFileSystemWatcher, QItemSelectionModel, QModelIndex, QMimeData,
     QRect, QSignalBlocker, QSize, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl,
 )
-from PyQt5.QtGui import QColor, QDesktopServices, QDrag, QIcon, QKeySequence, QPainter, QPalette
+from PyQt5.QtGui import QColor, QDesktopServices, QDrag, QIcon, QKeySequence, QPainter, QPalette, QPixmap
 from PyQt5.QtWidgets import (
     QAction, QApplication, QFileSystemModel, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
     QMainWindow, QMenu, QMessageBox, QPushButton, QStackedWidget, QTreeView, QVBoxLayout, QWidget,
@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
 from gi.repository import Gio
 from preferences import Preferences
 from app_palette import HEADER_HEIGHTS, colors
+from window_controls import glyph_svg
 from desktop_icons import rename_no_replace, safe_name, trash_item
 from device_monitor import DeviceMonitor
 from file_transfers import MAX_SOURCES, CancelToken, Transfer
@@ -220,15 +221,32 @@ class TitleBar(QFrame):
         layout.setContentsMargins(3, 0, 3, 0)
         layout.addLayout(navigation, 1)
         layout.addSpacing(18)
-        for label, name, action in (('−', 'Minimize', window.showMinimized),
-                                    ('□', 'Maximize or restore', self.toggle_maximized),
-                                    ('×', 'Close', window.close)):
-            button = window.button(label, action)
+        self.controls = {}
+        self.control_ink = '#ffffff'
+        for glyph, action in (('minimize', window.showMinimized),
+                              ('maximize', self.toggle_maximized),
+                              ('close', window.close)):
+            button = window.button('', action)
             button.setObjectName('windowControl')
-            button.setAccessibleName(name)
-            button.setToolTip(name)
-            button.setFixedWidth(28)
+            button.setFixedSize(32, 28)
+            self.controls[glyph] = button
             layout.addWidget(button)
+        window.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if watched is self.owner and event.type() == QEvent.WindowStateChange:
+            self.update_controls(self.control_ink)
+        return super().eventFilter(watched, event)
+
+    def update_controls(self, ink):
+        self.control_ink = ink
+        for name, button in self.controls.items():
+            glyph = 'restore' if name == 'maximize' and self.owner.isMaximized() else name
+            pixmap = QPixmap()
+            pixmap.loadFromData(glyph_svg(glyph, ink), 'SVG')
+            button.setIcon(QIcon(pixmap))
+            button.setAccessibleName(glyph.capitalize())
+            button.setToolTip(glyph.capitalize())
 
     def toggle_maximized(self):
         if self.owner.isMaximized():
@@ -752,6 +770,7 @@ class Files(QMainWindow):
             control.setIcon(QIcon(pixmap))
             if isinstance(control, QPushButton) and control.objectName() == 'navigation':
                 control.setText('')
+        self.titlebar.update_controls(focus)
         self.model.set_folder_color(palette['accent'])
         self.view.viewport().update()
         density = preferences.values['density']
