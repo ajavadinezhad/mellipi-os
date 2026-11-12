@@ -15,7 +15,7 @@ QtObject {
     function themeColor(name,fallback) {return palette[name] || fallback;}
     readonly property bool highContrast: Orbit.appearance.highContrast === true
     function fontSize(n) { return Math.max(8,Math.round((extraCompact ? Math.max(8,n-1) : n)*textScale)); }
-    readonly property color focusColor: highContrast ? (light ? "#000000" : "#ffffff") : accent
+    readonly property color focusColor: themeColor("focus",accent)
     readonly property int gap: extraCompact ? 6 : compact ? 10 : 18
     readonly property int padding: extraCompact ? 12 : compact ? 18 : 28
     function corner(n) { return Orbit.appearance.corners === "square" ? 0 : Orbit.appearance.corners === "soft" ? Math.min(6,n) : n; }
@@ -42,16 +42,16 @@ QtObject {
     readonly property color accentHover: Qt.lighter(accent, 1.12)
     function linear(c) { return c <= .04045 ? c/12.92 : Math.pow((c+.055)/1.055,2.4); }
     readonly property color accentText: (.2126*linear(accent.r)+.7152*linear(accent.g)+.0722*linear(accent.b)) > .179 ? "#000000" : "#ffffff"
-    readonly property color background: highContrast ? (light ? "#ffffff" : "#000000") : themeColor("background",black ? "#07090c" : Qt.tint(light ? "#eef2f6" : "#10191f", Qt.rgba(accent.r,accent.g,accent.b,.055)))
-    readonly property color surface: highContrast ? (light ? "#ffffff" : "#000000") : themeColor("surface",Qt.tint(light ? "#ffffff" : black ? "#101419" : "#172329", Qt.rgba(accent.r,accent.g,accent.b,black ? .012 : .06)))
-    readonly property color raised: highContrast ? (light ? "#e6e6e6" : "#161616") : themeColor("raised",Qt.tint(light ? "#e1e8ee" : black ? "#1a2027" : "#203037", Qt.rgba(accent.r,accent.g,accent.b,black ? .018 : .075)))
-    readonly property color hover: highContrast ? (light ? "#d0d0d0" : "#202020") : themeColor("hover",Qt.tint(light ? "#d7e2e8" : black ? "#242d37" : "#2b3c43", Qt.rgba(accent.r,accent.g,accent.b,black ? .03 : .12)))
-    readonly property color border: highContrast ? (light ? "#000000" : "#ffffff") : themeColor("border",Qt.tint(light ? "#bac8d3" : black ? "#38424d" : "#3d5058", Qt.rgba(accent.r,accent.g,accent.b,black ? .05 : .2)))
+    readonly property color background: themeColor("background",black ? "#07090c" : Qt.tint(light ? "#eef2f6" : "#10191f", Qt.rgba(accent.r,accent.g,accent.b,.055)))
+    readonly property color surface: themeColor("surface",Qt.tint(light ? "#ffffff" : black ? "#101419" : "#172329", Qt.rgba(accent.r,accent.g,accent.b,black ? .012 : .06)))
+    readonly property color raised: themeColor("raised",Qt.tint(light ? "#e1e8ee" : black ? "#1a2027" : "#203037", Qt.rgba(accent.r,accent.g,accent.b,black ? .018 : .075)))
+    readonly property color hover: themeColor("hover",Qt.tint(light ? "#d7e2e8" : black ? "#242d37" : "#2b3c43", Qt.rgba(accent.r,accent.g,accent.b,black ? .03 : .12)))
+    readonly property color border: themeColor("border",Qt.tint(light ? "#bac8d3" : black ? "#38424d" : "#3d5058", Qt.rgba(accent.r,accent.g,accent.b,black ? .05 : .2)))
     readonly property color separator: highContrast ? border : Qt.tint(background, Qt.rgba(border.r,border.g,border.b,.35))
     readonly property color selectedSurface: highContrast ? raised : Qt.tint(surface, Qt.rgba(accent.r,accent.g,accent.b,.16))
     readonly property int surfaceOutline: highContrast ? 1 : 0
-    readonly property color text: highContrast ? (light ? "#000000" : "#ffffff") : themeColor("text",light ? "#15222d" : "#e1e8ed")
-    readonly property color muted: highContrast ? (light ? "#222222" : "#eeeeee") : themeColor("muted",light ? "#526473" : black ? "#adb7c4" : "#a2b0bb")
-    readonly property color faint: highContrast ? (light ? "#333333" : "#dddddd") : themeColor("faint",light ? "#647582" : black ? "#8b97a7" : "#788b9b")
+    readonly property color text: themeColor("text",light ? "#15222d" : "#e1e8ed")
+    readonly property color muted: themeColor("muted",light ? "#526473" : black ? "#adb7c4" : "#a2b0bb")
+    readonly property color faint: themeColor("faint",light ? "#647582" : black ? "#8b97a7" : "#788b9b")
     readonly property color disabled: light ? "#8997a3" : black ? "#667282" : "#657681"
 }

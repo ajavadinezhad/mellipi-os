@@ -59,10 +59,18 @@ ColumnLayout {
         highlightMoveDuration: 0;boundsBehavior: Flickable.StopAtBounds
         Keys.onReturnPressed: overview.activate(currentIndex)
         Keys.onEnterPressed: overview.activate(currentIndex)
+        Keys.onPressed: event => {
+            if(currentItem && (event.key===Qt.Key_Menu || (event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier)))) {
+                currentItem.openActions();
+                event.accepted=true;
+            }
+        }
         onCurrentIndexChanged: if(currentIndex>=0)positionViewAtIndex(currentIndex,GridView.Contain)
         delegate: Item {
             required property var modelData;required property int index
             width: windowGrid.cellWidth;height: windowGrid.cellHeight
+            function openActions() {Orbit.openPanelContext(windowActions,"window",modelData.id,windowActions.width/2,windowActions.height);}
+
             Rectangle {
                 id: card;width: parent.width-8;height: 96;radius: Theme.corner(8)
                 color: windowHit.containsMouse || (windowGrid.activeFocus && windowGrid.currentIndex===index) ? Theme.hover : Theme.surface
@@ -74,7 +82,7 @@ ColumnLayout {
                     sourceSize: Qt.size(32,32);fillMode: Image.PreserveAspectFit
                 }
                 Text {
-                    x: 50;y: 13;width: Math.max(20,parent.width-84);height: 36
+                    x: 50;y: 13;width: Math.max(20,parent.width-104);height: 36
                     text: modelData.title || "Untitled window";textFormat: Text.PlainText
                     color: Theme.text;font.pixelSize: Theme.fontSize(12);wrapMode: Text.Wrap;maximumLineCount: 2;elide: Text.ElideRight
                 }
@@ -95,6 +103,11 @@ ColumnLayout {
                     x: parent.width-width-5;y: 5;implicitWidth: 24;implicitHeight: 24;padding: 0
                     iconName: "close";hint: "Close window";onClicked: Orbit.closeWindow(modelData.id)
                     accessibleLabel: "Close "+(modelData.title || "window")
+                }
+                IconButton {
+                    id: windowActions;x: parent.width-width-29;y: 5;implicitWidth: 24;implicitHeight: 24;padding: 0
+                    iconName: "more";hint: "Window actions"
+                    onClicked: Orbit.openPanelContext(windowActions,"window",modelData.id,width/2,height)
                 }
                 Accessible.name: modelData.title || "Window";Accessible.role: Accessible.Button
                 Accessible.onPressAction: overview.activate(index)

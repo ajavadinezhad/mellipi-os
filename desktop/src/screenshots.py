@@ -173,7 +173,6 @@ def capture_wayland(folder, screen_name, bounds, kind, rect=None, window_id='', 
     if kind == 'window' and os.environ.get('ORBIT_NATIVE_CONTROL'):
         return capture_native_window(folder, window_id)
     from desktop import application_environment
-    validate_dimensions(bounds[2], bounds[3], pixel_ratio)
     if kind == 'window':
         focus_wayland_window(window_id)
         window_rect = sway_window_rect(window_id)
@@ -190,13 +189,14 @@ def capture_wayland(folder, screen_name, bounds, kind, rect=None, window_id='', 
                 bounds = left, top, right - left, bottom - top
                 pixel_ratio = max(ratio for _, ratio in overlapping)
         rect = clamp_rect(window_rect, bounds)
-        validate_dimensions(rect[2], rect[3], pixel_ratio)
     arguments = ['grim', '-t', 'png']
     if kind == 'screen':
+        validate_dimensions(bounds[2], bounds[3], pixel_ratio)
         if not screen_name:raise ValueError('The selected display has no capture identifier')
         arguments += ['-o', screen_name]
     else:
         x, y, width, height = clamp_rect(rect, bounds)
+        validate_dimensions(width, height, pixel_ratio)
         arguments += ['-g', f'{x},{y} {width}x{height}']
     arguments.append('-')
     result = subprocess.run(arguments, capture_output=True, timeout=10, check=False, env=application_environment())
@@ -212,7 +212,7 @@ class ScreenshotController(QObject):
     def __init__(self, app, bridge, enabled=True, parent=None):
         super().__init__(parent)
         self.app, self.bridge, self.enabled = app, bridge, enabled
-        self._state = dict(busy=False, selecting=False, lastPath='', lastName='', error='', copyToClipboard=True)
+        self._state = dict(busy=False, selecting=False, lastPath='', lastName='', error='', copyToClipboard=True, saveToFile=True)
         self.folder = pictures_directory() / 'Screenshots'
         self._pool = None
         self._pending = None
@@ -264,7 +264,10 @@ class ScreenshotController(QObject):
                 screen = self.screen()
                 bounds = self.bounds(screen)
                 pixel_ratio = self.pixel_ratio(screen)
-                validate_dimensions(bounds[2], bounds[3], pixel_ratio)
+                if kind == 'area':
+                    validate_dimensions(rect[2], rect[3], pixel_ratio)
+                elif kind == 'screen':
+                    validate_dimensions(bounds[2], bounds[3], pixel_ratio)
                 self._pending = dict(kind=kind, rect=rect, window_id=ident, bounds=bounds, screen_name=screen.name(), pixel_ratio=pixel_ratio)
         except Exception as error:
             self.error(error)
@@ -300,8 +303,7 @@ class ScreenshotController(QObject):
         if self._closed or not self.enabled or self._state['busy']:return
         try:
             screen = self.screen()
-            bounds = self.bounds(screen)
-            validate_dimensions(bounds[2], bounds[3], self.pixel_ratio(screen))
+            self.bounds(screen)
         except Exception as error:self.error(error);return
         self.bridge.dismiss()
         self._state.update(selecting=True, error='')
@@ -320,9 +322,11 @@ class ScreenshotController(QObject):
             self._state['selecting'] = False
             self.changed.emit()
 
-    @Slot(bool)
-    def setCopy(self, enabled):
-        self._state['copyToClipboard'] = bool(enabled)
+    @Slot(str)
+    def setDestination(self, destination):
+        if self._state['busy'] or destination not in ('file', 'clipboard', 'both'):
+            return
+        self._state.update(saveToFile=destination != 'clipboard', copyToClipboard=destination != 'file')
         self.changed.emit()
 
     @Slot()
@@ -333,61 +337,82 @@ class ScreenshotController(QObject):
             if request['kind']=='window':
                 self.selected_window(request['window_id'])
                 if os.environ.get('ORBIT_NATIVE_CONTROL'):
-                    self.submit(lambda:capture_native_window(self.folder, request['window_id']))
+                    self.submit(lambda folder:capture_native_window(folder, request['window_id']))
                     return
             screen = self.screen()
             if self.bounds(screen) != request['bounds'] or screen.name() != request['screen_name'] or self.pixel_ratio(screen) != request['pixel_ratio']:raise ValueError('The selected display changed; try capturing again')
-            validate_dimensions(request['bounds'][2], request['bounds'][3], request['pixel_ratio'])
             if os.environ.get('SWAYSOCK') or os.environ.get('ORBIT_NATIVE_CONTROL'):
                 if request['kind']=='window':
                     request['window_outputs'] = tuple((self.bounds(output), self.pixel_ratio(output))
                                                       for output in self.app.screens())
-                self.submit(lambda:capture_wayland(self.folder, **request))
+                self.submit(lambda folder:capture_wayland(folder, **request))
                 return
             rect = request['rect']
             if request['kind'] == 'window':rect = clamp_rect(x11_window_rect(request['window_id']), request['bounds'])
             image = screen.grabWindow(0).toImage()
             if image.isNull():raise ValueError('The display did not return an image')
-            validate_dimensions(image.width(), image.height())
             if rect is not None:
                 sx, sy, sw, sh = request['bounds']
                 x, y, width, height = rect
                 scale_x, scale_y = image.width() / sw, image.height() / sh
                 image = image.copy(round((x-sx)*scale_x), round((y-sy)*scale_y), max(1, round(width*scale_x)), max(1, round(height*scale_y)))
             image = image.copy()
-            self.submit(lambda:save_png(self.folder, image=image))
+            self.submit(lambda folder:save_png(folder, image=image))
         except Exception as error:self.error(error)
 
     def submit(self, work):
         self._job += 1
         job = self._job
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='orbit-screenshot')
+        save_file = self._state['saveToFile']
+        copy = self._state['copyToClipboard']
+
+        def capture(folder):
+            path = work(folder)
+            result = dict(job=job, path=path if save_file else '', copy=copy)
+            if copy:
+                try:
+                    self.copy_capture(path, result)
+                except Exception as error:
+                    result['clipboardError'] = ' '.join(str(error).split())[:200]
+            return result
+
         def run():
             try:
-                path=work();result=dict(job=job,path=path)
-                if self._state['copyToClipboard'] and (os.environ.get('ORBIT_NATIVE_CONTROL') or os.environ.get('SWAYSOCK')):
-                    try:
-                        client=None
-                        if os.environ.get('ORBIT_NATIVE_CONTROL'):
-                            from native_compositor import NativeCompositor
-                            client=NativeCompositor(os.environ['ORBIT_NATIVE_CONTROL'])
-                        if client and client.status().get('capabilities',{}).get('native_png_clipboard'):
-                            reply=client.request('clipboard_png',path=str(path))
-                            if not reply.get('ok'):raise RuntimeError('Screenshot saved; '+reply.get('error','clipboard copy failed'))
-                            result['clipboardCopied']=True
-                        else:
-                            from screenshot_clipboard import publish_png
-                            owner=publish_png(path)
-                            if getattr(self,'_clipboardOwner',None):self._clipboardOwner.poll()
-                            self._clipboardOwner=owner;result['clipboardCopied']=True
-                            if client:result['clipboardWarning']='Copied for X11 apps; native Wayland clipboard support activates after your next Mellipi login'
-                    except Exception as error:result['clipboardError']=str(error)
-                return result
-            except Exception as error:return dict(job=job, error=' '.join(str(error).split())[:240])
+                if save_file:
+                    return capture(self.folder)
+                # The compositor and Xwayland owner read a PNG from a path.
+                # Both have loaded it by the time they confirm ownership.
+                with tempfile.TemporaryDirectory(prefix='mellipi-capture-') as folder:
+                    return capture(folder)
+            except Exception as error:
+                return dict(job=job, error=' '.join(str(error).split())[:240])
         future = self._pool.submit(run)
         def done(future):
             if not self._closed and not future.cancelled():self.received.emit(future.result())
         future.add_done_callback(done)
+
+    def copy_capture(self, path, result):
+        native_control = os.environ.get('ORBIT_NATIVE_CONTROL')
+        if not (native_control or os.environ.get('SWAYSOCK')):
+            image = QImage(path)
+            if image.isNull():
+                raise RuntimeError('Clipboard image could not be loaded')
+            result['clipboardImage'] = image
+            return
+        if native_control:
+            from native_compositor import NativeCompositor
+            client = NativeCompositor(native_control)
+            if client.status().get('capabilities', {}).get('native_png_clipboard'):
+                client.request('clipboard_png', path=str(path))
+                return
+        from screenshot_clipboard import publish_png
+        owner = publish_png(path)
+        if getattr(self, '_clipboardOwner', None):
+            self._clipboardOwner.poll()
+        self._clipboardOwner = owner
+        if native_control:
+            result['clipboardWarning'] = 'Copied for X11 apps. Native clipboard support activates at your next Mellipi login.'
 
     @Slot(object)
     def finished(self, result):
@@ -398,15 +423,26 @@ class ScreenshotController(QObject):
             self.error(result['error'])
             return
         path = result['path']
-        self._state.update(busy=False, lastPath=path, lastName=Path(path).name, error='')
-        if result.get('clipboardError'):self._state['error']=result['clipboardError']
-        elif result.get('clipboardWarning'):self._state['error']=result['clipboardWarning']
-        if self._state['copyToClipboard'] and not result.get('clipboardCopied') and not result.get('clipboardError'):
-            image = QImage(path)
-            if not image.isNull():self.app.clipboard().setImage(image)
-            else:self._state['error'] = 'Screenshot saved; clipboard image could not be loaded'
+        clipboard_error = result.get('clipboardError', '')
+        warning = result.get('clipboardWarning', '')
+        if clipboard_error and not path:
+            self.error('Could not copy screenshot: ' + clipboard_error)
+            return
+        if 'clipboardImage' in result:
+            self.app.clipboard().setImage(result['clipboardImage'])
+        self._state.update(busy=False, error=clipboard_error or warning)
+        if path:
+            self._state.update(lastPath=path, lastName=Path(path).name)
+        if clipboard_error:
+            notice = 'Screenshot saved · Clipboard copy failed'
+        elif warning:
+            notice = 'Screenshot saved · ' + warning if path else warning
+        elif result['copy']:
+            notice = 'Screenshot copied and saved' if path else 'Screenshot copied to clipboard'
+        else:
+            notice = 'Screenshot saved'
         self.changed.emit()
-        self.notice.emit(('Screenshot saved · ' if result.get('clipboardWarning') else 'Screenshot saved; clipboard copy failed · ' if self._state['error'] else 'Screenshot copied and saved · ' if self._state['copyToClipboard'] else 'Screenshot saved · ') + Path(path).name)
+        self.notice.emit(notice + (' · ' + Path(path).name if path else ''))
 
     @Slot()
     def openLast(self):

@@ -12,32 +12,16 @@ ScrollView {
     readonly property bool nativeFrames: typeof Orbit.nativeCompositor!=="undefined" && Orbit.nativeCompositor
     clip: true;contentWidth: availableWidth;implicitHeight: content.implicitHeight
     ColumnLayout {
-        id: content;width: view.availableWidth;spacing: 12
+        id: content;width: view.availableWidth;spacing: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
         SettingsSegments {
             Layout.fillWidth: true;segmentWidth: Math.floor((view.availableWidth-6)/3)
             value: view.section;options: [{label:"Style",value:0},{label:"Desktop",value:1},{label:"Motion & speed",value:2}]
             onSelected: value => view.section=value
         }
         ColumnLayout {
-            visible: view.section===0;Layout.fillWidth: true;spacing: 12
+            visible: view.section===0;Layout.fillWidth: true;spacing: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
             SettingsGroup {
                 title: "Theme"
-                Text {Layout.fillWidth:true;Layout.margins:4;text: "Choose a complete theme, or adjust its colors below.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
-                ColumnLayout {
-                    objectName: "themeHighContrastNotice"
-                    visible: Orbit.appearance.highContrast===true
-                    Layout.fillWidth:true;Layout.margins:4;spacing:4
-                    Text {
-                        Layout.fillWidth:true
-                        text:"High contrast is on. It overrides theme colors for readability; your theme stays selected. Turn it off in Accessibility to see each theme’s full palette."
-                        wrapMode:Text.Wrap;color:Theme.text;font.pixelSize:Theme.fontSize(11)
-                    }
-                    OrbitButton {
-                        objectName:"themeAccessibilityLink"
-                        text:"Open Accessibility…";quiet:true;implicitHeight:28
-                        onClicked:Orbit.openSettingsSection(4)
-                    }
-                }
                 Text {
                     visible: view.nativeFrames && typeof Orbit.nativePaletteSupported!=="undefined" && !Orbit.nativePaletteSupported && Orbit.appearance.themePreset && Orbit.appearance.themePreset!=="custom"
                     Layout.fillWidth:true;Layout.margins:4
@@ -46,7 +30,16 @@ ScrollView {
                 }
                 ThemePicker {Layout.fillWidth:true;Layout.leftMargin:4;Layout.rightMargin:4}
                 Text {Layout.fillWidth:true;Layout.margins:4;text:typeof Orbit.themePresets!=="undefined" ? (Orbit.themePresets.find(row=>row.id===Orbit.appearance.themePreset) || {}).description || "Choose a theme to match the desktop, windows and lock screen." : "";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(10)}
-                Text {Layout.fillWidth:true;Layout.margins:4;text:Orbit.appearance.themePreset && Orbit.appearance.themePreset!=="custom" ? "Theme selected · color changes create a custom style" : "Custom style";wrapMode:Text.Wrap;color:Theme.faint;font.pixelSize:Theme.fontSize(10)}
+                Text {Layout.fillWidth:true;Layout.margins:4;text:Orbit.appearance.themePreset && Orbit.appearance.themePreset!=="custom" ? "Color changes create a custom style" : "Custom style";wrapMode:Text.Wrap;color:Theme.faint;font.pixelSize:Theme.fontSize(10)}
+                SettingRow {
+                    label: "High contrast"
+                    SettingToggle {
+                        objectName: "highContrastToggle"
+                        label: "High contrast for the current theme"
+                        checked: Theme.highContrast
+                        onClicked: Orbit.setPreference("highContrast",checked)
+                    }
+                }
                 SettingRow {
                     label: "Mode"
                     SettingsSegments {
@@ -97,7 +90,7 @@ ScrollView {
             }
         }
         ColumnLayout {
-            visible: view.section===1;Layout.fillWidth: true;spacing: 12
+            visible: view.section===1;Layout.fillWidth: true;spacing: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
             SettingsGroup {
                 title: "Placement"
                 SettingRow {
@@ -123,7 +116,7 @@ ScrollView {
             }
         }
         ColumnLayout {
-            visible: view.section===2;Layout.fillWidth: true;spacing: 12
+            visible: view.section===2;Layout.fillWidth: true;spacing: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
             SettingsGroup {
                 title: "Performance"
                 SettingRow { label: "Shell rendering";SettingsSegments { segmentWidth: 68;value: Orbit.economy ? "economy" : "balanced";options: [{label:"Economy",value:"economy"},{label:"Balanced",value:"balanced"}];onSelected: value => Orbit.setPreference("profile",value) } }

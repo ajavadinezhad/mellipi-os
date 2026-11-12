@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "."
 ColumnLayout {
@@ -9,6 +10,7 @@ ColumnLayout {
     property string emptyLabel: "No device available"
     property string accessibleLabel: "Audio device"
     property bool expanded: false
+    property int visibleChoices: 3
     signal toggled()
     signal selected(string name)
     Layout.fillWidth: true;spacing: 2
@@ -42,10 +44,12 @@ ColumnLayout {
         onClicked: picker.toggled()
     }
     ListView {
+        id: choices
         objectName: picker.objectName+"List"
-        Layout.fillWidth: true;Layout.preferredHeight: visible ? Math.min(count,3)*30 : 0
+        Layout.fillWidth: true;Layout.preferredHeight: visible ? Math.min(count,picker.visibleChoices)*30 : 0
         visible: picker.expanded;clip: true;boundsBehavior: Flickable.StopAtBounds
-        model: picker.devices;interactive: count>3
+        model: picker.devices;interactive: count>picker.visibleChoices
+        ScrollBar.vertical: ScrollBar { policy: choices.interactive ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
         delegate: OrbitButton {
             id: choice
             objectName: picker.objectName+"Choice"+index

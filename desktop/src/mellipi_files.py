@@ -403,14 +403,12 @@ class Files(QMainWindow):
         self.sidebar.addWidget(devices)
         self.sidebar.addStretch()
         body = QHBoxLayout()
-        sidebar = QWidget()
-        sidebar.setObjectName('places')
-        sidebar.setFixedWidth(160)
-        sidebar.setLayout(self.sidebar)
-        self.sidebar.setContentsMargins(8, 8, 8, 8)
+        self.places_panel = QWidget()
+        self.places_panel.setObjectName('places')
+        self.places_panel.setLayout(self.sidebar)
         self.sidebar.setSpacing(2)
         body.setSpacing(0)
-        body.addWidget(sidebar)
+        body.addWidget(self.places_panel)
         divider = QFrame()
         divider.setObjectName('divider')
         divider.setFixedWidth(1)
@@ -426,12 +424,10 @@ class Files(QMainWindow):
         rule.setObjectName('divider')
         rule.setFixedHeight(1)
         layout.addWidget(rule)
-        content = QVBoxLayout()
-        content.setContentsMargins(0, 8, 0, 0)
-        content.setSpacing(8)
-        content.addWidget(self.search)
-        content.addLayout(body, 1)
-        layout.addLayout(content, 1)
+        self.content_layout = QVBoxLayout()
+        self.content_layout.addWidget(self.search)
+        self.content_layout.addLayout(body, 1)
+        layout.addLayout(self.content_layout, 1)
         self.setCentralWidget(central)
         central.setMouseTracking(True)
         central.installEventFilter(self)
@@ -783,7 +779,12 @@ class Files(QMainWindow):
         for button in self.titlebar.findChildren(QPushButton):
             button.setIconSize(QSize(16, 16))
             button.setMinimumHeight(28)
-        padding = {'comfortable': 8, 'compact': 5, 'extra': 3}[density]
+        padding = {'comfortable': 7, 'compact': 5, 'extra': 3}[density]
+        sidebar_width = {'comfortable': 148, 'compact': 132, 'extra': 116}[density]
+        text_scale = preferences.values['textScale']
+        self.sidebar.setContentsMargins(padding, padding, padding, padding)
+        self.content_layout.setContentsMargins(0, padding, 0, 0)
+        self.content_layout.setSpacing(padding)
         radius = {'square': 0, 'soft': 4, 'rounded': 8}[preferences.values['corners']]
         self.setStyleSheet('''
             QMainWindow, QStatusBar { background: %(background)s; color: %(text)s; }
@@ -824,6 +825,7 @@ class Files(QMainWindow):
         font = app.font()
         font.setPixelSize(max(8, round((11 if density == 'extra' else 12) * preferences.values['textScale'])))
         app.setFont(font)
+        self.places_panel.setFixedWidth(max(round(sidebar_width * max(1, text_scale)), self.sidebar.minimumSize().width()))
 
     def navigate(self, folder, record=True):
         folder = (self.folder / folder if hasattr(self, 'folder') else folder).absolute()

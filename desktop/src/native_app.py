@@ -212,10 +212,8 @@ class Bridge(QObject):
             if self.xwaylandControls:self.xwaylandControls.restore_state(int(ident))
         self.windowTask(ident,action,lambda:self.arrangements.engine.record_action(action,change,[int(ident)]) if self.arrangements.engine else change(),lambda _:self.arrangements.changed.emit())
     def windowPalette(self):
-        if not self.appearance.get('highContrast'):return self.appearance.get('themePalette',{})
-        if self.themeMode=='light':
-            return dict(background='#ffffff',surface='#ffffff',raised='#e6e6e6',hover='#d0d0d0',border='#000000',text='#000000',muted='#222222',faint='#333333')
-        return dict(background='#000000',surface='#000000',raised='#161616',hover='#202020',border='#ffffff',text='#ffffff',muted='#eeeeee',faint='#dddddd')
+        return {key: value for key,value in self.appearance.get('themePalette',{}).items()
+                if key != 'focus'}
     @Slot()
     def applyNativePreferences(self):
         if not native_session() or not self.windowActions:return
@@ -304,7 +302,7 @@ class Bridge(QObject):
         result=[dict(id=key,name=name,description=description,icon=icon,searchText=' '.join((name,description,words)).lower(),destination='settings' if key=='settings' else 'action:'+key) for key,name,description,icon,words in rows]
         result.extend(setting_actions())
         result.extend([
-            dict(id='screenshot',name='Take a screenshot',description='Choose display, area or window; copy and save the screenshot',icon='camera-photo',searchText='screenshot screen shot capture snip clipboard print screen',destination='panel:screenshot'),
+            dict(id='screenshot',name='Take a screenshot',description='Capture a display, area or window to a file or the clipboard',icon='camera-photo',searchText='screenshot screen shot capture snip clipboard print screen',destination='panel:screenshot'),
             dict(id='do-not-disturb',name='Do not disturb',description='Open notification controls',icon='notifications-disabled',searchText='do not disturb dnd notifications quiet mute alerts',destination='panel:notifications'),
         ])
         return result
@@ -314,6 +312,10 @@ class Bridge(QObject):
         from action_targets import SETTING_TARGETS,BUILTIN_TOOLS
         if action in BUILTIN_TOOLS and getattr(self,'desktopTools',None):
             self.openSettingsSection(16);self.desktopTools.open(BUILTIN_TOOLS[action]);return
+        if action=='install-apps' and any(app['id']=='mellipi-software.desktop' for app in self._apps):
+            self.dismiss()
+            self.launch('mellipi-software.desktop')
+            return
         if action in SETTING_TARGETS:return self.openSettingsTarget(*SETTING_TARGETS[action])
         if action in ('screenshot','do-not-disturb'):
             panel='screenshot' if action=='screenshot' else 'notifications'
@@ -654,6 +656,12 @@ class Bridge(QObject):
             if icon:
                 item['icon']=icon
             items.append(item)
+        def add_workspace_moves(window):
+            if self.windowActions and window:
+                for workspace in self._desktops:
+                    if workspace['id'] != window.get('desktop'):
+                        number=workspace['id']+1
+                        add('Move to workspace '+str(number),'move-window',[window['id'],number])
         if kind in ('dock','app','window') and ident=='orbit-settings':
             add('Open Settings','settings-task');add('Close Settings','close-settings-task')
         elif kind=='desktop':
@@ -667,7 +675,7 @@ class Bridge(QObject):
             group=next((g for g in self._dockApps if g['id']==ident),None)
             if group and group['windows']:
                 add('Switch to '+group['name'],'dock',ident)
-                if len(group['windows'])>1:add('Choose window…','dock-all',ident)
+                if len(group['windows'])>1:add('Choose or move a window…','dock-all',ident)
 
             app=next((a for a in self._apps if a['id']==ident),None)
             if app:
@@ -675,7 +683,10 @@ class Bridge(QObject):
                 add('Unpin from taskbar' if ident in self.preferences.values['pins'] else 'Pin to taskbar','pin',ident)
                 add('Add to desktop','desktop-shortcut',ident)
             if group and len(group['windows'])==1:
-                wid=group['windows'][0]['id'];add('Minimize','minimize-window',wid);add('Maximize / Restore size','maximize-window',wid);add('Close window','close-window',wid)
+                window=group['windows'][0];wid=window['id']
+                add('Minimize','minimize-window',wid);add('Maximize / Restore size','maximize-window',wid)
+                add_workspace_moves(window)
+                add('Close window','close-window',wid)
         elif kind=='desktop-file':
             add('Open','desktop-open',ident)
             if not ident.startswith('orbit-place:'):
@@ -698,7 +709,7 @@ class Bridge(QObject):
             add('Minimize','minimize-window',ident);add('Maximize / Restore size','maximize-window',ident);add('Close window','close-window',ident)
             if self.windowActions:
                 add('Snap left','snap-window',[ident,'left']);add('Snap right','snap-window',[ident,'right'])
-                for number in range(1,5):add('Move to workspace '+str(number),'move-window',[ident,number])
+                add_workspace_moves(target)
         if kind in ('desktop','window') and self.arrangements.undoLabel:add('Undo '+self.arrangements.undoLabel,'undo-arrangement')
         if kind=='object':
             add('Copy full content','copy',ident);add('Open','open',ident)
@@ -744,7 +755,28 @@ class Bridge(QObject):
     def panelPopupOrigin(self,panel,width,height,screen,edge):return panel_body_origin(panel,width,height,screen,edge,Bridge.taskbarBodyRect(self,screen))
     @Slot('QVariantMap',result='QVariantMap')
     def taskbarBodyRect(self,screen):
-        return taskbar_body_rect(screen,self.appearance,len(getattr(self,'_dockApps',[]))+(1 if getattr(self,'_settingsOpen',False) else 0),getattr(self,'compact',True))
+        for window in getattr(self,'shellWindows',()):
+            if window.objectName() not in ('topbarSurface','secondaryTopbarSurface'):continue
+            output=window.screen()
+            if output is None:continue
+            geometry=output.geometry()
+            if (geometry.x(),geometry.y(),geometry.width(),geometry.height()) != tuple(screen[key] for key in ('x','y','width','height')):continue
+            body=window.property('orbitTaskbarBody')
+            if body and body.width()>0 and body.height()>0:
+                frame=panel_rect(screen,self.appearance)
+                return dict(x=frame['x']+round(body.x()),y=frame['y']+round(body.y()),width=round(body.width()),height=round(body.height()))
+        return taskbar_body_rect(screen,self.appearance)
+
+    @Slot(QObject)
+    def syncTaskbarMask(self,window):
+        if not isinstance(window,QQuickWindow) or window.objectName() not in ('topbarSurface','secondaryTopbarSurface'):return
+        body=window.property('orbitTaskbarBody')
+        if body and body.width()>0 and body.height()>0:
+            window.setMask(QRegion(round(body.x()),round(body.y()),round(body.width()),round(body.height())))
+        else:
+            window.setMask(QRegion())
+        if window is self.topbarWindow and self.panel:self.positionPanel(self.panel)
+
     @Slot(str,int,int,int,int,str,result='QVariantMap')
     def panelBodyMask(self,panel,bw,bh,width,height,edge):return panel_mask_origin(bw,bh,width,height,panel,edge)
     def itemSurfaceName(self,item):
@@ -874,7 +906,8 @@ class Bridge(QObject):
         self.windowTask(ident,'snap',lambda:self.arrangements.engine.record_action('Snap '+side,lambda:self.windowActions.snap(int(ident),side),[int(ident)]),lambda _:self.arrangements.changed.emit())
     @Slot(str,int)
     def moveWindow(self,ident,number):
-        if not self.windowActions or not 1<=number<=99:return
+        if not self.windowActions or not any(row['id']==number-1 for row in self._desktops):return
+        if not any(row['id']==ident for row in self._windows):return
         self.windowTask(ident,'move',lambda:self.arrangements.engine.record_action('Move to workspace '+str(number),lambda:self.windowActions.command(f'[con_id={int(ident)}] move container to workspace number {number}'),[int(ident)]),lambda _:self.arrangements.changed.emit())
     @Slot(str)
     def minimizeWindow(self,ident):
@@ -1501,8 +1534,7 @@ def main():
             configure(windows['desktopSurface'],'desktopSurface',bridge.compact)
             for name in ('topbarSurface','dockSurface'):configure(windows[name],name,bridge.compact,bridge.appearance['dockAlign'],bridge.appearance['shellLayout']=='fold',panel_position=panel_edge(bridge.appearance),floating=bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(bridge.appearance))
             configure(root.findChild(QObject,'dockReserveSurface'),'dockReserveSurface',bridge.compact,spine=bridge.appearance['shellLayout']=='fold',panel_position=panel_edge(bridge.appearance),floating=bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(bridge.appearance))
-        bar=bridge.taskbarBodyRect(bridge.screenMap());frame=panel_rect(bridge.screenMap(),bridge.appearance)
-        windows['topbarSurface'].setMask(QRegion(bar['x']-frame['x'],bar['y']-frame['y'],bar['width'],bar['height']))
+        bridge.syncTaskbarMask(windows['topbarSurface'])
         if bridge.panel:bridge.positionPanel(bridge.panel)
         configure_x11(windows['topbarSurface'],'DOCK',(64 if panel_edge(bridge.appearance)=='top' else -64 if panel_edge(bridge.appearance)=='bottom' else 0) if bridge.appearance['shellLayout']=='fold' else 30 if bridge.compact else 38,left=64 if bridge.appearance['shellLayout']=='fold' and panel_edge(bridge.appearance)=='left' else 0,right=64 if bridge.appearance['shellLayout']=='fold' and panel_edge(bridge.appearance)=='right' else 0)
         configure_x11(windows['dockSurface'],'DOCK',0 if bridge.appearance['shellLayout']=='fold' else -62 if bridge.compact else -76)

@@ -1535,13 +1535,17 @@
       "bytes": 33452,
       "sha256": "449f082fd4edea4b40e4e25d3b14b562fd37ea84682839210c6eafeeb4aeb718"
     },
+    "assets/desktop-software.webp": {
+      "bytes": 33778,
+      "sha256": "7e736ad615db97667cf23594f77e9e0a98303a0127c2e48a528baac805d8f11a"
+    },
     "favicon.svg": {
       "bytes": 267,
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 10226,
-      "sha256": "b2d55a6bdfd91d4dd986d95a0e38388d4798f55e705f7e76b73216a5515d0d41"
+      "bytes": 12416,
+      "sha256": "0f9bda4028fae02e327d81985f0ffed7c5c246a6c960c42b90cfea4c2ae8cc33"
     },
     "site-config.json": {
       "bytes": 802,
@@ -7100,8 +7104,8 @@
       "sha256": "eec6e4be808e1a445e677dba1e20e5acb2f091825f5ff4c6ac49d5843b2185f9"
     },
     "style.css": {
-      "bytes": 13989,
-      "sha256": "311351da8849a79f37796c2c4e191436bc7d1b1d116c99628fcd236b3b154515"
+      "bytes": 14134,
+      "sha256": "07bcbe4358ef2d8e93fafc6dff2a4abd9d5c4e7f4a839a2045bc4db133f38c00"
     },
     "theme-init.js": {
       "bytes": 2559,

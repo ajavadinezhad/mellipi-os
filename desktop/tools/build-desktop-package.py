@@ -107,6 +107,8 @@ def stage_package(stage,version,architecture,root=ROOT):
     write(stage/'usr/share/wayland-sessions/abstract.desktop','[Desktop Entry]\nName=Mellipi\nComment=Lightweight independent Wayland desktop\nExec=/usr/bin/mellipi-session\nTryExec=/usr/bin/mellipi-session\nType=Application\nDesktopNames=Orbit;\n')
     write(stage/'usr/bin/mellipi-terminal','#!/bin/sh\nexec /usr/bin/python3 /usr/lib/abstract/mellipi_terminal.py "$@"\n',0o755)
     write(stage/'usr/share/applications/mellipi-terminal.desktop','[Desktop Entry]\nType=Application\nName=Mellipi Terminal\nExec=/usr/bin/mellipi-terminal\nIcon=utilities-terminal\nCategories=System;TerminalEmulator;\nStartupWMClass=mellipi-terminal\n')
+    write(stage/'usr/bin/mellipi-software','#!/bin/sh\nexec /usr/bin/python3 /usr/lib/abstract/mellipi_software.py "$@"\n',0o755)
+    write(stage/'usr/share/applications/mellipi-software.desktop','[Desktop Entry]\nType=Application\nName=Mellipi Software\nComment=Find and install applications\nExec=/usr/bin/mellipi-software\nIcon=system-software-install\nCategories=System;PackageManager;\nKeywords=Store;Software;Install;APT;Flatpak;Flathub;Snap;\nStartupWMClass=mellipi-software\n',0o644)
     write(stage/'usr/bin/mellipi-files','#!/bin/sh\nexec /usr/bin/python3 /usr/lib/abstract/mellipi_files.py "$@"\n',0o755)
     write(stage/'usr/share/applications/mellipi-files.desktop','[Desktop Entry]\nType=Application\nName=Mellipi Files\nExec=/usr/bin/mellipi-files %U\nIcon=system-file-manager\nCategories=System;FileManager;\nMimeType=inode/directory;\nStartupWMClass=mellipi-files\n')
     write(stage/'etc/xdg/orbit-mimeapps.list','[Default Applications]\ninode/directory=mellipi-files.desktop;\n')

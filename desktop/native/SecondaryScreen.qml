@@ -36,12 +36,16 @@ QtObject {
 
     }
     property Window topbar: Window {
+        id: secondaryBar
         objectName: "secondaryTopbarSurface";title: "Mellipi — Top panel"
         property string orbitOutputName: output.screenName
         x: output.barGeometry.x;y: output.barGeometry.y;width: output.barGeometry.width;height: output.barGeometry.height
         visible: output.ready && Orbit.surfacesReady;color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
-        OrbitSpine {anchors.fill: parent;visible: Theme.fold;clockText: output.shortClock;clockNow: output.now;outputName: output.screenName}
+        property rect orbitTaskbarBody: spine.visible ? spine.bodyGeometry : Qt.rect(0,0,0,0)
+        function syncBarMask() {Orbit.syncTaskbarMask(secondaryBar);}
+        onOrbitTaskbarBodyChanged: Qt.callLater(syncBarMask)
+        OrbitSpine {id: spine;anchors.fill: parent;visible: Theme.fold;clockText: output.shortClock;clockNow: output.now;outputName: output.screenName}
         FoldTopbar {visible: !Theme.fold;width: parent.width;height: Theme.compact ? 30 : 38;clockText: output.clock;screenWidth: output.geometry.width;outputName: output.screenName}
     }
     property Window reserve: Window {

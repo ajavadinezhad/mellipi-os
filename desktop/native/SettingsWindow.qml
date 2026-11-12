@@ -72,7 +72,7 @@ Window {
             }
         }
         Rectangle {Layout.fillWidth:true;Layout.preferredHeight:1;color:Theme.separator}
-        SystemPanel {Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:8}
+        SystemPanel {Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins: Theme.extraCompact ? 3 : Theme.compact ? 5 : 6}
         Text {
             visible:!!Orbit.notice;Layout.fillWidth:true;Layout.leftMargin:8;Layout.rightMargin:8
             text:Orbit.notice;color:Theme.muted;font.pixelSize:Theme.fontSize(10);wrapMode:Text.Wrap;textFormat:Text.PlainText

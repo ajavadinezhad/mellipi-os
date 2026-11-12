@@ -7,7 +7,7 @@ from system_tools_data import add_startup_application,DEFAULT_TYPES,startup_rows
 # Existing installed services/frontends own privileged operations and package work.
 CANDIDATES={
  'files':('Files',(('gio','open',Path.home().as_uri()),('xdg-open',str(Path.home())),('thunar',),('nautilus',),('dolphin',),('nemo',),('pcmanfm-qt',),('pcmanfm',))),
- 'software':('Install applications',(('gnome-software',),('plasma-discover',),('mintinstall',),('pamac-manager',),('abstract-package-manager',),('synaptic-pkexec',),('synaptic',))),
+ 'software':('Install applications',(('mellipi-software',),('gnome-software',),('plasma-discover',),('mintinstall',),('pamac-manager',),('abstract-package-manager',),('synaptic-pkexec',),('synaptic',))),
  'updates':('Software updates',(('mintupdate',),('gnome-software','--mode=updates'),('plasma-discover','--mode','Update'),('pamac-manager','--updates'),('abstract-package-manager',),('synaptic-pkexec',),('synaptic',))),
  'users':('Users and passwords',(('cinnamon-settings','users'),('gnome-control-center','user-accounts'),('systemsettings','kcm_users'),('mate-user-admin',),('users-admin',))),
  'datetime':('Date and time',(('cinnamon-settings','calendar'),('gnome-control-center','datetime'),('systemsettings','kcm_clock'),('time-admin',))),

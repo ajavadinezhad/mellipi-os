@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 spec=importlib.util.spec_from_file_location('native_shell_qa',ROOT/'tools/qa-native-shell.py');base=importlib.util.module_from_spec(spec);spec.loader.exec_module(base);qa=base.qa
 from native_compositor import NativeCompositor
-from panel_policy import panel_rect,panel_body_origin,taskbar_body_rect,panel_thickness
+from panel_policy import panel_rect,panel_body_origin,panel_thickness
 
 def main():
     parent=native=None;checks=[]
@@ -56,8 +56,13 @@ def main():
                     try:qa.wait(lambda:qa.control('status')['panel']==panel,5)
                     except AssertionError:
                         print('PANEL DEBUG',edge,length,floating,panel,qa.control('status'),flush=True);raise
-                    body=qa.wait(lambda:qa.control('qa-shell-item:panelBody'),5);origin=panel_body_origin(panel,body['width'],body['height'],output,edge,taskbar_body_rect(output,appearance,compact=density!='comfortable'))
-                    assert abs(body['x']-origin['x'])<=1 and abs(body['y']-origin['y'])<=1,(edge,panel,body,origin)
+                    def aligned():
+                        body=qa.control('qa-shell-item:panelBody')
+                        spine=qa.control('qa-shell-item:orbitSpine')
+                        if not body or not spine:return False
+                        origin=panel_body_origin(panel,body['width'],body['height'],output,edge,spine)
+                        return abs(body['x']-origin['x'])<=1 and abs(body['y']-origin['y'])<=1
+                    qa.wait(aligned,5)
                     assert not qa.control('status')['qml_errors'],qa.control('status')['qml_errors']
                     qa.control(panel);time.sleep(.15)
                 checks.append((edge,density));print('PASS '+str(checks[-1])+' workarea, same process, controls and popovers',flush=True)

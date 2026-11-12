@@ -55,15 +55,12 @@ def panel_body_origin(panel,width,height,screen,edge,body=None):
     return dict(x=x,y=y)
 
 
-def taskbar_body_rect(screen,appearance,tasks=0,compact=True):
+def taskbar_body_rect(screen,appearance):
     surface=panel_rect(screen,appearance);edge=panel_edge(appearance)
     vertical=edge in ('left','right');margin=8 if appearance.get('taskbarFloating') else 0
     available=surface['height'] if vertical else surface['width']
     length=max(1,available-2*margin)
-    extra=appearance.get('density')=='extra';thickness=panel_thickness(appearance)
-    if appearance.get('taskbarLength')=='fit':
-        desired=(420 if extra else 480 if compact else 550)+min(8,max(0,tasks))*(38 if extra else 46 if compact else 55) if vertical else (480 if extra else 560 if compact else 640)+min(8,max(0,tasks))*(59 if extra else 67 if compact else 79)
-        length=min(length,desired)
+    thickness=panel_thickness(appearance)
     if vertical:return dict(x=surface['x']+margin,y=surface['y']+(surface['height']-length)//2,width=thickness,height=length)
     return dict(x=surface['x']+(surface['width']-length)//2,y=surface['y']+margin,width=length,height=thickness)
 

@@ -12,11 +12,11 @@ from pathlib import Path
 
 def publish_png(path):
     environment=dict(os.environ,QT_QPA_PLATFORM='xcb')
-    if not environment.get('DISPLAY'):raise RuntimeError('Screenshot saved; clipboard needs the session Xwayland display')
+    if not environment.get('DISPLAY'):raise RuntimeError('Screenshot clipboard needs the session Xwayland display')
     process=subprocess.Popen(['/usr/bin/python3',str(Path(__file__).resolve()),str(path)],env=environment,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
     try:
         ready,_,_=select.select([process.stdout],[],[],4)
-        if not ready or process.stdout.readline()!=b'READY\n':raise RuntimeError('Screenshot saved; clipboard ownership could not be established')
+        if not ready or process.stdout.readline()!=b'READY\n':raise RuntimeError('Screenshot clipboard ownership could not be established')
     except Exception:
         process.terminate();process.wait(timeout=2);raise
     finally:process.stdout.close()

@@ -1,6 +1,6 @@
 """Per-output static desktop/bar/dock surfaces; no extra processes or polling."""
 from pathlib import Path
-from panel_policy import panel_edge,panel_rect,taskbar_body_rect,panel_thickness
+from panel_policy import panel_edge,panel_rect,panel_thickness
 from qt_compat import QObject,QQuickWindow,QUrl,QRegion,QT5
 if QT5:
     from PyQt5.QtQml import QQmlComponent,QQmlEngine
@@ -50,8 +50,7 @@ class SecondaryScreens(QObject):
                 if window.objectName()=='secondaryTopbarSurface':
                     bar=panel_rect(geometry,self.bridge.appearance)
                     window.resize(bar['width'],bar['height'])
-                    body=self.bridge.taskbarBodyRect(geometry)
-                    window.setMask(QRegion(body['x']-bar['x'],body['y']-bar['y'],body['width'],body['height']))
+                    self.bridge.syncTaskbarMask(window)
                 if window.objectName()=='secondaryDockSurface':
                     g=self.bridge.dockForWidth(geometry['width']);alignment=self.bridge.appearance['dockAlign']
                     x=0 if alignment=='left' else window.width()-g['bodyWidth'] if alignment=='right' else (window.width()-g['bodyWidth'])//2

@@ -185,6 +185,15 @@ ColumnLayout {
                     Text {text: modelData.name;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.fontSize(12);textFormat: Text.PlainText}
                     Text {text: modelData.description;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.muted;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText}
                 }
+                IconButton {
+                    objectName: "unifiedWindowActions"
+                    visible: modelData.kind==="window"
+                    iconName: "more";hint: "Window actions"
+                    accessibleLabel: hint+" · "+modelData.name
+                    implicitWidth: 26;implicitHeight: 26
+                    onActiveFocusChanged: if(activeFocus)resultsList.currentIndex=result.index
+                    onClicked: launcher.openResultMenu(result.index)
+                }
                 IconButton {objectName: "unifiedPin";onActiveFocusChanged:if(activeFocus)resultsList.currentIndex=result.index;visible: !!modelData.appId;iconName: Orbit.appearance.pins.indexOf(modelData.appId)>=0 ? "pinned" : "pin";hint: Orbit.appearance.pins.indexOf(modelData.appId)>=0 ? "Unpin app" : "Pin app";accessibleLabel: hint+" · "+modelData.name;implicitWidth: 26;implicitHeight: 26;onClicked: Orbit.togglePin(modelData.appId)}
             }
         }

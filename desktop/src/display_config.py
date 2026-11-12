@@ -14,11 +14,15 @@ def catalog(raw):
     for output in raw[:32]:
         name=output.get('name','')
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',name) or not output.get('active'):continue
-        modes=[]
+        supported={}
         for mode in output.get('modes',[])[:256]+[output.get('current_mode') or {}]:
             if not all(type(mode.get(k)) is int and mode[k]>0 for k in ('width','height')) or type(mode.get('refresh')) is not int or mode['refresh']<0:continue
-            value=mode_name(mode)
-            if not any(m['value']==value for m in modes):modes.append(dict(value=value,label=f'{mode["width"]} × {mode["height"]}'+(f' · {mode["refresh"]/1000:g} Hz' if mode['refresh'] else '')))
+            width,height,refresh=(mode[key] for key in ('width','height','refresh'))
+            supported[width,height,refresh]=dict(
+                value=mode_name(mode),
+                label=f'{width} × {height}'+(f' · {refresh/1000:g} Hz' if refresh else ''),
+            )
+        modes=[supported[key] for key in sorted(supported,reverse=True)]
         current=output.get('current_mode') or {}
         if not modes or not current:continue
         rect=output.get('rect',{})

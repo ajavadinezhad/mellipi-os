@@ -648,9 +648,6 @@ impl Backend {
                 );
                 output.set_preferred(wlmode);
                 state.protocols.output_changed(&output);
-                for mode in info.modes() {
-                    output.add_mode(Mode::from(*mode));
-                }
                 self.surfaces.insert(
                     crtc,
                     Surface {
@@ -666,6 +663,22 @@ impl Backend {
                 );
             }
             let surface = self.surfaces.get_mut(&crtc).unwrap();
+            // A reprobe can change the mode list while the output stays connected.
+            let available: Vec<_> = info.modes().iter().copied().map(Mode::from).collect();
+            let current = surface.output.current_mode();
+            for advertised in surface.output.modes() {
+                if Some(advertised) != current && !available.contains(&advertised) {
+                    surface.output.delete_mode(advertised);
+                }
+            }
+            for mode in available {
+                surface.output.add_mode(mode);
+            }
+            if let Some(preferred) = info.modes().iter().find(|mode| {
+                mode.mode_type().contains(ModeTypeFlags::PREFERRED)
+            }) {
+                surface.output.set_preferred(Mode::from(*preferred));
+            }
             state
                 .space
                 .map_output(&surface.output, surface.output.current_location());
@@ -1109,7 +1122,9 @@ impl Backend {
         let old_origin = old_geometry.map(|g| g.loc).unwrap_or_default();
         // Smithay tests mode compatibility before staging; queue_buffer then performs
         // the atomic modeset. Restore the exact original state if rendering rejects it.
-        surface.scanout.use_mode(mode).map_err(|e| e.to_string())?;
+        if mode != old_mode {
+            surface.scanout.use_mode(mode).map_err(|e| e.to_string())?;
+        }
         output.change_current_state(
             Some(Mode::from(mode)),
             Some(transform),
@@ -1123,7 +1138,9 @@ impl Backend {
         state.protocols.output_changed(&output);
         layer_map_for_output(&output).arrange();
         state.reconfigure_output_windows(&output);
-        surface.scanout.reset_buffers();
+        if mode != old_mode {
+            surface.scanout.reset_buffers();
+        }
         surface.damage = OutputDamageTracker::from_output(&output);
         surface.dirty = true;
         if let Err(error) = if self.initializing {
@@ -1132,7 +1149,9 @@ impl Backend {
             self.render(state)
         } {
             let surface = self.surfaces.get_mut(&crtc).unwrap();
-            let _ = surface.scanout.use_mode(old_mode);
+            if mode != old_mode {
+                let _ = surface.scanout.use_mode(old_mode);
+            }
             surface.scanout.reset_buffers();
             surface.pending = false;
             surface.dirty = true;

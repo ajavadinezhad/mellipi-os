@@ -57,6 +57,7 @@ ColumnLayout {
                 }
                 AudioDevicePicker {
                     objectName: "displayModePicker";accessibleLabel: "Resolution and refresh rate";enabled: panel.editing
+                    visibleChoices: 7
                     devices: panel.currentOutput.modes.map(m => ({name:m.value,description:m.label}))
                     selectedName: panel.chosenMode;emptyLabel: "No modes reported"
                     expanded: panel.expanded==="mode"
@@ -70,10 +71,16 @@ ColumnLayout {
                 enabled: panel.editing
                 AudioDevicePicker {
                     objectName: "displayScalePicker";accessibleLabel: "Display scale"
+                    visibleChoices: 5
                     devices: [.5,.75,1,1.25,1.5,1.75,2,2.5,3].map(s => ({name:String(s),description:Math.round(s*100)+"%"}))
                     selectedName: String(panel.chosenScale);expanded: panel.expanded==="scale"
                     onToggled: panel.expanded=expanded ? "" : "scale"
                     onSelected: name => {panel.draft=true;panel.chosenScale=Number(name);panel.expanded="";}
+                }
+                Text {
+                    Layout.fillWidth: true;Layout.margins: 6
+                    text: "Display scale changes the size of apps and desktop controls. Select a scale, then choose Apply."
+                    wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11)
                 }
                 SettingsSegments {
                     objectName: "displayRotation";Layout.fillWidth: true;segmentWidth: Math.max(42,Math.floor((body.availableWidth-24)/4))

@@ -17,7 +17,12 @@ def lock_style(values):
     defaults=dict(background='#eef2f6' if light else '#07090c',surface='#ffffff' if light else '#101419',border='#bac8d3' if light else '#38424d',text='#15222d' if light else '#e1e8ed',muted='#526473' if light else '#adb7c4')
     defaults.update({key:chosen[key] for key in defaults if key in chosen})
     defaults.update(accent=values.get('accent','#a9d9c3'),warning='#986411' if light else '#dfc27d',error='#b52b2b' if light else '#e99b91',highContrast=hc,light=light,textScale=max(.85,min(1.5,float(values.get('textScale',1)))))
-    if hc:defaults.update(background='#ffffff' if light else '#000000',surface='#ffffff' if light else '#000000',border='#000000' if light else '#ffffff',text='#000000' if light else '#ffffff',muted='#222222' if light else '#eeeeee')
+    if hc:
+        from app_palette import contrast_palette
+        contrast=contrast_palette(dict(mode='light' if light else 'dark',
+                                       darkLevel=values.get('darkLevel','normal'),
+                                       accent=defaults['accent']),chosen)
+        defaults.update({key:contrast[key] for key in ('background','surface','border','text','muted')})
     source=wallpaper_source(values.get('wallpaper','auto'))
     if not source:
         style=values.get('wallpaper','auto');suffix='light' if light else 'black' if values.get('darkLevel')=='black' else 'dark'

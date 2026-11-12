@@ -123,7 +123,10 @@ QtObject {
         id: top; objectName: "topbarSurface"; title: "Mellipi — Bar"
         visible: Orbit.surfacesReady; x: shell.foldStyle ? shell.taskbarRect.x : shell.sx; y: shell.foldStyle ? shell.taskbarRect.y : shell.sy; width: shell.foldStyle ? shell.taskbarRect.width : shell.sw; height: shell.foldStyle ? shell.taskbarRect.height : Orbit.isWayland ? 38 : (Theme.compact ? 30 : 38); color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
-        OrbitSpine {anchors.fill: parent;visible: shell.foldStyle;clockText: ClockFormat.shortTime(shell.clockNow,Orbit.appearance.clock24);clockNow: shell.clockNow;outputName: Orbit.selectedOutput}
+        property rect orbitTaskbarBody: spine.visible ? spine.bodyGeometry : Qt.rect(0,0,0,0)
+        function syncBarMask() {Orbit.syncTaskbarMask(top);}
+        onOrbitTaskbarBodyChanged: Qt.callLater(syncBarMask)
+        OrbitSpine {id: spine;anchors.fill: parent;visible: shell.foldStyle;clockText: ClockFormat.shortTime(shell.clockNow,Orbit.appearance.clock24);clockNow: shell.clockNow;outputName: Orbit.selectedOutput}
         Item {
             visible: !shell.foldStyle
             width: parent.width;height: Theme.compact ? 30 : 38
@@ -280,7 +283,7 @@ QtObject {
         objectName: "overlaySurface"; title: "Mellipi — Action surface"
         visible: Orbit.surfacesReady && shell.overlayShown
         width: Orbit.isWayland ? 760 : shell.panelBodyWidth;height: Orbit.isWayland ? 620 : shell.panelBodyHeight
-        readonly property var popupOrigin: {var style=Orbit.appearance;var tasks=Orbit.dockApps;return Orbit.panelPopupOrigin(shell.renderedPanel,width,height,Orbit.screenGeometry,shell.panelEdge)}
+        readonly property var popupOrigin: {var style=Orbit.appearance;var bar=top.orbitTaskbarBody;return Orbit.panelPopupOrigin(shell.renderedPanel,width,height,Orbit.screenGeometry,shell.panelEdge)}
         x: popupOrigin.x
         y: popupOrigin.y
         color: "transparent";flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint

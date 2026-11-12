@@ -9,9 +9,11 @@ Item {
     readonly property bool horizontal: Orbit.appearance.panelPosition==="top" || Orbit.appearance.panelPosition==="bottom"
     readonly property int thickness: Theme.barThickness
     readonly property real inset: Orbit.appearance.taskbarFloating ? 8 : 0
-    readonly property int taskCount: Orbit.dockApps.length
-    readonly property real fitLength: horizontal ? (Theme.extraCompact ? 480 : Theme.compact ? 560 : 640)+Math.min(8,taskCount)*(Theme.extraCompact ? 59 : Theme.compact ? 67 : 79) : (Theme.extraCompact ? 420 : Theme.compact ? 480 : 550)+Math.min(8,taskCount)*(Theme.extraCompact ? 38 : Theme.compact ? 46 : 55)
-    readonly property real bodyLength: Math.min((horizontal ? width : height)-2*inset,Orbit.appearance.taskbarLength==="fit" ? fitLength : (horizontal ? width : height)-2*inset)
+    readonly property bool fit: Orbit.appearance.taskbarLength==="fit"
+    readonly property real availableLength: Math.max(0,(horizontal ? width : height)-2*inset)
+    readonly property real footerLength: horizontal ? footer.width+10 : footer.height+(Theme.compact ? 8 : 12)
+    readonly property real bodyLength: fit ? Math.min(availableLength,Math.ceil(spine.taskStart+spine.preferredTaskLength+8+footerLength)) : availableLength
+    readonly property rect bodyGeometry: Qt.rect(spine.x,spine.y,spine.width,spine.height)
     Item {
 
     id: spine
@@ -26,8 +28,8 @@ Item {
     property string clockText: frame.clockText
     property date clockNow: frame.clockNow
     readonly property string edge: Orbit.appearance.panelPosition || "left"
-    readonly property bool horizontal: edge==="top" || edge==="bottom"
-    readonly property bool denseFooter: horizontal && (Orbit.appearance.taskbarLength==="fit" || width<850)
+    readonly property bool horizontal: frame.horizontal
+    readonly property bool denseFooter: horizontal && (frame.fit || frame.availableLength<850)
     readonly property var spaces: Orbit.desktops.filter(s => !outputName || !s.output || s.output===outputName)
     readonly property var tasks: Orbit.dockApps
     readonly property int taskStart: horizontal ? workspaceColumn.x+workspaceColumn.width+16 : workspaceColumn.y+workspaceColumn.height+40
@@ -37,6 +39,8 @@ Item {
     readonly property int taskLaneLength: Math.max(0,(horizontal ? footer.x : footer.y)-taskStart-8)
     readonly property int taskSlotLength: horizontal ? taskSlotWidth : taskSlotHeight
     readonly property int overflowLength: horizontal ? 30 : 25
+    readonly property int preferredTaskLength: Math.max(0,Math.min(tasks.length,10)*(taskSlotLength+taskSpacing)-taskSpacing)
+        + (tasks.length>10 ? taskSpacing+overflowLength : 0)
     readonly property int fullTaskCapacity: Math.max(0,Math.min(10,Math.floor((taskLaneLength+taskSpacing)/(taskSlotLength+taskSpacing))))
     readonly property int taskCapacity: tasks.length<=fullTaskCapacity ? fullTaskCapacity
         : Math.max(0,Math.min(fullTaskCapacity,Math.floor((taskLaneLength-overflowLength)/(taskSlotLength+taskSpacing))))
@@ -71,7 +75,7 @@ Item {
         ListView {
             id: spaceList;objectName: "spineWorkspaceList"
             y: spine.horizontal ? (Theme.extraCompact ? 16 : Theme.compact ? 21 : 29) : 17
-            width: workspaceColumn.width;height: spine.horizontal ? (Theme.extraCompact ? 26 : Theme.compact ? 30 : 34) : Math.min(count,spine.height<500 ? 2 : 4)*(Theme.compact ? 28 : 33)
+            width: workspaceColumn.width;height: spine.horizontal ? (Theme.extraCompact ? 26 : Theme.compact ? 30 : 34) : Math.min(count,frame.availableLength<500 ? 2 : 4)*(Theme.compact ? 28 : 33)
             orientation: spine.horizontal ? ListView.Horizontal : ListView.Vertical
             model: spine.spaces;clip: true;spacing: 3;boundsBehavior: Flickable.StopAtBounds
             readonly property int activeIndex: spine.spaces.findIndex(s => spine.isCurrentSpace(s))
@@ -154,13 +158,13 @@ Item {
     Item {
         id: footer;objectName: "spineFooter"
         x: spine.horizontal ? spine.width-width-10 : Theme.extraCompact ? 6 : 8;y: spine.horizontal ? 0 : spine.height-height-(Theme.compact ? 8 : 12)
-        width: spine.horizontal ? spine.denseFooter ? (Theme.extraCompact ? 150 : Theme.compact ? 174 : 198) : (Theme.compact ? 290 : 320) : spine.width-(Theme.extraCompact ? 12 : 16)
+        width: spine.horizontal ? footerIcons.columns*footerIcons.buttonWidth+10+clockGroup.naturalWidth : frame.thickness-(Theme.extraCompact ? 12 : 16)
         height: spine.horizontal ? frame.thickness : footerIcons.height+clockGroup.height+18
         Rectangle {visible: !spine.horizontal;width: parent.width;height: 1;color: Theme.separator}
         Grid {
             id: footerIcons;x: 0;y: spine.horizontal ? Math.max(0,Math.round((footer.height-height)/2)) : 6
             columns: spine.horizontal ? spine.denseFooter ? 3 : 6 : 2;spacing: 0
-            readonly property int buttonWidth: spine.horizontal ? (Theme.extraCompact ? 22 : Theme.compact ? 28 : 32) : Math.floor(footer.width/2)
+            readonly property int buttonWidth: spine.horizontal ? (Theme.extraCompact ? 22 : Theme.compact ? 28 : 32) : Math.floor((frame.thickness-(Theme.extraCompact ? 12 : 16))/2)
             readonly property int buttonHeight: spine.horizontal ? buttonWidth : Theme.extraCompact ? 24 : Theme.compact ? 27 : 32
             readonly property color iconInk: Theme.highContrast ? Theme.text : Theme.accent
             IconButton {objectName: "spineCapture";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "camera";hint: "Screenshot";onClicked: spine.openPanel("screenshot")}
@@ -172,13 +176,17 @@ Item {
             IconButton {objectName: "spineUsage";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "usage";hint: "System usage · "+Usage.username;onClicked: spine.openPanel("usage")}
             IconButton {objectName: "spineControls";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "settings";hint: "Quick controls";onClicked: spine.openPanel("quick")}
         }
+        FontMetrics {id: clockMetrics;font: clockLabel.font}
+        FontMetrics {id: dateMetrics;font: dateLabel.font}
+        FontMetrics {id: batteryMetrics;font: batteryLabel.font}
         Column {
             id: clockGroup;x: spine.horizontal ? footerIcons.width+10 : 0;y: spine.horizontal ? Math.round((frame.thickness-height)/2) : footerIcons.y+footerIcons.height+6
-            width: spine.horizontal ? parent.width-x : parent.width;spacing: 2
-            Text {width: parent.width;text: spine.horizontal && !Orbit.appearance.clock24 ? spine.clockText+" "+Qt.formatDateTime(spine.clockNow,"AP") : spine.clockText;font.pixelSize: Theme.fontSize(10);color: Theme.text;horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight}
+            readonly property int naturalWidth: Math.ceil(Math.max(clockMetrics.advanceWidth(clockLabel.text),dateLabel.visible ? dateMetrics.advanceWidth(dateLabel.text) : 0,batteryLabel.visible ? batteryMetrics.advanceWidth(batteryLabel.text) : 0))+8
+            width: spine.horizontal ? naturalWidth : parent.width;spacing: 2
+            Text {id: clockLabel;width: parent.width;text: spine.horizontal && !Orbit.appearance.clock24 ? spine.clockText+" "+Qt.formatDateTime(spine.clockNow,"AP") : spine.clockText;font.pixelSize: Theme.fontSize(10);color: Theme.text;horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight}
             Text {width: parent.width;visible: !spine.horizontal && !Orbit.appearance.clock24;text: Qt.formatDateTime(spine.clockNow,"AP");font.pixelSize: Theme.fontSize(8);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
-            Text {width: parent.width;visible: !!Orbit.appearance.clockDate;text: Qt.formatDateTime(spine.clockNow,"MMM d");font.pixelSize: Theme.fontSize(8);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
-            Text {width: parent.width;text: Power.state.batteryPresent || System.values.batteryPresent ? (Power.state.percentageAvailable ? Power.state.batteryPercent : System.values.batteryPercent)+"%" : "";visible: text.length>0;font.pixelSize: Theme.fontSize(9);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
+            Text {id: dateLabel;width: parent.width;visible: !!Orbit.appearance.clockDate;text: Qt.formatDateTime(spine.clockNow,"MMM d");font.pixelSize: Theme.fontSize(8);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
+            Text {id: batteryLabel;width: parent.width;text: Power.state.batteryPresent || System.values.batteryPresent ? (Power.state.percentageAvailable ? Power.state.batteryPercent : System.values.batteryPercent)+"%" : "";visible: text.length>0;font.pixelSize: Theme.fontSize(9);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
         }
     }
 }

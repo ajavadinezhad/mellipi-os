@@ -18,13 +18,17 @@ ScrollView {
             }
         }
         SettingsGroup {
-            title: "Options"
-            SettingRow {
-                label: "Copy to clipboard"
-                SettingToggle { label: "Copy screenshot to clipboard";checked: Screenshots.state.copyToClipboard;enabled: !Screenshots.state.busy;onToggled: Screenshots.setCopy(checked) }
+            title: "Output"
+            SettingsSegments {
+                Layout.fillWidth: true;segmentWidth: 78
+                enabled: !Screenshots.state.busy
+                value: Screenshots.state.saveToFile ? (Screenshots.state.copyToClipboard ? "both" : "file") : "clipboard"
+                options: [{label:"File",value:"file"},{label:"Clipboard",value:"clipboard"},{label:"Both",value:"both"}]
+                onSelected: value => Screenshots.setDestination(value)
             }
         }
         SettingsGroup {
+            visible: Screenshots.state.saveToFile
             title: "Save destination"
             Text {
                 id: destination;objectName: "screenshotDestination"

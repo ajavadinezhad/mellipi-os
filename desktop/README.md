@@ -32,6 +32,8 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 
 Source launchers resolve `src/` automatically. Packaged installations keep their stable program layout under `/usr/lib/abstract`; this repository change does not require moving installed files.
 
+Open **Mellipi Software** from Super or use **Settings → System tools → Tools → Install applications**. Search can include system APT packages, apps from configured Flatpak remotes such as Flathub, and the Snap Store on systems with snapd. Software shows the source and installation scope before asking you to confirm. System updates still use the distribution's update manager.
+
 Directory guide:
 
 - `native/`: QML interface, assets and workspace surfaces.

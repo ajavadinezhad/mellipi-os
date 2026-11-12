@@ -4,7 +4,7 @@ import QtQuick.Layouts 1.15
 import "."
 import "SettingReveal.js" as SettingReveal
 RowLayout {
-    id: settings;objectName: "systemSettingsPanel";spacing: 12
+    id: settings;objectName: "systemSettingsPanel";spacing: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
     property int section: typeof Orbit.settingsSection!=="undefined" ? Orbit.settingsSection : 0
     readonly property var pageNames: ["input","lock","displays","shortcuts","accessibility","network","power-mode","battery","music","bluetooth","appearance","","help","","","brightness","tools"]
     readonly property string pageName: pageNames[Math.max(0,Math.min(pageNames.length-1,section))]
