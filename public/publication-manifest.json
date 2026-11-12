@@ -1627,13 +1627,29 @@
       "bytes": 37378,
       "sha256": "6934f2d12d984bcb2d43ef9d6d930ce4a18bd58870769882606ad84014e44580"
     },
+    "assets/tour/files.webp": {
+      "bytes": 43142,
+      "sha256": "9c42cdd5c1eac969c28b86de690abc448c86a77475d7e8f91f11da750c8a64e2"
+    },
+    "assets/tour/installer.webp": {
+      "bytes": 39216,
+      "sha256": "915eabcc51164e8758ba67a8e70e6e95e3f88cfbeb2b1d8c21ea45da4da0ef91"
+    },
+    "assets/tour/quick-settings.webp": {
+      "bytes": 25728,
+      "sha256": "968657ca9a60d1a19abd46ccc2a44ea603701c7a059f93d3e12cb57fb6d84d90"
+    },
+    "assets/tour/terminal.webp": {
+      "bytes": 27792,
+      "sha256": "57e1cd31d62de3333e0cf1087a3fa0226cbc940732992a2dad590a97e3e098ed"
+    },
     "favicon.svg": {
       "bytes": 267,
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 12606,
-      "sha256": "1f0702d8bfeb3047abdcc7bad7c3790134dc2d0eaa9671664c36d894d65a8a89"
+      "bytes": 15125,
+      "sha256": "723e2b47424f2cb2a45ec67ae081fbbc731067d2a6b73789264d9860c86312a8"
     },
     "site-config.json": {
       "bytes": 802,
@@ -7192,8 +7208,8 @@
       "sha256": "eec6e4be808e1a445e677dba1e20e5acb2f091825f5ff4c6ac49d5843b2185f9"
     },
     "style.css": {
-      "bytes": 14332,
-      "sha256": "d2b63d72e02f2a59337d5038ad7cd1e7f21a16d0ba4087d169bc2ae4fb4b12af"
+      "bytes": 14578,
+      "sha256": "043713d1c4ed93b128e131e1471893d7325acbc5f816092da09bd136ba239422"
     },
     "theme-init.js": {
       "bytes": 2559,

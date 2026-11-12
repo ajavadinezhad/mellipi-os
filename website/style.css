@@ -19,3 +19,9 @@ footer .source-link{font-size:11px;text-decoration:underline;text-underline-offs
 .software-screenshot { margin-top: 24px; }
 .software-screenshot summary { cursor: pointer; width: fit-content; color: var(--accent-ink); }
 .software-screenshot .screenshot-card { max-width: 580px; margin-top: 16px; }
+
+#desktop-tour figcaption strong { display: block; font-weight: 600; }
+#desktop-tour figcaption small { display: block; margin-top: 3px; color: var(--muted); }
+@media (max-width: 540px) {
+  .navigation nav a[href="#support"] { display: none; }
+}
