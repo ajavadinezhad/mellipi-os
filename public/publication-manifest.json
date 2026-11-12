@@ -1914,89 +1914,265 @@
       "bytes": 43302,
       "sha256": "fe3859043ca69a9131211c3a40dd09683ebba891e6b68e3319090a713bc28033"
     },
+    "assets/themes/black-files.webp": {
+      "bytes": 39332,
+      "sha256": "ef0cd459c94fe5a7f57570f0dbf45dcb307b4e49e3336864071c976d57204bcb"
+    },
     "assets/themes/black-launcher.webp": {
       "bytes": 36654,
       "sha256": "cb321de35775fe4f62c7b5757f131b4568a2b9fa108b71e5019cf5772a292f3f"
+    },
+    "assets/themes/black-quick-settings.webp": {
+      "bytes": 24248,
+      "sha256": "05cf4efdc86d794630c224ddc60303f3d0ed7eccafeac859925d50634bf7bea3"
+    },
+    "assets/themes/black-software.webp": {
+      "bytes": 32328,
+      "sha256": "1cf41b987533106ff00d9e18f595b692f008ead269b13579b15fa17eaf72c249"
+    },
+    "assets/themes/black-terminal.webp": {
+      "bytes": 24134,
+      "sha256": "001c052ed24eae6150b2e96390f99ffdda8967a9ef340f0f211889e75961f144"
     },
     "assets/themes/dark-appearance.webp": {
       "bytes": 41272,
       "sha256": "8d813c4d1643617c74c6453cd0b599f1bbf8e2d7d392c4ce81597cfc8f011094"
     },
+    "assets/themes/dark-files.webp": {
+      "bytes": 37676,
+      "sha256": "5541ee6f23668dfcacb12932ffdec2cc3cc2ca33d08352bee3f63870ea6a9715"
+    },
     "assets/themes/dark-launcher.webp": {
       "bytes": 35178,
       "sha256": "255e8ccc05c171718e2293b7d009302f4b6c235e0ab2d84b5c154a61d0b7a575"
+    },
+    "assets/themes/dark-quick-settings.webp": {
+      "bytes": 22804,
+      "sha256": "68a98587d4a6d48e6f14d5df5b6f29b29440f356b3f183c04a8609de79278163"
+    },
+    "assets/themes/dark-software.webp": {
+      "bytes": 30890,
+      "sha256": "98a22b5ae4213048b5d865a278e0671aa11534e57a762af56dfc064b4546d6d3"
+    },
+    "assets/themes/dark-terminal.webp": {
+      "bytes": 23258,
+      "sha256": "313c877503ac3a7b0ddee659c02094f8459956be542651ffd8967818b250b493"
     },
     "assets/themes/dune-appearance.webp": {
       "bytes": 43712,
       "sha256": "8feb9d1585cc5c3551c2422f5ed20f444e9e2b05157c289ab606b25dc99e4c48"
     },
+    "assets/themes/dune-files.webp": {
+      "bytes": 42796,
+      "sha256": "0cf5f07c87c992ce738a1a17233f9ad7f38a82dc412ac72d2ef004441f1206bf"
+    },
     "assets/themes/dune-launcher.webp": {
       "bytes": 36544,
       "sha256": "4627e0dce522e2cfc2b5f913ae9dd4cbcebd8e26696c0fdb7d98e0bb3f0e4f7f"
+    },
+    "assets/themes/dune-quick-settings.webp": {
+      "bytes": 28280,
+      "sha256": "a05941082fefe63c2883ac79f1855136fe9aff63d5e5f5e4aea911f0e33a9e6a"
+    },
+    "assets/themes/dune-software.webp": {
+      "bytes": 35134,
+      "sha256": "f831125607f5768e5d8f97b99fcf74c013232e70e419ca29f2204569d8c3df86"
+    },
+    "assets/themes/dune-terminal.webp": {
+      "bytes": 27436,
+      "sha256": "666960b647b1cd1c09192e6baef2f1211879e3da3e923787ffff11941844acad"
     },
     "assets/themes/ember-appearance.webp": {
       "bytes": 45538,
       "sha256": "c5e997456f5056dc5553c10afff123faba217e64ccf3bfa183ee6c74085ac7e6"
     },
+    "assets/themes/ember-files.webp": {
+      "bytes": 42428,
+      "sha256": "53b3768e508e481596a2a6baeefd8cb040caf576be5d09c08d7ec4455be19800"
+    },
     "assets/themes/ember-launcher.webp": {
       "bytes": 37414,
       "sha256": "fb65cb6c836f3a3505c4eae05dd6d8185075a7d4ad194902aef16501a4d7c8fe"
+    },
+    "assets/themes/ember-quick-settings.webp": {
+      "bytes": 27690,
+      "sha256": "cfe0f75fd16cfdfa65a9780dee162ab208a51ec5a4f49f0db0946640bcc93060"
+    },
+    "assets/themes/ember-software.webp": {
+      "bytes": 35548,
+      "sha256": "b7cb655218dbb7f0066f8961add13a4eae556be6ea1dfadc840e95e693219e70"
+    },
+    "assets/themes/ember-terminal.webp": {
+      "bytes": 25926,
+      "sha256": "d2b0312995754838ac931937bf7685736a0919f5aa669b9a7eccba73f9a87f35"
     },
     "assets/themes/forest-appearance.webp": {
       "bytes": 43394,
       "sha256": "8eb9538aa021028ca99a3ee942e299e8506047288feb09c877d7b174e3a186ca"
     },
+    "assets/themes/forest-files.webp": {
+      "bytes": 40650,
+      "sha256": "58ac5c3488b2bea66c0ead40a72836bac5c499e6cdac1144767f90e6cc86855c"
+    },
     "assets/themes/forest-launcher.webp": {
       "bytes": 35284,
       "sha256": "825d8dba590a53024ecf18e7ad2d013fbd0f2707757c5a9d7b32b236ac8472b8"
+    },
+    "assets/themes/forest-quick-settings.webp": {
+      "bytes": 25850,
+      "sha256": "f0fab2151804944e1511a6463f519fce5776b48b7977c74345f46068fcdb82c5"
+    },
+    "assets/themes/forest-software.webp": {
+      "bytes": 33988,
+      "sha256": "f8f76e83fa2e34e650cb6f9a7115f46ffcb5b71aa27d3f72bad8352cdc824d26"
+    },
+    "assets/themes/forest-terminal.webp": {
+      "bytes": 25004,
+      "sha256": "18df5d001f0e15b7a32e885576ab4ddc01d706d2e89363cfcf7362922d9dc209"
     },
     "assets/themes/glacier-appearance.webp": {
       "bytes": 47790,
       "sha256": "ecf4a1f761d7d70dfb6ed29095d11d777ff3282d0cac11c770566d809bd6648f"
     },
+    "assets/themes/glacier-files.webp": {
+      "bytes": 43398,
+      "sha256": "17a7226963329ae46aa6af5a0d74e843291383a63e28d0aedc30dd8af3a9444d"
+    },
     "assets/themes/glacier-launcher.webp": {
       "bytes": 39450,
       "sha256": "b8f7cbe2e14f5ca938bdb6ca2a08fe94976f99ab78eed8f7aef93e5aa0d684f4"
+    },
+    "assets/themes/glacier-quick-settings.webp": {
+      "bytes": 29640,
+      "sha256": "b477c134185ad31b770b0d728bd6d6b8b825b83274720e8e4b52dda305d704c0"
+    },
+    "assets/themes/glacier-software.webp": {
+      "bytes": 35246,
+      "sha256": "0f6df5ad7092f393525de401022f327293e6e8b5b170584279b7fffcc9248cf5"
+    },
+    "assets/themes/glacier-terminal.webp": {
+      "bytes": 27360,
+      "sha256": "9ed60103e34de07e55938626769355ef57ab86845a49e47241ebb37898e7ff0a"
     },
     "assets/themes/graphite-appearance.webp": {
       "bytes": 39702,
       "sha256": "bc5c94680fc5e837aafe554c46ac941432aaeef4e1a57a0d2cb9fd6c93d35843"
     },
+    "assets/themes/graphite-files.webp": {
+      "bytes": 38090,
+      "sha256": "319e6326ebb9ebbdb4f5c045ce474179eedb007e403212bf94978108ec97da73"
+    },
     "assets/themes/graphite-launcher.webp": {
       "bytes": 32446,
       "sha256": "79babf1db082ef1f87b1be2a158719aa95d78d76c3f8f530833c5f57338559b1"
+    },
+    "assets/themes/graphite-quick-settings.webp": {
+      "bytes": 23640,
+      "sha256": "b70f0bb4907b1df963e5797dd71055c6f69758d8204d0389bf55ccaa6b14055a"
+    },
+    "assets/themes/graphite-software.webp": {
+      "bytes": 31312,
+      "sha256": "6b1286cd360c993427d65086e58292035d3ada760aabcdfed9bcdae52087013a"
+    },
+    "assets/themes/graphite-terminal.webp": {
+      "bytes": 22674,
+      "sha256": "4918b690fa416e4b9f686ab99eea7cf7d7f1a86337b80f3372f2b96a150fdf8e"
     },
     "assets/themes/lavender-appearance.webp": {
       "bytes": 43610,
       "sha256": "ae4771c90f54c3c9f600c95d20ae09124172bf92eaf1861a49ecaa3cedcb189e"
     },
+    "assets/themes/lavender-files.webp": {
+      "bytes": 43260,
+      "sha256": "79cc7b878e72b562b243a5d38db8be36c4391f38d9fdf4d61e7e14a601965a10"
+    },
     "assets/themes/lavender-launcher.webp": {
       "bytes": 36326,
       "sha256": "c6f6a877bd6e8a8b11d06bf48a54ffe13f0862857496471fac059d91dd7196e2"
+    },
+    "assets/themes/lavender-quick-settings.webp": {
+      "bytes": 29954,
+      "sha256": "e8e63e61eb8ddba431d5796b412c8ff7f136b95dc0c6ecb55da48e13de853f73"
+    },
+    "assets/themes/lavender-software.webp": {
+      "bytes": 36408,
+      "sha256": "4037a9bcdb6fd65113c6e33a808b0b7514ce3a016d472bd6b5b5fd31e08315e4"
+    },
+    "assets/themes/lavender-terminal.webp": {
+      "bytes": 27492,
+      "sha256": "f6a5fb1ef6ad2f27346704c72181453baa3f9da94a8083b6c2566aaf792cb9af"
     },
     "assets/themes/light-appearance.webp": {
       "bytes": 42466,
       "sha256": "0d5a62f18b2c2b131463483daf5930fe30945318a74f6d581cd8aaf2b764e28a"
     },
+    "assets/themes/light-files.webp": {
+      "bytes": 38068,
+      "sha256": "60d4c2c77a21f89559db0323e90d6012a69e809ba31d7c6a99055b078623e2db"
+    },
     "assets/themes/light-launcher.webp": {
       "bytes": 34744,
       "sha256": "6365d33f643a0cd567a867b1e86ecab90c2ca9c832898944901b0fccc2b6fd30"
+    },
+    "assets/themes/light-quick-settings.webp": {
+      "bytes": 23636,
+      "sha256": "4b1d2b6452bee657d3d0c74b3f915ed1fce62c81342673370d5112cb7f479239"
+    },
+    "assets/themes/light-software.webp": {
+      "bytes": 31676,
+      "sha256": "f8d14de01f847a69d985fad20dce3932fe476f05d192d8fbe44af8ca40c38eb8"
+    },
+    "assets/themes/light-terminal.webp": {
+      "bytes": 23974,
+      "sha256": "de880349ba86536712649094716bab555838103fe98f364135fcdf8a629b577b"
     },
     "assets/themes/midnight-appearance.webp": {
       "bytes": 45634,
       "sha256": "7613de15469121a1d6df16c36eec7bac9945e3b363b42e05cd735ba66e6019a9"
     },
+    "assets/themes/midnight-files.webp": {
+      "bytes": 44952,
+      "sha256": "8d7b2532b1be5f3f2a103a3f3768086f55951cbb3411b6c89b72c3b170a3496b"
+    },
     "assets/themes/midnight-launcher.webp": {
       "bytes": 38072,
       "sha256": "e74b4aabc134a424b52eed8fb209c8d4a0f36ede3668cf58eb955885b6daa8a9"
+    },
+    "assets/themes/midnight-quick-settings.webp": {
+      "bytes": 30928,
+      "sha256": "ad4fe33a31ae345567ff718a1718e2548f981ac652cec8f9dad32d8d8274d838"
+    },
+    "assets/themes/midnight-software.webp": {
+      "bytes": 37900,
+      "sha256": "46c467ad05d8ae9e2ca1fb822faafaa9ed6f6a9ffd18d66944b623dc6e057e9e"
+    },
+    "assets/themes/midnight-terminal.webp": {
+      "bytes": 27482,
+      "sha256": "9e70a4dc44549b39e81964b0fa55a6ebfe8fb82284641bd61e27de0c5e2be55d"
     },
     "assets/themes/porcelain-appearance.webp": {
       "bytes": 45618,
       "sha256": "1e7497a048e61d183736012cbbcbd1746faae0c4c0a2c50d1c07911edc51931d"
     },
+    "assets/themes/porcelain-files.webp": {
+      "bytes": 42930,
+      "sha256": "6d7ff6e652cd33a855fe2be3ab1af58ab83d1da02cec888cff5bed0add96fbf9"
+    },
     "assets/themes/porcelain-launcher.webp": {
       "bytes": 37378,
       "sha256": "6934f2d12d984bcb2d43ef9d6d930ce4a18bd58870769882606ad84014e44580"
+    },
+    "assets/themes/porcelain-quick-settings.webp": {
+      "bytes": 31088,
+      "sha256": "5bbb4c2bf7e791c6b2e1bd0895ba31daa749539ae29e557162930197e1d49fd5"
+    },
+    "assets/themes/porcelain-software.webp": {
+      "bytes": 35542,
+      "sha256": "806387a35f8985708d83da2f012ca41218937d221c92be0f2cde3539497e81a2"
+    },
+    "assets/themes/porcelain-terminal.webp": {
+      "bytes": 27432,
+      "sha256": "f66ed09ebb7cc03592f85f5d3ef14c5f967b437d0697d83705f6939d7b39fd64"
     },
     "assets/tour/files.webp": {
       "bytes": 40630,
@@ -2019,16 +2195,16 @@
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 15187,
-      "sha256": "74549baea0d68745edf86db3b0f01dd3a743c85ccec80e54b52ad725e40bdf6d"
+      "bytes": 15345,
+      "sha256": "c8fad9ab5773953a96601719461b5da16045a2ad5e400dabcc42f1502d62635d"
     },
     "site-config.json": {
       "bytes": 807,
       "sha256": "88bc9208728d37b3c5bee574bac6e7b1952789fec9451362946a22c5548d8d00"
     },
     "site.js": {
-      "bytes": 8203,
-      "sha256": "62ec722d3e150ebd6543e842335a1ed97e3a608752c1968c03b8fa017fb4be02"
+      "bytes": 8321,
+      "sha256": "73591bb15c9acb2d7a434a05d06801a01f756e94f2dda1b7e24835f29de37ae5"
     },
     "sources/0.1.20/SHA256SUMS": {
       "bytes": 35879,
@@ -8967,8 +9143,8 @@
       "sha256": "eec6e4be808e1a445e677dba1e20e5acb2f091825f5ff4c6ac49d5843b2185f9"
     },
     "style.css": {
-      "bytes": 14578,
-      "sha256": "043713d1c4ed93b128e131e1471893d7325acbc5f816092da09bd136ba239422"
+      "bytes": 14581,
+      "sha256": "052b0cec7382f0fd7cdf369b0443dba5ccd0122de393e3149ed28a2d8de7cfd4"
     },
     "theme-init.js": {
       "bytes": 2559,

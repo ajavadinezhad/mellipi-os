@@ -1,8 +1,10 @@
 "use strict";
 (() => {
   const themePicker = document.getElementById("website-theme");
+  const tourTheme = document.getElementById("desktop-tour-theme");
   const themeCaptures = document.querySelectorAll("[data-theme-capture]");
   const updateCaptures = theme => {
+    tourTheme.textContent = `${theme.name} theme`;
     for (const link of themeCaptures) {
       const path = `assets/themes/${theme.id}-${link.dataset.themeCapture}.webp`;
       link.href = path;
