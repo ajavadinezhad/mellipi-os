@@ -1539,21 +1539,109 @@
       "bytes": 33778,
       "sha256": "7e736ad615db97667cf23594f77e9e0a98303a0127c2e48a528baac805d8f11a"
     },
+    "assets/themes/black-appearance.webp": {
+      "bytes": 43302,
+      "sha256": "fe3859043ca69a9131211c3a40dd09683ebba891e6b68e3319090a713bc28033"
+    },
+    "assets/themes/black-launcher.webp": {
+      "bytes": 36654,
+      "sha256": "cb321de35775fe4f62c7b5757f131b4568a2b9fa108b71e5019cf5772a292f3f"
+    },
+    "assets/themes/dark-appearance.webp": {
+      "bytes": 41272,
+      "sha256": "8d813c4d1643617c74c6453cd0b599f1bbf8e2d7d392c4ce81597cfc8f011094"
+    },
+    "assets/themes/dark-launcher.webp": {
+      "bytes": 35178,
+      "sha256": "255e8ccc05c171718e2293b7d009302f4b6c235e0ab2d84b5c154a61d0b7a575"
+    },
+    "assets/themes/dune-appearance.webp": {
+      "bytes": 43712,
+      "sha256": "8feb9d1585cc5c3551c2422f5ed20f444e9e2b05157c289ab606b25dc99e4c48"
+    },
+    "assets/themes/dune-launcher.webp": {
+      "bytes": 36544,
+      "sha256": "4627e0dce522e2cfc2b5f913ae9dd4cbcebd8e26696c0fdb7d98e0bb3f0e4f7f"
+    },
+    "assets/themes/ember-appearance.webp": {
+      "bytes": 45538,
+      "sha256": "c5e997456f5056dc5553c10afff123faba217e64ccf3bfa183ee6c74085ac7e6"
+    },
+    "assets/themes/ember-launcher.webp": {
+      "bytes": 37414,
+      "sha256": "fb65cb6c836f3a3505c4eae05dd6d8185075a7d4ad194902aef16501a4d7c8fe"
+    },
+    "assets/themes/forest-appearance.webp": {
+      "bytes": 43394,
+      "sha256": "8eb9538aa021028ca99a3ee942e299e8506047288feb09c877d7b174e3a186ca"
+    },
+    "assets/themes/forest-launcher.webp": {
+      "bytes": 35284,
+      "sha256": "825d8dba590a53024ecf18e7ad2d013fbd0f2707757c5a9d7b32b236ac8472b8"
+    },
+    "assets/themes/glacier-appearance.webp": {
+      "bytes": 47790,
+      "sha256": "ecf4a1f761d7d70dfb6ed29095d11d777ff3282d0cac11c770566d809bd6648f"
+    },
+    "assets/themes/glacier-launcher.webp": {
+      "bytes": 39450,
+      "sha256": "b8f7cbe2e14f5ca938bdb6ca2a08fe94976f99ab78eed8f7aef93e5aa0d684f4"
+    },
+    "assets/themes/graphite-appearance.webp": {
+      "bytes": 39702,
+      "sha256": "bc5c94680fc5e837aafe554c46ac941432aaeef4e1a57a0d2cb9fd6c93d35843"
+    },
+    "assets/themes/graphite-launcher.webp": {
+      "bytes": 32446,
+      "sha256": "79babf1db082ef1f87b1be2a158719aa95d78d76c3f8f530833c5f57338559b1"
+    },
+    "assets/themes/lavender-appearance.webp": {
+      "bytes": 43610,
+      "sha256": "ae4771c90f54c3c9f600c95d20ae09124172bf92eaf1861a49ecaa3cedcb189e"
+    },
+    "assets/themes/lavender-launcher.webp": {
+      "bytes": 36326,
+      "sha256": "c6f6a877bd6e8a8b11d06bf48a54ffe13f0862857496471fac059d91dd7196e2"
+    },
+    "assets/themes/light-appearance.webp": {
+      "bytes": 42466,
+      "sha256": "0d5a62f18b2c2b131463483daf5930fe30945318a74f6d581cd8aaf2b764e28a"
+    },
+    "assets/themes/light-launcher.webp": {
+      "bytes": 34744,
+      "sha256": "6365d33f643a0cd567a867b1e86ecab90c2ca9c832898944901b0fccc2b6fd30"
+    },
+    "assets/themes/midnight-appearance.webp": {
+      "bytes": 45634,
+      "sha256": "7613de15469121a1d6df16c36eec7bac9945e3b363b42e05cd735ba66e6019a9"
+    },
+    "assets/themes/midnight-launcher.webp": {
+      "bytes": 38072,
+      "sha256": "e74b4aabc134a424b52eed8fb209c8d4a0f36ede3668cf58eb955885b6daa8a9"
+    },
+    "assets/themes/porcelain-appearance.webp": {
+      "bytes": 45618,
+      "sha256": "1e7497a048e61d183736012cbbcbd1746faae0c4c0a2c50d1c07911edc51931d"
+    },
+    "assets/themes/porcelain-launcher.webp": {
+      "bytes": 37378,
+      "sha256": "6934f2d12d984bcb2d43ef9d6d930ce4a18bd58870769882606ad84014e44580"
+    },
     "favicon.svg": {
       "bytes": 267,
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 12416,
-      "sha256": "0f9bda4028fae02e327d81985f0ffed7c5c246a6c960c42b90cfea4c2ae8cc33"
+      "bytes": 12606,
+      "sha256": "1f0702d8bfeb3047abdcc7bad7c3790134dc2d0eaa9671664c36d894d65a8a89"
     },
     "site-config.json": {
       "bytes": 802,
       "sha256": "1d7f6b264623b2ae9ed5d910b9b120fd2945333a95bd7bbe5a2d8c54e4d1689f"
     },
     "site.js": {
-      "bytes": 7830,
-      "sha256": "4035f32382d9908ce2b94599f6ecc10eea9c3a35f8deea73fbac5a954df1acb9"
+      "bytes": 8203,
+      "sha256": "62ec722d3e150ebd6543e842335a1ed97e3a608752c1968c03b8fa017fb4be02"
     },
     "sources/0.1.6/SHA256SUMS": {
       "bytes": 35451,
@@ -7104,8 +7192,8 @@
       "sha256": "eec6e4be808e1a445e677dba1e20e5acb2f091825f5ff4c6ac49d5843b2185f9"
     },
     "style.css": {
-      "bytes": 14134,
-      "sha256": "07bcbe4358ef2d8e93fafc6dff2a4abd9d5c4e7f4a839a2045bc4db133f38c00"
+      "bytes": 14332,
+      "sha256": "d2b63d72e02f2a59337d5038ad7cd1e7f21a16d0ba4087d169bc2ae4fb4b12af"
     },
     "theme-init.js": {
       "bytes": 2559,

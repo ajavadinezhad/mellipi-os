@@ -11,8 +11,11 @@ footer .source-link{font-size:11px;text-decoration:underline;text-underline-offs
 .live-image-card{border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:24px;margin-block:24px}.live-image-card h3{font-size:19px;margin-bottom:10px}.live-image-card>p{color:var(--muted);font-size:12px;line-height:1.8}.live-image-card .button{width:100%;gap:20px}.live-image-card .live-image-boot{font-size:11px;margin-block:16px}.live-image-links{display:flex;flex-wrap:wrap;column-gap:22px;row-gap:12px;font-size:11px}.live-image-links a{text-decoration:underline;text-underline-offset:4px}.essential-apps{font-size:12px!important}@media(max-width:700px){.live-image-card{padding:21px}.live-image-card .button{font-size:12px}}
 
 @media (min-width: 1001px) {
-  .screenshot-grid,
   #desktop-updates .feature-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+.software-screenshot { margin-top: 24px; }
+.software-screenshot summary { cursor: pointer; width: fit-content; color: var(--accent-ink); }
+.software-screenshot .screenshot-card { max-width: 580px; margin-top: 16px; }

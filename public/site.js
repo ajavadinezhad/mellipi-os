@@ -1,6 +1,14 @@
 "use strict";
 (() => {
   const themePicker = document.getElementById("website-theme");
+  const themeCaptures = document.querySelectorAll("[data-theme-capture]");
+  const updateCaptures = theme => {
+    for (const link of themeCaptures) {
+      const path = `assets/themes/${theme.id}-${link.dataset.themeCapture}.webp`;
+      link.href = path;
+      link.querySelector("img").src = path;
+    }
+  };
   fetch("themes.json", {cache: "no-cache"}).then(response => {
     if (!response.ok) throw new Error("Theme catalog unavailable");
     return response.json();
@@ -14,11 +22,13 @@
       const option = document.createElement("option"); option.value = row.id; option.textContent = row.name; return option;
     }));
     api.apply(current);
+    updateCaptures(current);
     themePicker.value = current.id;
     themePicker.disabled = false;
     themePicker.addEventListener("change", () => {
       const selected = themes.find(row => row.id === themePicker.value);
       if (!selected || !api.apply(selected, true)) return;
+      updateCaptures(selected);
       document.getElementById("theme-status").textContent = `${selected.name} theme selected.`;
     });
   }).catch(() => {
