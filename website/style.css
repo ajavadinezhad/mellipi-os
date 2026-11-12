@@ -25,3 +25,18 @@ footer .source-link{font-size:11px;text-decoration:underline;text-underline-offs
 @media (max-width: 540px) {
   .navigation nav a[href="#support"] { display: none; }
 }
+
+.tour-preview {
+  display: block;
+  aspect-ratio: 8 / 5;
+  overflow: hidden;
+}
+.screenshot-card .tour-preview img {
+  width: 130%;
+  max-width: none;
+  transform: translate(-5.7%, -9.25%);
+}
+[data-theme-capture="quick-settings"] .tour-preview img {
+  width: 181%;
+  transform: translateY(-29%);
+}

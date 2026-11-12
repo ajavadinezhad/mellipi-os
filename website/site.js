@@ -4,9 +4,10 @@
   const tourTheme = document.getElementById("desktop-tour-theme");
   const themeCaptures = document.querySelectorAll("[data-theme-capture]");
   const updateCaptures = theme => {
-    tourTheme.textContent = `${theme.name} theme`;
+    tourTheme.textContent = `${theme.name} theme · High contrast`;
     for (const link of themeCaptures) {
-      const path = `assets/themes/${theme.id}-${link.dataset.themeCapture}.webp`;
+      const variant = link.querySelector(".tour-preview") ? "?v=high-contrast" : "?v=lossless";
+      const path = `assets/themes/${theme.id}-${link.dataset.themeCapture}.webp${variant}`;
       link.href = path;
       link.querySelector("img").src = path;
     }
