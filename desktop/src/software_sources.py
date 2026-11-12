@@ -51,6 +51,7 @@ class Package:
 class SourceResult:
     packages: list[Package] = field(default_factory=list)
     status: str = ''
+    needs_refresh: bool = False
 
 
 def executable(path):
@@ -72,6 +73,10 @@ def run(arguments, timeout=15):
 def apt_search(query):
     if not (executable(APT_CACHE) and executable(DPKG_QUERY)):
         return SourceResult(status='APT is unavailable.')
+    policy = run([APT_CACHE, 'policy'])
+    if not any(line.rstrip().endswith(' Packages') for line in policy.splitlines()):
+        return SourceResult(status='System packages need a first-time refresh.',
+                            needs_refresh=executable(APT_GET) and executable(PKEXEC))
     if not query:
         return SourceResult(status='APT is ready.')
     installed = set()
@@ -87,6 +92,11 @@ def apt_search(query):
             packages.append(Package('apt', identifier, identifier, description,
                                     installed=identifier in installed))
     return SourceResult(rank(packages, query), 'APT is ready.')
+
+
+def refresh_apt():
+    return run([PKEXEC, APT_GET, '-o', 'APT::Update::Error-Mode=any', 'update'],
+               timeout=None)
 
 
 def flatpak_search(query):

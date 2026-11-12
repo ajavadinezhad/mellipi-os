@@ -14,8 +14,8 @@ locally and does not require downloading the desktop again.
 ## Try and install
 
 1. Download the ISO and its matching `.iso.sha256` file into the same directory,
-   then run `sha256sum -c mellipi-0.1.9-noble-amd64.iso.sha256`. The release's
-   signed `mellipi-0.1.9-SHA256SUMS` also covers the ISO and all four packages.
+   then run `sha256sum -c mellipi-0.1.20-noble-amd64.iso.sha256`. The release's
+   signed `mellipi-0.1.20-SHA256SUMS` also covers the ISO and all four packages.
 2. Use a trusted USB image writer to select the ISO and the intended USB drive.
    Review the drive carefully: writing an image replaces that drive's contents.
 3. Boot the USB and choose **Try or install Mellipi**. The live desktop opens
@@ -32,7 +32,7 @@ The live user is created by Ubuntu Casper at boot. No developer account,
 password, SSH server, SSH key or private archive-signing key is embedded in the
 image. Locking is unavailable in the password-free live session, including
 before suspend; an installed user receives the ordinary password-protected
-desktop lock defaults. The 0.1.9 builder uses Ubuntu-signed shim, GRUB and kernel.
+desktop lock defaults. The 0.1.20 builder uses Ubuntu-signed shim, GRUB and kernel.
 See [Secure Boot](secure-boot.md) for the installed boot chain, exact-image
 acceptance requirements and firmware/third-party-driver limits. The older 0.1.8
 ISO remains unsigned and requires Secure Boot disabled.
@@ -55,10 +55,10 @@ keyring and sibling `secure-boot-image.py` helper into the guest, run inside tha
 
 ```sh
 sudo python3 build-live-iso.py \
-  --version 0.1.9 \
+  --version 0.1.20 \
   --workdir /home/abstract/abstract-iso/build \
-  --core-deb /path/to/mellipi-shell_0.1.9_amd64.deb \
-  --desktop-deb /path/to/mellipi-desktop_0.1.9_all.deb \
+  --core-deb /path/to/mellipi-shell_0.1.20_amd64.deb \
+  --desktop-deb /path/to/mellipi-desktop_0.1.20_all.deb \
   --keyring /path/to/mellipi-archive-keyring.gpg \
   --calamares-partition-module /path/to/reviewed-partition.so \
   --calamares-partition-sha256 SHA256_FROM_REVIEWED_MODULE_REPORT \

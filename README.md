@@ -4,11 +4,11 @@
 
 [Website](https://ajavadinezhad.github.io/mellipi-os/) · [Install and update](docs/update-repository.md) · [Downloads](https://github.com/ajavadinezhad/mellipi-os/releases) · [Issues](https://github.com/ajavadinezhad/mellipi-os/issues)
 
-The current binary release is **0.1.9**, targeting **Ubuntu 24.04 (noble), amd64, systemd/logind**. Mellipi installs on a Linux base; other distributions and architectures are not yet certified. Hardware compatibility and performance depend on the distribution, driver and applications.
+The current binary release is **0.1.20**, targeting **Ubuntu 24.04 (noble), amd64, systemd/logind**. Mellipi installs on a Linux base; other distributions and architectures are not yet certified. Hardware compatibility and performance depend on the distribution, driver and applications.
 
 ## Install
 
-The [live USB installer](docs/live-iso.md) combines a minimal Ubuntu base with Mellipi as its only desktop, plus a terminal and essential applications. The 0.1.9 image uses Ubuntu-signed shim, GRUB and kernel; firmware trust and hardware limits are documented in [Secure Boot](docs/secure-boot.md). Download images and their checksums from [GitHub Releases](https://github.com/ajavadinezhad/mellipi-os/releases).
+The [live USB installer](docs/live-iso.md) combines a minimal Ubuntu base with Mellipi as its only desktop, plus a terminal and essential applications. The 0.1.20 image uses Ubuntu-signed shim, GRUB and kernel; firmware trust and hardware limits are documented in [Secure Boot](docs/secure-boot.md). Download images and their checksums from [GitHub Releases](https://github.com/ajavadinezhad/mellipi-os/releases).
 
 Follow the [signed APT setup](https://ajavadinezhad.github.io/mellipi-os/#install), then install `mellipi-desktop` on a supported minimal base. Existing desktops can install or update only `mellipi-shell`. Updates do not force a logout; compositor changes activate at the next normal login. Read the [clean-install and recovery guide](docs/clean-install-acceptance.md) before trying a new session.
 
@@ -26,7 +26,7 @@ public/    Reviewed deployment output: website, signed APT archive and release s
 
 For application builds and tests, start in [`desktop/`](desktop/README.md) and follow the [source-build baseline](docs/source-build-baseline.md). Run release and publication commands from the repository root using `tools/`; see the [release process](docs/update-repository.md).
 
-`website/` is the editable site; `public/` is the explicit deployment boundary. Do not deploy the working tree or put private signing keys, user data, VM credentials or build caches there. Bundled-component notices and matching release sources are listed in the [0.1.9 source manifest](public/sources/0.1.9/manifest.json). Earlier release archives remain unchanged when the working source layout changes.
+`website/` is the editable site; `public/` is the explicit deployment boundary. Do not deploy the working tree or put private signing keys, user data, VM credentials or build caches there. Bundled-component notices and matching release sources are listed in the [0.1.20 source manifest](public/sources/0.1.20/manifest.json). Earlier release archives remain unchanged when the working source layout changes.
 
 ## Rename compatibility
 

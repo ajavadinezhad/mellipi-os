@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
 from app_palette import colors
 from installed_launcher import user_environment
 from preferences import Preferences
-from software_sources import SOURCES, friendly_error, install, rank, search
+from software_sources import SOURCES, friendly_error, install, rank, refresh_apt, search
 
 
 class Job(QThread):
@@ -51,6 +51,7 @@ class SoftwareWindow(QMainWindow):
         self.setMinimumSize(480, 420)
         self.job = None
         self.installing = False
+        self.refreshing = False
         self.term = ''
         self.setCentralWidget(QWidget())
         layout = QVBoxLayout(self.centralWidget())
@@ -138,7 +139,13 @@ class SoftwareWindow(QMainWindow):
         self.source_status = label(wrap=True)
         self.source_status.setObjectName('muted')
         self.source_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(self.source_status)
+        source_info = QHBoxLayout()
+        source_info.addWidget(self.source_status, 1)
+        self.refresh_button = QPushButton('Refresh system packages')
+        self.refresh_button.clicked.connect(self.start_refresh)
+        self.refresh_button.hide()
+        source_info.addWidget(self.refresh_button)
+        layout.addLayout(source_info)
 
         self.apply_palette()
         self.query.setFocus()
@@ -220,6 +227,7 @@ class SoftwareWindow(QMainWindow):
         self.search_button.setEnabled(False)
         self.source.setEnabled(False)
         self.suggestions.setEnabled(False)
+        self.refresh_button.setEnabled(False)
         self.list.setEnabled(False)
         self.install_button.setEnabled(False)
         self.progress.show()
@@ -231,6 +239,7 @@ class SoftwareWindow(QMainWindow):
         self.search_button.setEnabled(True)
         self.source.setEnabled(True)
         self.suggestions.setEnabled(True)
+        self.refresh_button.setEnabled(True)
         self.list.setEnabled(True)
         self.progress.hide()
         finished(job.value, job.error)
@@ -242,6 +251,9 @@ class SoftwareWindow(QMainWindow):
             self.status.setText(error)
             return
         self.source_status.setText(' • '.join(result.status for result in results.values()))
+        apt = results.get('apt')
+        needs_refresh = apt is not None and apt.needs_refresh
+        self.refresh_button.setVisible(needs_refresh)
         self.list.clear()
         packages = (package for result in results.values() for package in result.packages)
         for package in rank(packages, self.term, limit=None):
@@ -253,10 +265,26 @@ class SoftwareWindow(QMainWindow):
         if count:
             self.status.setText(f'{count} result' + ('s' if count != 1 else ''))
             self.list.setCurrentItem(self.list.topLevelItem(0))
+        elif needs_refresh:
+            self.status.setText('Connect to the internet and refresh to find system packages.')
         elif self.term:
             self.status.setText('No matching software. Try a different name or source.')
         else:
             self.status.setText('Search for an app or package.')
+
+    def start_refresh(self):
+        if self.job:
+            return
+        self.refreshing = True
+        self.status.setText('Refreshing system packages…')
+        self.start_job(refresh_apt, self.refresh_finished)
+
+    def refresh_finished(self, _, error):
+        self.refreshing = False
+        if error:
+            self.status.setText(f'Could not refresh system packages. {error}')
+            return
+        self.start_search()
 
     def confirm_install(self):
         package = self.selected()
@@ -290,7 +318,10 @@ class SoftwareWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.job:
-            self.status.setText('Installation is still running.' if self.installing else 'Search is still running.')
+            if self.refreshing:
+                self.status.setText('Package refresh is still running.')
+            else:
+                self.status.setText('Installation is still running.' if self.installing else 'Search is still running.')
             event.ignore()
         else:
             super().closeEvent(event)

@@ -1,4 +1,20 @@
 Package: abstract-desktop
+Version: 0.1.20
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-desktop (>= 0.1.20)
+Filename: pool/main/a/abstract-desktop/abstract-desktop_0.1.20_all.deb
+Size: 964
+MD5sum: bc9a7454225b92d95a21e3855c8f335a
+SHA1: 07aaec1560f835a6c0932ce9664b96652e0b3e6a
+SHA256: 1b7eff3fcb7da5c072f9970a501c780e93f8dc6e4e22158a913beaa07211c61d
+Section: oldlibs
+Priority: optional
+Description: Transitional package for mellipi-desktop
+ Abstract is now Mellipi. This package keeps existing installations on the
+ signed update path without changing user settings or restarting sessions.
+
+Package: abstract-desktop
 Version: 0.1.6
 Architecture: all
 Maintainer: Abstract OS project
@@ -59,6 +75,22 @@ SHA256: 0238674460b7175b3d5ff7ba0cca134d6ad7c1b5f1960ce79d9d376c680d7a8f
 Section: oldlibs
 Priority: optional
 Description: Transitional package for mellipi-desktop
+ Abstract is now Mellipi. This package keeps existing installations on the
+ signed update path without changing user settings or restarting sessions.
+
+Package: abstract-shell
+Version: 0.1.20
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-shell (>= 0.1.20)
+Filename: pool/main/a/abstract-shell/abstract-shell_0.1.20_all.deb
+Size: 968
+MD5sum: 521909208286292581dab1c12cd06d51
+SHA1: bead03dac0e95f28a0fd86ace6158ee794ced542
+SHA256: 806b6b1852f1befd409304c4475b257ed1614f4bb38f9ba0f67b4031ad7d3ecb
+Section: oldlibs
+Priority: optional
+Description: Transitional package for mellipi-shell
  Abstract is now Mellipi. This package keeps existing installations on the
  signed update path without changing user settings or restarting sessions.
 
@@ -129,6 +161,24 @@ Description: Transitional package for mellipi-shell
  signed update path without changing user settings or restarting sessions.
 
 Package: mellipi-desktop
+Version: 0.1.20
+Architecture: all
+Maintainer: Mellipi OS project
+Depends: mellipi-shell (= 0.1.20), systemd-sysv, libpam-systemd, dbus-user-session, lightdm, lightdm-gtk-greeter, xserver-xorg, xterm, network-manager, network-manager-gnome, bluez, upower, power-profiles-daemon, gnome-keyring, libpam-gnome-keyring, gvfs, gvfs-backends, udisks2, mousepad, epiphany-browser | firefox-esr, synaptic, system-config-printer, fonts-dejavu-core, dmz-cursor-theme, wvkbd, orca, fcitx5, fcitx5-config-qt, fcitx5-frontend-qt5, fcitx5-frontend-gtk3, ddcutil, accountsservice, systemd-timesyncd | time-daemon, gnome-themes-extra
+Breaks: abstract-desktop (<< 0.1.8)
+Replaces: abstract-desktop (<< 0.1.8)
+Filename: pool/main/m/mellipi-desktop/mellipi-desktop_0.1.20_all.deb
+Size: 3564
+MD5sum: 70a0d21d60426cc344eba7c65b81795a
+SHA1: fb61c0769d829c0cbc670c15a1d1fb39952b4c66
+SHA256: 4df0e419299f982a691976ce926b23155ec1109fcc6cd02cc0f73b109feb0acf
+Section: metapackages
+Priority: optional
+Description: Complete Mellipi desktop for an Ubuntu 24.04 systemd base
+ Opt-in login greeter, hardware services, browser, editor and package tools.
+ Uses distribution display-manager selection and PAM configuration.
+
+Package: mellipi-desktop
 Version: 0.1.8
 Architecture: all
 Maintainer: Mellipi OS project
@@ -163,6 +213,25 @@ Priority: optional
 Description: Complete Mellipi desktop for an Ubuntu 24.04 systemd base
  Opt-in login greeter, hardware services, browser, editor and package tools.
  Uses distribution display-manager selection and PAM configuration.
+
+Package: mellipi-shell
+Version: 0.1.20
+Architecture: amd64
+Maintainer: Mellipi OS project
+Depends: python3, gpg, python3-pyqt5, python3-pyqt5.qtquick, python3-gi, python3-cairo, gir1.2-gtk-3.0, gir1.2-vte-2.91, gir1.2-rsvg-2.0, librsvg2-common, libqt5svg5, libxcb-damage0, libxcb-composite0, liblayershellqtinterface5, layer-shell-qt, qtwayland5, qml-module-qtquick2, qml-module-qtquick-controls2, qml-module-qtquick-layouts, qml-module-qtquick-window2, qml-module-qtquick-dialogs, dbus-user-session, libc6 (>= 2.38), libegl1, libgles2, libgbm1, libinput10, libseat1, libudev1, libxkbcommon0, libwayland-client0, libwayland-server0, libcairo2, libpam0g, swaylock, swayidle, xwayland, grim, slurp, util-linux, xdg-utils, xdg-desktop-portal, xdg-desktop-portal-gtk, xdg-desktop-portal-wlr, pipewire, libpipewire-0.3-0t64 | libpipewire-0.3-0, libinih1, libglib2.0-bin, polkitd, pkexec, policykit-1-gnome | mate-polkit | lxqt-policykit | lxpolkit, pulseaudio-utils, pipewire-pulse | pulseaudio, wireplumber | pipewire-media-session, adwaita-icon-theme, dmz-cursor-theme, libc6 (>= 2.39), libcairo2 (>= 1.2.4), libdrm2 (>= 2.4.109), libfontconfig1 (>= 2.12.6), libfreetype6 (>= 2.6), libgbm1 (>= 21.3.0~rc1), libgcc-s1 (>= 4.2), libglib2.0-0t64 (>= 2.12.0), libinih1 (>= 40), libinput10 (>= 1.19.1), libpam0g (>= 0.99.7.1), libpipewire-0.3-0t64 (>= 0.3.1), libqt5core5t64 (>= 5.15.1), libqt5dbus5t64 (>= 5.14.1), libqt5gui5t64 (>= 5.15.1) | libqt5gui5-gles (>= 5.15.1), libqt5widgets5t64 (>= 5.0.2), libseat1 (>= 0.5.0), libsqlite3-0 (>= 3.20.0), libstdc++6 (>= 11), libsystemd0 (>= 243), libudev1 (>= 183), libwayland-client0 (>= 1.20.0), libwayland-cursor0 (>= 1.8.1), libx11-6, libxcb-image0 (>= 0.2), libxcb-keysyms1 (>= 0.4.0), libxcb-res0 (>= 1.10), libxcb-shape0, libxcb-util1 (>= 0.4.0), libxcb1 (>= 1.6), libxfixes3, libxkbcommon0 (>= 1.0.0), libxtst6, qtbase-abi-5-15-13
+Recommends: network-manager, network-manager-gnome, bluez, upower, power-profiles-daemon, gnome-keyring, gvfs, udisks2, system-config-printer, ddcutil, wvkbd, fcitx5, fcitx5-config-qt, fcitx5-frontend-qt5, fcitx5-frontend-gtk3, orca, gnome-system-tools | mate-user-admin, gnome-software | plasma-discover | synaptic
+Breaks: abstract-shell (<< 0.1.8)
+Replaces: abstract-shell (<< 0.1.8)
+Filename: pool/main/m/mellipi-shell/mellipi-shell_0.1.20_amd64.deb
+Size: 4573392
+MD5sum: c4612f789f79c63ec0961a2004fb3936
+SHA1: e05b4710d506f6fe2b6902510376a4878a845a15
+SHA256: 91e2aa61ba28767ccb13a5b9dc853baf869641327498cce724c46a03850dbe71
+Section: x11
+Priority: optional
+Description: Mellipi lightweight native Wayland desktop
+ Native compositor, desktop shell and system integrations. Uses standard
+ Linux services and stores user data in private XDG directories.
 
 Package: mellipi-shell
 Version: 0.1.8
