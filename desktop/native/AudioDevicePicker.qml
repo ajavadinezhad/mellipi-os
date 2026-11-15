@@ -14,9 +14,19 @@ ColumnLayout {
     readonly property int rowHeight: Math.max(34,Theme.fontSize(12)+14)
     signal toggled()
     signal selected(string name)
+    function focusChoice(start, step) {
+        for (var i=start;i>=0 && i<devices.length;i+=step) {
+            if (devices[i].available===false) continue;
+            choices.positionViewAtIndex(i,ListView.Contain);
+            choices.forceLayout();
+            const row=choices.itemAtIndex(i);
+            if(row) row.forceActiveFocus(Qt.TabFocusReason);
+            return;
+        }
+    }
     Layout.fillWidth: true;spacing: 2
     OrbitButton {
-        id: toggle
+        id: pickerToggle
         objectName: picker.objectName+"Toggle"
         Layout.fillWidth: true;implicitHeight: picker.rowHeight;quiet: true
         text: {
@@ -29,26 +39,33 @@ ColumnLayout {
             Text {
                 id: deviceName;objectName: picker.objectName+"Name"
                 anchors.left: parent.left;anchors.right: indicator.left;anchors.rightMargin: 8;anchors.verticalCenter: parent.verticalCenter
-                text: toggle.text;font: toggle.font;color: toggle.enabled ? Theme.text : Theme.disabled
+                text: pickerToggle.text;font: pickerToggle.font;color: pickerToggle.enabled ? Theme.text : Theme.disabled
                 elide: Text.ElideRight;textFormat: Text.PlainText
             }
-            Canvas {
+            ControlMark {
                 id: indicator;objectName: picker.objectName+"Indicator"
                 anchors.right: parent.right;anchors.verticalCenter: parent.verticalCenter;width: 12;height: 12
-                property bool up: picker.expanded
-                property color ink: toggle.enabled ? Theme.muted : Theme.disabled
-                onUpChanged: requestPaint();onInkChanged: requestPaint()
-                onPaint: {var c=getContext("2d");c.clearRect(0,0,width,height);c.strokeStyle=ink;c.lineWidth=1.5;c.lineCap="round";c.lineJoin="round";c.beginPath();c.moveTo(2,up ? 8 : 4);c.lineTo(6,up ? 4 : 8);c.lineTo(10,up ? 8 : 4);c.stroke();}
+                up: picker.expanded
+                ink: pickerToggle.enabled ? Theme.muted : Theme.disabled
             }
         }
-        background: Rectangle {
-            color: toggle.down ? Theme.hover : Theme.raised
-            radius: Theme.corner(8)
-            border.color: toggle.activeFocus ? Theme.focusColor : toggle.enabled ? Theme.controlBorder : Theme.border
-            border.width: toggle.activeFocus && Theme.highContrast ? 2 : 1
+        background: ControlSurface {
+            field: true;controlEnabled: pickerToggle.enabled;focused: pickerToggle.activeFocus
+            pressed: pickerToggle.visuallyDown;hovered: pickerToggle.hovered
         }
         enabled: picker.devices.length>0
         onClicked: picker.toggled()
+        Keys.onDownPressed: {
+            if(!picker.expanded) picker.toggled();
+            Qt.callLater(function() {
+                var selected=picker.devices.findIndex(device=>device.name===picker.selectedName && device.available!==false);
+                if(picker.expanded) picker.focusChoice(Math.max(0,selected),1);
+            });
+        }
+        Keys.onEscapePressed: event => {
+            event.accepted=picker.expanded;
+            if(event.accepted) picker.toggled();
+        }
     }
     ListView {
         id: choices
@@ -64,6 +81,16 @@ ColumnLayout {
                 choices.currentIndex=index;
                 choices.positionViewAtIndex(index,ListView.Contain);
             }
+            Keys.onDownPressed: picker.focusChoice(index+1,1)
+            Keys.onUpPressed: {
+                if(index===0 || !picker.devices.slice(0,index).some(device=>device.available!==false))
+                    pickerToggle.forceActiveFocus(Qt.TabFocusReason);
+                else picker.focusChoice(index-1,-1);
+            }
+            Keys.onEscapePressed: {
+                pickerToggle.forceActiveFocus(Qt.TabFocusReason);
+                picker.toggled();
+            }
             width: ListView.view.width;height: picker.rowHeight;implicitHeight: picker.rowHeight
             text: modelData.description;hint: modelData.available===false ? "Device unplugged" : modelData.description
             enabled: modelData.available!==false
@@ -76,14 +103,15 @@ ColumnLayout {
                     id: choiceName;anchors.left: parent.left;anchors.right: selection.left;anchors.rightMargin: 8;anchors.verticalCenter: parent.verticalCenter
                     text: choice.text;font: choice.font;color: choice.selectedDevice ? Theme.text : Theme.muted;elide: Text.ElideRight;textFormat: Text.PlainText
                 }
-                Canvas {
+                ControlMark {
                     id: selection;anchors.right: parent.right;anchors.verticalCenter: parent.verticalCenter;width: 12;height: 12;visible: choice.selectedDevice
-                    property color ink: Theme.accentInk
-                    onInkChanged: requestPaint()
-                    onPaint: {var c=getContext("2d");c.clearRect(0,0,width,height);c.strokeStyle=ink;c.lineWidth=1.5;c.lineCap="round";c.lineJoin="round";c.beginPath();c.moveTo(1,6);c.lineTo(4.5,9.5);c.lineTo(11,2.5);c.stroke();}
+                    check: true;ink: Theme.accentInk
                 }
             }
-            onClicked: picker.selected(modelData.name)
+            onClicked: {
+                if(choice.activeFocus) pickerToggle.forceActiveFocus(Qt.TabFocusReason);
+                picker.selected(modelData.name);
+            }
         }
     }
 }

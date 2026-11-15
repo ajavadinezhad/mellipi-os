@@ -159,10 +159,15 @@ class Editor(AppWindow):
         self.query.returnPressed.connect(self.find_next)
         self.case = QCheckBox('Match case')
         find_row.addWidget(self.query, 1)
-        find_row.addWidget(self.case)
-        find_row.addWidget(self.button('Previous', 'go-previous', self.find_previous, icon_only=True))
-        find_row.addWidget(self.button('Next', 'go-next', self.find_next, icon_only=True))
-        find_row.addWidget(self.button('Hide', 'window-close', self.hide_find, icon_only=True))
+        self.find_actions = QWidget()
+        find_actions = QHBoxLayout(self.find_actions)
+        find_actions.setContentsMargins(0, 0, 0, 0)
+        find_actions.addStretch()
+        find_actions.addWidget(self.case)
+        find_actions.addWidget(self.button('Previous', 'go-previous', self.find_previous, icon_only=True))
+        find_actions.addWidget(self.button('Next', 'go-next', self.find_next, icon_only=True))
+        find_actions.addWidget(self.button('Close find', 'window-close', self.hide_find, icon_only=True))
+        find_row.addWidget(self.find_actions)
         panel.addLayout(find_row)
         self.replace_row = QWidget()
         row = QHBoxLayout(self.replace_row)
@@ -171,8 +176,13 @@ class Editor(AppWindow):
         self.replacement.setAccessibleName('Replacement text')
         self.replacement.setMaxLength(4096)
         row.addWidget(self.replacement, 1)
-        row.addWidget(self.button('Replace', 'edit-find-replace', self.replace_one))
-        row.addWidget(self.button('Replace all', 'edit-find-replace', self.replace_all))
+        self.replace_actions = QWidget()
+        replace_actions = QHBoxLayout(self.replace_actions)
+        replace_actions.setContentsMargins(0, 0, 0, 0)
+        replace_actions.addStretch()
+        replace_actions.addWidget(self.button('Replace', 'edit-find-replace', self.replace_one))
+        replace_actions.addWidget(self.button('Replace all', 'edit-find-replace', self.replace_all))
+        row.addWidget(self.replace_actions)
         panel.addWidget(self.replace_row)
         self.content.addWidget(self.find_panel)
         self.find_panel.hide()
@@ -251,6 +261,20 @@ class Editor(AppWindow):
             if button.text() != label:
                 button.setText(label)
             button.setMinimumWidth(glyph + 12)
+        fields = (self.query, self.replacement, self.line_input)
+        bar_height = max(glyph + 14, *(field.sizeHint().height() for field in fields))
+        for field in fields:
+            field.setFixedHeight(bar_height)
+        for actions in (self.find_actions, self.replace_actions):
+            for button in actions.findChildren(QPushButton):
+                button.setFixedHeight(bar_height)
+        self.align_find_columns()
+
+    def align_find_columns(self):
+        groups = (self.find_actions, self.replace_actions)
+        width = max(group.layout().minimumSize().width() for group in groups)
+        for group in groups:
+            group.setFixedWidth(width)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -278,7 +302,9 @@ class Editor(AppWindow):
         return self.add_document(Document())
 
     def choose_open(self):
-        files, _ = FileChooser.getOpenFileNames(self, 'Open text files', str(Path.home()))
+        doc = self.document()
+        folder = doc.path.parent if doc is not None and doc.path else Path.home()
+        files, _ = FileChooser.getOpenFileNames(self, 'Open text files', str(folder))
         for file in files:
             self.open_path(file)
 
@@ -397,6 +423,7 @@ class Editor(AppWindow):
     def show_replace(self):
         self.show_find()
         self.replace_row.show()
+        self.align_find_columns()
 
     def hide_find(self):
         if not self.find_panel.isVisible():
@@ -526,6 +553,7 @@ class Editor(AppWindow):
     def confirm_close(self, doc):
         if not doc.document().isModified():
             return True
+        self.tabs.setCurrentWidget(doc)
         choice = self.close_choice(doc)
         return choice == 2 or (choice == 1 and self.save(doc))
 

@@ -4,7 +4,8 @@ from copy import deepcopy
 from pathlib import Path
 from project_paths import PROJECT_ROOT
 
-THEME_IDS=('midnight','dune','forest','glacier','ember','lavender','porcelain','graphite')
+THEME_IDS=('midnight','dune','forest','glacier','ember','lavender','porcelain','graphite',
+           'lagoon','saffron','rosewater','citron','cobalt')
 PALETTE_KEYS=('background','surface','raised','hover','border','text','muted','faint')
 COLOR=re.compile(r'#[0-9a-fA-F]{6}\Z')
 

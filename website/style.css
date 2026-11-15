@@ -42,3 +42,6 @@ footer .source-link{font-size:11px;text-decoration:underline;text-underline-offs
 }
 
 .preview-captures{margin-top:32px}
+
+.wallpaper-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+.wallpaper-grid img { aspect-ratio: 8 / 5; object-fit: cover; }

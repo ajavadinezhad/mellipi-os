@@ -16,9 +16,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PyQt6.QtCore import QDate, QSize, Qt, QUrl
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QShortcut, QTextCharFormat
-from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCalendarWidget, QHBoxLayout,
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCalendarWidget, QFrame, QHBoxLayout,
                               QLabel, QListWidget, QListWidgetItem, QPushButton, QStackedWidget,
-                              QToolButton, QVBoxLayout, QWidget)
+                              QScrollArea, QToolButton, QVBoxLayout, QWidget)
 
 from file_chooser import FileChooser
 from installed_launcher import user_environment
@@ -426,7 +426,7 @@ class Calendar(AppWindow):
     def __init__(self):
         super().__init__('Calendar')
         self.resize(760, 485)
-        self.setMinimumSize(450, 440)
+        self.setMinimumSize(450, 300)
         self.store = EventStore(Path(user_environment()['ORBIT_DATA'])/'calendar-events.json')
         self.marked = []
         self.month = QCalendarWidget()
@@ -453,11 +453,12 @@ class Calendar(AppWindow):
         self.empty = QLabel('No events')
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty.setObjectName('muted')
-        self.status = QLabel(self.store.error or 'Import an .ics file to see events here.')
+        self.status = QLabel(self.store.error or '')
         self.status.setAccessibleName('Calendar import status')
         self.status.setObjectName('muted')
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
+        self.status.setVisible(bool(self.status.text()))
 
         today = QPushButton()
         today.setAccessibleName('Go to today')
@@ -500,8 +501,9 @@ class Calendar(AppWindow):
         calendar_layout.addWidget(self.status)
         self.clock_page = ClockPage(self)
         self.pages = QStackedWidget()
-        self.pages.addWidget(calendar_page)
-        self.pages.addWidget(self.clock_page)
+        self.month_scroll = self.scroll_page(calendar_page)
+        self.pages.addWidget(self.month_scroll)
+        self.pages.addWidget(self.scroll_page(self.clock_page))
         self.content.addWidget(self.pages, 1)
         self.calendar_buttons = (today, import_button)
         QShortcut(QKeySequence.StandardKey.Open, self).activated.connect(self.choose_import)
@@ -511,6 +513,14 @@ class Calendar(AppWindow):
         self.refresh_icons()
         self.refresh_all()
         self.month.setFocus()
+
+    @staticmethod
+    def scroll_page(page):
+        scroll = QScrollArea()
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        return scroll
 
     def show_clocks(self, enabled=True):
         self.pages.setCurrentIndex(int(enabled))
@@ -549,8 +559,10 @@ class Calendar(AppWindow):
             button.setIconSize(QSize(glyph, glyph))
             button.setMinimumSize(glyph + 18, glyph + 14)
         self.month.setMinimumHeight(7 * (font_size + 4) + font_size + 18)
-        # At large text sizes, leave room for at least one complete agenda row.
-        self.setMinimumHeight(max(440, self.month.minimumHeight() + 260) if narrow else 390)
+        # Give the agenda usable space inside the scrollable page, rather than
+        # forcing a window taller than small or scaled displays.
+        self.event_list.setMinimumHeight(font_size * 3 + 18)
+        self.empty.setMinimumHeight(font_size * 2 + 10)
 
     def refresh_all(self):
         weekend = QTextCharFormat()
@@ -638,6 +650,7 @@ class Calendar(AppWindow):
             imported, recurrence, skipped = self.store.import_path(Path(value))
         except (OSError, ValueError) as error:
             self.status.setText(f'Import failed: {error}')
+            self.status.show()
             return
         count = len(imported)
         if imported:
@@ -661,6 +674,7 @@ class Calendar(AppWindow):
         if skipped:
             summary.append(f'{skipped} invalid event entries or unknown time zones skipped')
         self.status.setText(' · '.join(summary))
+        self.status.show()
         self.refresh_all()
 
 

@@ -809,6 +809,7 @@ impl OrbitCompositor {
                 self.request_redraw();
             }
             self.refocus_after_unmap(&window);
+            self.reflow_auto_placement();
             return json!({"ok":true});
         }
         if command == "focus"

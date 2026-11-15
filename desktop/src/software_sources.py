@@ -340,3 +340,65 @@ def install(package):
         if result.strip() != 'installed':
             raise RuntimeError('APT finished without installing the selected package.')
     return output
+
+
+DPKG = '/usr/bin/dpkg'
+APT_INSTALLED_ID = re.compile(r'[a-z0-9][a-z0-9+.-]+(?::[a-z0-9][a-z0-9-]*)?')
+
+
+def can_manage(package, action):
+    if not package.installed or action not in ('update', 'remove'):
+        return False
+    if package.source == 'apt':
+        name = package.identifier.split(':', 1)[0]
+        return bool(APT_INSTALLED_ID.fullmatch(package.identifier)
+                    and (action == 'update' or not name.startswith(('mellipi', 'abstract', 'orbit-'))))
+    if package.source == 'flatpak':
+        return bool(package.scope in ('user', 'system') and FLATPAK_ID.fullmatch(package.identifier)
+                    and FLATPAK_COMPONENT.fullmatch(package.branch))
+    if package.source == 'snap':
+        return bool(SNAP_ID.fullmatch(package.identifier))
+    return False
+
+
+def manage_arguments(package, action):
+    if not can_manage(package, action):
+        raise ValueError('This software cannot be managed from here.')
+    if package.source == 'apt':
+        if action == 'update':
+            # Respect holds and authenticated APT sources; never remove another package.
+            return [PKEXEC, APT_GET, '-y', '--only-upgrade', '--no-remove',
+                    'install', '--', package.identifier]
+        # dpkg refuses to break installed dependencies under its package lock.
+        # APT remove can silently add dependent packages to the transaction.
+        return [PKEXEC, DPKG, '--refuse-depends', '--refuse-remove-essential',
+                '--refuse-remove-protected', '--remove', '--', package.identifier]
+    if package.source == 'flatpak':
+        verb = 'uninstall' if action == 'remove' else 'update'
+        options = ['--no-related'] if action == 'remove' else []
+        return [FLATPAK, '--' + package.scope, verb, '--app', '--assumeyes',
+                '--noninteractive', *options, '--', f'{package.identifier}//{package.branch}']
+    return [PKEXEC, SNAP, 'refresh' if action == 'update' else 'remove', '--', package.identifier]
+
+
+def manage(package, action):
+    arguments = manage_arguments(package, action)
+    if package.source == 'apt':
+        fields = r'${db:Status-Want}\t${db:Status-Status}\t${Essential}\t${Protected}\t${Priority}\t${Version}\n'
+        before = run([DPKG_QUERY, '-W', '-f=' + fields, '--', package.identifier]).rstrip('\n').split('\t')
+        if len(before) != 6 or before[1] != 'installed':
+            raise RuntimeError('This package is no longer installed. Refresh the list and try again.')
+        if before[0] == 'hold':
+            raise RuntimeError('This package is on hold in the system package manager.')
+        if action == 'remove':
+            if before[2:4].count('yes') or before[4] in ('required', 'important'):
+                raise RuntimeError('Software cannot remove a protected system package.')
+            paths = run([DPKG_QUERY, '-L', '--', package.identifier]).splitlines()
+            if not any(re.fullmatch(r'/usr/share/applications/[^/]+\.desktop', path) for path in paths):
+                raise RuntimeError('Software removes desktop apps only. Use the system package manager for this package.')
+    run(arguments, timeout=None)
+    if package.source == 'apt' and action == 'update':
+        # Check the installed version rather than interpreting localized apt output.
+        after = run([DPKG_QUERY, '-W', '-f=${Version}', '--', package.identifier]).strip()
+        return after != before[5]
+    return None

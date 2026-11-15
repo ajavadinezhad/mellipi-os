@@ -46,3 +46,12 @@ class TaskbarPopoverGeometryTest(unittest.TestCase):
                          taskbar_overlay_layout(*params,(300,150)))
         self.assertEqual(panel_body_origin('launcher',400,300,self.screen,'top',bar),
                          dict(x=-520,y=78))
+
+
+    def test_session_exit_centers_on_secondary_output_on_every_edge(self):
+        for edge in ('left', 'right', 'top', 'bottom'):
+            with self.subTest(edge=edge):
+                self.assertEqual(panel_body_origin('session-exit',400,200,self.screen,edge),
+                                 dict(x=-520,y=128))
+                self.assertEqual(panel_mask_origin(600,400,400,200,'session-exit',edge),
+                                 dict(x=100,y=100))

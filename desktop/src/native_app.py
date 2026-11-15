@@ -32,7 +32,15 @@ class Icons(QQuickImageProvider):
                 'camera':'camera','volume':'speaker-high','mute':'speaker-slash','bell':'bell',
                 'chevron-up':'caret-up','chevron-down':'caret-down','chevron-left':'caret-left',
                 'chevron-right':'caret-right','usage':'chart-bar','settings':'sliders-horizontal',
-                'layouts':'squares-four',
+                'layouts':'squares-four', 'start-spaces':'squares-four', 'fold':'dots-nine',
+                'mellipi-files':'folder', 'mellipi-terminal':'terminal-window',
+                'mellipi-browser':'globe', 'mellipi-editor':'note-pencil',
+                'mellipi-calculator':'calculator', 'mellipi-calendar':'calendar',
+                'mellipi-photos':'image', 'mellipi-pdf':'file-pdf',
+                'mellipi-software':'storefront', 'mellipi-media':'play-circle',
+                'mellipi-disks':'hard-drives', 'mellipi-settings':'sliders-horizontal',
+                'mellipi-monitor':'chart-bar', 'mellipi-recorder':'microphone',
+                'mellipi-desktop':'dots-nine',
             }.get(name)
             color=QColor('#'+ink)
             if glyph and color.isValid() and (svg:=asset('regular',glyph)):
@@ -190,7 +198,6 @@ class Bridge(QObject):
     nativePlacementSupported=Property(bool,lambda s:s._nativePlacementSupported is True,notify=interactionChanged)
     windowPlacementChanged=Signal()
     windowPlacementEnabled=Property(bool,lambda s:s.preferences.values['windowPlacementEnabled'],notify=windowPlacementChanged)
-    windowGridCount=Property(int,lambda s:int(s.preferences.values['windowPlacement'].split('-')[-1]),notify=windowPlacementChanged)
     windowPlacement=Property(str,lambda s:s.preferences.values['windowPlacement'],notify=windowPlacementChanged)
     switchWindows=Property('QVariantList',lambda s:s._switch,notify=interactionChanged)
     switchIndex=Property(int,lambda s:s._switchIndex,notify=interactionChanged)

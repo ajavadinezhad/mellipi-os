@@ -60,6 +60,8 @@ def duration(seconds):
 
 
 class ClockPage(QWidget):
+    ALERT_HINT = "Keep Calendar open for alerts."
+
     def __init__(self, calendar):
         super().__init__()
         self.calendar = calendar
@@ -83,8 +85,8 @@ class ClockPage(QWidget):
         self.seconds.setRange(0, 59)
         self.seconds.setSuffix(' sec')
         self.seconds.setAccessibleName('Timer seconds')
-        row.addWidget(self.minutes)
-        row.addWidget(self.seconds)
+        row.addWidget(self.minutes, 1)
+        row.addWidget(self.seconds, 1)
         timer.addLayout(row)
         self.start_timer, self.cancel_timer = self._buttons(
             timer, 'Start timer', self._start_timer, 'Cancel timer', self._cancel_timer)
@@ -104,7 +106,7 @@ class ClockPage(QWidget):
         self.start_stopwatch, _ = self._buttons(
             stopwatch, 'Start', self._toggle_stopwatch, 'Reset', self._reset_stopwatch)
 
-        self.feedback = QLabel('Keep Calendar open for timers and alarms.')
+        self.feedback = QLabel(self.ALERT_HINT)
         self.feedback.setWordWrap(True)
         self.feedback.setObjectName('muted')
         self.feedback.setAccessibleName('Clock status')
@@ -147,12 +149,12 @@ class ClockPage(QWidget):
         seconds = self.minutes.value() * 60 + self.seconds.value()
         if seconds:
             self.state.start_timer(seconds)
-            self.feedback.setText('Timer started.')
+            self.feedback.setText(self.ALERT_HINT)
             self.refresh()
 
     def _cancel_timer(self):
         self.state.timer_end = None
-        self.feedback.setText('Timer canceled.')
+        self.feedback.setText(self.ALERT_HINT)
         self.refresh()
 
     def _set_alarm(self):
@@ -161,12 +163,12 @@ class ClockPage(QWidget):
             self.feedback.setText('Choose a time in the future.')
             return
         self.state.alarm_at = stamp
-        self.feedback.setText('Alarm set.')
+        self.feedback.setText(self.ALERT_HINT)
         self.refresh()
 
     def _cancel_alarm(self):
         self.state.alarm_at = None
-        self.feedback.setText('Alarm canceled.')
+        self.feedback.setText(self.ALERT_HINT)
         self.refresh()
 
     def _toggle_stopwatch(self):

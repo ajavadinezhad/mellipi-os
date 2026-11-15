@@ -86,3 +86,55 @@ class InstalledSoftwareTests(unittest.TestCase):
         result = installed_software('', ('snap',))['snap']
         self.assertEqual([p.identifier for p in result.packages], ['hello-world'])
         request.assert_called_once_with('/v2/snaps')
+
+
+class SoftwareManagementTests(unittest.TestCase):
+    @patch('software_sources.run', side_effect=['install\tinstalled\t\t\toptional\t1.0\n', '', '1.1'])
+    def test_apt_update_never_removes_and_reports_version_change(self, run):
+        from software_sources import Package, manage
+        package = Package('apt', 'example.app:amd64', 'Example', '', installed=True)
+        self.assertTrue(manage(package, 'update'))
+        self.assertEqual(run.call_args_list[1].args[0],
+                         [PKEXEC, APT_GET, '-y', '--only-upgrade', '--no-remove',
+                          'install', '--', 'example.app:amd64'])
+
+    @patch('software_sources.run', side_effect=[
+        'install\tinstalled\t\t\toptional\t1.0\n',
+        '/usr/share/applications/example.desktop\n', '',
+    ])
+    def test_apt_removal_targets_one_desktop_package_and_refuses_dependency_breakage(self, run):
+        from software_sources import DPKG, Package, manage
+        manage(Package('apt', 'example', 'Example', '', installed=True), 'remove')
+        run.assert_called_with([PKEXEC, DPKG, '--refuse-depends', '--refuse-remove-essential',
+                                '--refuse-remove-protected', '--remove', '--', 'example'], timeout=None)
+
+    @patch('software_sources.run')
+    def test_packages_without_desktop_entry_and_held_packages_are_not_removed(self, run):
+        from software_sources import Package, manage
+        package = Package('apt', 'example', 'Example', '', installed=True)
+        run.side_effect = ['install\tinstalled\t\t\toptional\t1.0\n', '/usr/share/doc/example\n']
+        with self.assertRaisesRegex(RuntimeError, 'desktop apps only'):
+            manage(package, 'remove')
+        self.assertEqual(run.call_count, 2)
+        run.reset_mock()
+        run.side_effect = ['hold\tinstalled\t\t\toptional\t1.0\n']
+        with self.assertRaisesRegex(RuntimeError, 'on hold'):
+            manage(package, 'remove')
+        self.assertEqual(run.call_count, 1)
+
+    def test_source_operations_keep_scope_and_user_data(self):
+        from software_sources import FLATPAK, SNAP, Package, manage_arguments
+        flatpak = Package('flatpak', 'org.example.App', 'Example', '', scope='user',
+                          branch='stable', installed=True)
+        command = manage_arguments(flatpak, 'remove')
+        self.assertEqual(command[:4], [FLATPAK, '--user', 'uninstall', '--app'])
+        self.assertEqual(command[-1], 'org.example.App//stable')
+        self.assertNotIn('--delete-data', command)
+        snap = Package('snap', 'example-app', 'Example', '', installed=True)
+        self.assertEqual(manage_arguments(snap, 'remove'), [PKEXEC, SNAP, 'remove', '--', 'example-app'])
+
+    def test_core_mellipi_and_malformed_ids_are_not_removed(self):
+        from software_sources import Package, manage_arguments
+        for name in ('mellipi-shell', 'abstract-shell', 'orbit-native', 'app:amd64;'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                manage_arguments(Package('apt', name, name, '', installed=True), 'remove')

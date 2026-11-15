@@ -1,6 +1,6 @@
 """Layer-shell keyboard focus policy (none=0, exclusive=1, on-demand=2)."""
 
-CENTERED_PANELS=('launcher','overview','settings','system-settings')
+CENTERED_PANELS=('launcher','overview','settings','system-settings','session-exit')
 
 SPINE_FOOTER_PANELS=('quick','music','usage','notifications','tray','bluetooth','battery','screenshot','window-placement')
 

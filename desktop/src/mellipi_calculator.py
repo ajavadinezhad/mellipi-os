@@ -4,8 +4,8 @@ import sys
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QFont, QFontMetrics, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QApplication, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from calculator_core import CalculationError, MAX_EXPRESSION, calculate
@@ -49,6 +49,14 @@ class Calculator(AppWindow):
         super().__init__('Calculator')
         self.resize(352, 402)
         self.setMinimumWidth(282)
+        self.workspace = QScrollArea()
+        self.workspace.setFrameShape(QFrame.Shape.NoFrame)
+        self.workspace.setWidgetResizable(True)
+        keypad = QWidget()
+        self.controls = QVBoxLayout(keypad)
+        self.controls.setContentsMargins(0, 0, 0, 0)
+        self.workspace.setWidget(keypad)
+        self.content.addWidget(self.workspace, 1)
         self.last_expression = ''
         self.showing_result = False
         self.field = ExpressionField(self)
@@ -60,14 +68,14 @@ class Calculator(AppWindow):
         self.field.setMinimumHeight(56)
         self.field.textEdited.connect(self.edited)
         self.field.returnPressed.connect(self.evaluate)
-        self.content.addWidget(self.field)
+        self.controls.addWidget(self.field)
 
-        self.feedback = QLabel('Type a calculation or use the keypad')
+        self.feedback = QLabel()
         self.feedback.setObjectName('calculationFeedback')
         self.feedback.setTextFormat(Qt.TextFormat.PlainText)
         self.feedback.setWordWrap(True)
-        self.feedback.setMinimumHeight(40)
-        self.content.addWidget(self.feedback)
+        self.feedback.setMinimumHeight(32)
+        self.controls.addWidget(self.feedback)
         grid = QGridLayout()
         grid.setSpacing(6)
         for column in range(4):
@@ -88,7 +96,7 @@ class Calculator(AppWindow):
                     button.setObjectName('operation')
                     button.setAccessibleName({'÷':'Divide', '×':'Multiply', '−':'Subtract', '+':'Add', '^':'Power'}[key])
                 grid.addWidget(button, row, column)
-        self.content.addLayout(grid)
+        self.controls.addLayout(grid)
         actions = QHBoxLayout()
         self.history_button = self.icon_button('History', 'history', self.toggle_history)
         self.history_button.setCheckable(True)
@@ -96,8 +104,9 @@ class Calculator(AppWindow):
         actions.addWidget(self.icon_button('Clear expression', 'edit-clear', self.clear), 1)
         actions.addWidget(self.history_button, 1)
         actions.addWidget(self.icon_button('Copy result', 'edit-copy', self.copy_result), 1)
-        self.content.addLayout(actions)
+        self.controls.addLayout(actions)
         self.setup_history()
+        self.controls.addStretch(1)
 
         self.shortcuts = []
         for key, action in [('Escape', self.escape), ('Ctrl+R', self.recall),
@@ -154,7 +163,7 @@ class Calculator(AppWindow):
         for button in (self.history_recall, self.history_copy, self.history_clear):
             actions.addWidget(button, 1)
         layout.addLayout(actions)
-        self.content.addWidget(self.history_panel)
+        self.controls.addWidget(self.history_panel)
         self.history_panel.hide()
         self.history_selection_changed()
 
@@ -167,17 +176,18 @@ class Calculator(AppWindow):
     def toggle_history(self):
         opening = self.history_panel.isHidden()
         if opening:
-            self.base_height = self.height()
             self.history_panel.show()
             self.history_button.setChecked(True)
             if self.history.count():
                 self.history.setCurrentRow(0)
                 self.history.setFocus()
+            self.controls.activate()
+            self.workspace.ensureWidgetVisible(self.history_panel, 0, 0)
         else:
             self.history_panel.hide()
             self.history_button.setChecked(False)
-            self.resize(self.width(), self.base_height)
             self.field.setFocus()
+            self.workspace.ensureWidgetVisible(self.field, 0, 0)
 
     def escape(self):
         if not self.history_panel.isHidden():

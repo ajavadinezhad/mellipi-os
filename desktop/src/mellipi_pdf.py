@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (QApplication, QBoxLayout, QDialog, QDialogButtonBox
 
 from file_chooser import FileChooser
 from mellipi_photos import Canvas, PhotoSurface, action, local_file, status_label
-from qt_app import style_dialog, ThemedInput, AppWindow, themed_prompt
+from qt_app import exec_owned_dialog, style_dialog, ThemedInput, AppWindow, themed_choice
 from installed_launcher import user_environment
 from pdf_annotations import MAX_MARKS, MAX_NOTE, MAX_REQUEST, revision
 
@@ -315,6 +315,7 @@ class PdfWindow(AppWindow):
         self.toolbar.addLayout(self.tools)
         self.open_button = action('Open PDF', 'document-open-symbolic', self.choose_file, self, QKeySequence.StandardKey.Open)
         self.navigation.addWidget(self.open_button)
+        self.open_button.hide()
         self.previous = action('Previous page', 'go-previous-symbolic', lambda: self.go(self.page - 1), self, Qt.Key.Key_PageUp)
         self.next = action('Next page', 'go-next-symbolic', lambda: self.go(self.page + 1), self, Qt.Key.Key_PageDown)
         self.navigation.addWidget(self.previous)
@@ -377,7 +378,7 @@ class PdfWindow(AppWindow):
         self.canvas.label.placed.connect(self.place_annotation)
         self.status = status_label()
         self.status.setAccessibleName('PDF status')
-        self.start_stage = self.empty_stage('Open a PDF', 'Choose a PDF or drop one here.', 'Open PDF…', self.choose_file)
+        self.start_stage = self.empty_stage('PDF Viewer', 'Drop a PDF here to read it.', 'Open PDF…', self.choose_file)
         self.content.addWidget(self.start_stage, 1)
         self.canvas.hide()
         self.content.addWidget(self.canvas, 1)
@@ -421,9 +422,10 @@ class PdfWindow(AppWindow):
         except (OSError, ValueError) as error:
             self.status.setText(str(error))
             return False
-        if not self.can_leave_document():
+        if not self.can_leave_document(lambda: self.open_path(value)):
             return False
         self.start_stage.hide()
+        self.open_button.show()
         self.canvas.show()
         self.save_position()
         self.annotation_reader.cancel()
@@ -499,13 +501,18 @@ class PdfWindow(AppWindow):
                                        '-scale-to', '2200', '-cropbox', '-png', str(self.document)],
                           ready, maximum=PNG_LIMIT)
 
-    def can_leave_document(self):
+    def can_leave_document(self, after_save):
         if self.exporting:
             self.status.setText('Wait for the annotated copy to finish saving.')
             return False
-        return not self.annotation_dirty or themed_prompt(
-            self, 'Discard unsaved markup?', 'Save an annotated copy if you want to keep these changes.',
-            'Discard', 'Cancel')
+        if not self.annotation_dirty:
+            return True
+        choice = themed_choice(
+            self, 'Unsaved PDF markup', 'Save your markup to a new PDF before leaving?',
+            'Save Copy…', 'Keep Editing', 'Discard')
+        if choice == QDialog.DialogCode.Accepted:
+            self.save_annotated_copy(after_save=after_save)
+        return choice == 2
 
     def refresh_marks(self):
         self.canvas.label.marks = [mark for mark in self.marks if mark[1] == self.page]
@@ -604,12 +611,15 @@ class PdfWindow(AppWindow):
             close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dialog)
             close.rejected.connect(dialog.reject)
             layout.addWidget(close)
-            dialog.exec()
-            dialog.deleteLater()
+            content.setFocus()
+            try:
+                exec_owned_dialog(dialog)
+            finally:
+                dialog.deleteLater()
 
         self.annotation_request(self.annotation_reader, 'notes', {'page': page}, ready)
 
-    def save_annotated_copy(self):
+    def save_annotated_copy(self, *, after_save=None):
         if not self.document or not self.marks or self.exporting:
             return
         proposed = self.document.with_name(self.document.stem + ' — annotated.pdf')
@@ -627,10 +637,13 @@ class PdfWindow(AppWindow):
 
         def ready(result, error):
             self.exporting = False
-            if result:
+            saved = bool(result) and not error
+            if saved:
                 self.annotation_dirty = False
             self.update_annotation_actions()
-            self.status.setText(error or f'Annotated copy saved to {path}')
+            self.status.setText(f'Annotated copy saved to {path}' if saved else error or 'Could not save annotated copy.')
+            if saved and after_save is not None:
+                QTimer.singleShot(0, after_save)
 
         self.annotation_request(self.exporter, 'save', {'revision': self.annotation_revision, 'marks': self.marks},
                                 ready, path)
@@ -733,7 +746,7 @@ class PdfWindow(AppWindow):
             event.acceptProposedAction()
 
     def closeEvent(self, event):
-        if not self.can_leave_document():
+        if not self.can_leave_document(self.close):
             event.ignore()
             return
         self.save_position()

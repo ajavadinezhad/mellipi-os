@@ -1,0 +1,19 @@
+{
+  "id": "citron",
+  "name": "Citron",
+  "description": "Citrus paper, chartreuse details, and deep olive ink.",
+  "mode": "light",
+  "darkLevel": "normal",
+  "accent": "#536215",
+  "background": "#f3f4df",
+  "palette": {
+    "background": "#f3f4df",
+    "surface": "#fbfcec",
+    "raised": "#e8ebce",
+    "hover": "#dce3b8",
+    "border": "#777e4e",
+    "text": "#252b14",
+    "muted": "#505a32",
+    "faint": "#57613a"
+  }
+}

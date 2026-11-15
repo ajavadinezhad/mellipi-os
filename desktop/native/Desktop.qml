@@ -33,9 +33,10 @@ QtObject {
     readonly property bool bottomSheet: foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
     readonly property int panelPadding: Theme.extraCompact ? 12 : Theme.compact ? 16 : 20
     readonly property int panelGap: Theme.extraCompact ? 6 : Theme.compact ? 10 : 14
-    readonly property int panelOverhead: 2*panelPadding+panelGap+(foldStyle ? sheetHeader.implicitHeight : 30)
+    readonly property bool exitReview: renderedPanel === "session-exit"
+    readonly property int panelOverhead: 2*panelPadding+(exitReview ? 0 : panelGap+(foldStyle ? sheetHeader.implicitHeight : 30))
     readonly property bool foldPanel: foldStyle && (renderedPanel === "launcher" || renderedPanel === "overview")
-    property int panelWidth: ({launcher:workspacePanelWidth,overview:workspacePanelWidth,ai:workspacePanelWidth,settings:420,"system-settings":600,capture:520,quick:350,music:350,usage:350,notifications:380,tray:310,bluetooth:380,battery:380,screenshot:380,"window-capture":500,"window-placement":270,switcher:620})[shell.renderedPanel] || 560
+    property int panelWidth: ({launcher:workspacePanelWidth,overview:workspacePanelWidth,ai:workspacePanelWidth,settings:420,"system-settings":600,capture:520,quick:350,music:350,usage:350,notifications:380,tray:310,bluetooth:380,battery:380,screenshot:380,"window-capture":500,"window-placement":270,"session-exit":460,switcher:620})[shell.renderedPanel] || 560
     readonly property bool panelRight: !foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
     readonly property int panelBodyWidth: Math.max(1,Math.min(sw-(foldStyle ? horizontalBar ? 32 : Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0) : 24),panelWidth,760))
     readonly property int panelBodyHeight: Math.max(1,Math.min(sh-(foldStyle ? horizontalBar ? Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0) : 32 : foldPanel ? (Theme.compact ? 144 : 172) : 100),panelHeight,620))
@@ -51,7 +52,7 @@ QtObject {
         if(shell.renderedPanel === "overview") return Math.min(510,160+Math.max(1,Math.ceil(visibleWindows.length/3))*135);
         if(shell.renderedPanel === "settings") return Math.max(260,(pageLoader.item ? pageLoader.item.implicitHeight : 300)+shell.panelOverhead);
         if(shell.renderedPanel === "system-settings") return Math.max(320,(pageLoader.item ? pageLoader.item.implicitHeight : 400)+shell.panelOverhead);
-        if(shell.renderedPanel === "session-exit") return Math.max(280,(pageLoader.item ? pageLoader.item.implicitHeight : 240)+shell.panelOverhead);
+        if(shell.renderedPanel === "session-exit") return (pageLoader.item ? pageLoader.item.implicitHeight : 180)+shell.panelOverhead;
         if(shell.renderedPanel === "capture") return 350;
         if(shell.renderedPanel === "usage") return Math.max(280,(pageLoader.item ? pageLoader.item.implicitHeight : 240)+shell.panelOverhead);
         if(shell.renderedPanel === "music") return Math.max(240,(pageLoader.item ? pageLoader.item.implicitHeight : 180)+shell.panelOverhead);
@@ -260,7 +261,7 @@ QtObject {
                         Image {
                             id: dockAppIcon
                             x: shell.foldStyle ? 8 : (parent.width-width)/2;y: (parent.height-height)/2
-                            source: Theme.iconSource(modelData.icon);width: shell.foldStyle ? 22 : Theme.compact ? 28 : 36;height: width
+                            source: Theme.taskbarIconSource(modelData.icon, modelData.internal===true);width: shell.foldStyle ? 22 : Theme.compact ? 28 : 36;height: width
                             sourceSize: shell.foldStyle ? Qt.size(24,24) : Qt.size(40,40)
                         }
                         Text {
@@ -360,9 +361,9 @@ QtObject {
                 MouseArea { anchors.fill: parent; onClicked: mouse => mouse.accepted=true }
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: shell.panelPadding; spacing: shell.panelGap
-                    SheetHeader {id: sheetHeader;visible: shell.foldStyle && !shell.foldPanel;Layout.fillWidth: true;Layout.preferredHeight: implicitHeight;compact: true;section: "MELLIPI / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel==="screenshot" ? "CAPTURE" : "CONTROLS");title: shell.title();onCloseRequested: Orbit.closePanel()}
+                    SheetHeader {id: sheetHeader;visible: shell.foldStyle && !shell.foldPanel && !shell.exitReview;Layout.fillWidth: true;Layout.preferredHeight: implicitHeight;compact: true;section: "MELLIPI / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel==="screenshot" ? "CAPTURE" : "CONTROLS");title: shell.title();onCloseRequested: Orbit.closePanel()}
                     RowLayout {
-                        visible: !shell.foldPanel && !shell.foldStyle
+                        visible: !shell.foldPanel && !shell.foldStyle && !shell.exitReview
                         Layout.fillWidth: true;Layout.preferredHeight: 30
                         Rectangle {visible: shell.foldStyle;Layout.leftMargin: 2;Layout.rightMargin: 6;width: 11;height: 11;rotation: 45;color: "transparent";border.color: Theme.accent;Rectangle{x: 3;y: 3;width: 5;height: 5;color:"transparent";border.color:Theme.accent}}
                         ColumnLayout {
@@ -493,15 +494,15 @@ QtObject {
         id: capturePage
         ColumnLayout {
             spacing: 18
-            OrbitField { id: noteTitle; Layout.fillWidth: true; placeholderText: "Give this thought a name"; Component.onCompleted: forceActiveFocus() }
+            OrbitField { id: noteTitle; Layout.fillWidth: true; placeholderText: "Note title"; Component.onCompleted: forceActiveFocus() }
             TextArea {
-                id: noteBody; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "A thought, a text selection, a link…"; color: Theme.text; placeholderTextColor: Theme.muted; wrapMode: TextEdit.Wrap; selectByMouse: true; padding: 18
+                id: noteBody; Layout.fillWidth: true; Layout.fillHeight: true; placeholderText: "Write a note…"; Accessible.name: "Note text"; color: Theme.text; placeholderTextColor: Theme.muted; font.pixelSize: Theme.labelSize; wrapMode: TextEdit.Wrap; selectByMouse: true; padding: Theme.compact ? 10 : 14
                 background: Rectangle { color: Theme.surface; radius: Theme.corner(13); border.color: Theme.border; border.width: Theme.surfaceOutline }
             }
             RowLayout {
-                Text { text: "Stored locally in " + Orbit.workspace; color: Theme.muted; font.pixelSize: Theme.fontSize(11) }
-                Item { Layout.fillWidth: true }
-                OrbitButton { text: "Capture →"; accent: true; onClicked: Orbit.capture(noteTitle.text,noteBody.text) }
+                Layout.fillWidth: true
+                Text { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "Saves to " + Orbit.workspace; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: Theme.muted; font.pixelSize: Theme.fontSize(11) }
+                OrbitButton { text: "Save note"; accent: true; onClicked: Orbit.capture(noteTitle.text,noteBody.text) }
             }
         }
     }
@@ -520,15 +521,8 @@ QtObject {
         ColumnLayout {
             id: placement;objectName: "windowPlacementPanel"
             spacing: 8
-            RowLayout {
-                Layout.fillWidth: true
-                Text {
-                    Layout.fillWidth: true
-                    text: "Auto-snap new windows"
-                    wrapMode: Text.Wrap
-                    color: Theme.text
-                    font.pixelSize: Theme.fontSize(11)
-                }
+            SettingRow {
+                label: "Auto-snap new windows"
                 SettingToggle {
                     objectName: "windowPlacementToggle"
                     label: "Auto-snap new windows"
@@ -537,18 +531,11 @@ QtObject {
                 }
             }
             Text {
-                text: "Grid slots"
-                color: Theme.text
-                font.pixelSize: Theme.fontSize(11)
-            }
-            SettingsSegments {
-                objectName: "windowPlacementOptions"
                 Layout.fillWidth: true
-                enabled: Orbit.windowPlacementEnabled === true
-                segmentWidth: Math.max(1, Math.floor((width-11)/8))
-                value: Orbit.windowGridCount
-                options: [2,3,4,5,6,7,8,9].map(count => ({label:String(count),value:count}))
-                onSelected: count => Orbit.setPreference("windowPlacement","grid-"+count)
+                text: "The grid grows automatically to fit up to nine windows."
+                wrapMode: Text.Wrap
+                color: Theme.muted
+                font.pixelSize: Theme.fontSize(11)
             }
         }
     }

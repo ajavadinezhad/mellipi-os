@@ -3,7 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "."
 ColumnLayout {
-    id: panel;objectName: "sessionExitPanel";spacing: 12
+    id: panel;objectName: "sessionExitPanel";spacing: Theme.compact ? 8 : 12
     readonly property string actionName: SessionExit.state.action==="reboot" ? "restart" : SessionExit.state.action==="shutdown" ? "shut down" : "log out"
     readonly property string actionLabel: actionName.charAt(0).toUpperCase()+actionName.slice(1)
     readonly property bool hasWindows: SessionExit.windows.length>0
@@ -34,9 +34,9 @@ ColumnLayout {
         }
         ColumnLayout {
             Layout.fillWidth: true;spacing: 4
-            Text {Layout.fillWidth: true;text: panel.actionLabel+"?";color: Theme.text;font.pixelSize: Theme.fontSize(18);wrapMode: Text.Wrap}
+            Text {Layout.fillWidth: true;text: panel.actionLabel+"?";color: Theme.text;font.pixelSize: Theme.fontSize(20);font.weight: Font.DemiBold;wrapMode: Text.Wrap}
             Text {
-                Layout.fillWidth: true;text: SessionExit.state.armed ? "Save or cancel in each app to continue." : panel.hasWindows ? "Review your apps before leaving." : "No application windows are open."
+                Layout.fillWidth: true;text: SessionExit.state.armed ? "Save your work in any app that asks." : panel.hasWindows ? "Apps may ask you to save before closing." : "Background tasks will end."
                 color: Theme.muted;font.pixelSize: Theme.fontSize(11);wrapMode: Text.Wrap
             }
         }
@@ -47,12 +47,12 @@ ColumnLayout {
         color: Theme.muted;font.pixelSize: Theme.fontSize(10)
     }
     ListView {
-        id: openWindows;objectName: "sessionExitWindows";Layout.fillWidth: true
+        id: openWindows;keyNavigationEnabled: false;objectName: "sessionExitWindows";Layout.fillWidth: true
         visible: panel.hasWindows;Layout.minimumHeight: 0;Layout.fillHeight: true;Layout.maximumHeight: Layout.preferredHeight;Layout.preferredHeight: Math.min(260,contentHeight)
         model: SessionExit.windows;clip: true;spacing: 4;cacheBuffer: 0
         delegate: Rectangle {
             required property var modelData
-            width: openWindows.width;height: 58;color: Theme.surface;radius: Theme.corner(4)
+            width: openWindows.width;height: Math.max(Theme.compact ? 44 : 52, Theme.fontSize(12)+Theme.fontSize(10)+18);color: Theme.raised;radius: Theme.corner(8)
             RowLayout {
                 anchors.fill: parent;anchors.margins: 8
                 ColumnLayout {
@@ -60,7 +60,7 @@ ColumnLayout {
                     Text {Layout.fillWidth: true;text: modelData.title;textFormat: Text.PlainText;elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.fontSize(12)}
                     Text {Layout.fillWidth: true;text: modelData.closeRequested ? "Waiting for this app to close" : modelData.minimized ? "Minimized" : modelData.app;textFormat: Text.PlainText;elide: Text.ElideRight;color: Theme.muted;font.pixelSize: Theme.fontSize(10)}
                 }
-                OrbitButton {text: "Open";implicitHeight: 28;hint: "Return to this application";onClicked: SessionExit.focusWindow(modelData.id)}
+                OrbitButton {text: "Open";quiet: true;hint: (SessionExit.state.armed ? "Cancel this action and open " : "Open ")+modelData.title;onClicked: SessionExit.focusWindow(modelData.id)}
             }
         }
     }
@@ -73,14 +73,16 @@ ColumnLayout {
     Text {Layout.fillWidth: true;visible: !!SessionExit.state.error;text: SessionExit.state.error;textFormat: Text.PlainText;color: Theme.text;font.pixelSize: Theme.fontSize(11);wrapMode: Text.Wrap}
     Text {Layout.fillWidth: true;visible: SessionExit.state.checking;text: SessionExit.state.action==="logout" ? "Preparing to log out…" : "Checking system protections…";color: Theme.muted;font.pixelSize: Theme.fontSize(11)}
     Text {
+        Layout.fillWidth: true;visible: SessionExit.state.armed
+        text: "Cancel stops this action. Apps already closed stay closed."
+        color: Theme.muted;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap
+    }
+    OrbitButton {objectName: "sessionExitCheck";text: "Check again";visible: SessionExit.state.action!=="logout" && (!!SessionExit.state.error || SessionExit.inhibitors.length>0);enabled: !SessionExit.state.checking;onClicked: SessionExit.recheck()}
+    GridLayout {
         Layout.fillWidth: true
-        text: SessionExit.state.armed ? "New windows stay open. Return to work to cancel." : panel.hasWindows ? "Apps may ask you to save. Background tasks also end when you leave." : "Background tasks also end when you leave."
-        color: Theme.faint;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap
+        columns: panel.width < Math.max(300, Theme.fontSize(12)*25) ? 1 : 2
+        columnSpacing: 8;rowSpacing: 6
+        OrbitButton {objectName: "sessionExitCancel";text: "Cancel";quiet: true;Layout.fillWidth: true;Layout.minimumWidth: 0;onClicked: Orbit.dismiss()}
+        OrbitButton {objectName: "sessionExitConfirm";text: SessionExit.state.retry ? "Retry closing apps" : SessionExit.state.armed ? "Waiting for apps…" : panel.hasWindows ? "Close apps and "+panel.actionName : panel.actionLabel;Layout.fillWidth: true;Layout.minimumWidth: 0;accent: true;enabled: (!SessionExit.state.armed || SessionExit.state.retry) && !SessionExit.state.checking;onClicked: SessionExit.closeAndWait()}
     }
-    RowLayout {
-        Layout.fillWidth: true;spacing: 8
-        OrbitButton {objectName: "sessionExitCancel";text: "Return to work";Layout.fillWidth: true;onClicked: {SessionExit.cancel();Orbit.dismiss();}}
-        OrbitButton {objectName: "sessionExitCheck";text: "Check again";visible: SessionExit.state.action!=="logout" && (!!SessionExit.state.error || SessionExit.inhibitors.length>0);enabled: !SessionExit.state.checking;onClicked: SessionExit.recheck()}
-    }
-    OrbitButton {objectName: "sessionExitConfirm";text: SessionExit.state.retry ? "Retry closing apps" : SessionExit.state.armed ? "Waiting for apps to close…" : panel.hasWindows ? "Close apps and "+panel.actionName : panel.actionLabel;Layout.fillWidth: true;accent: true;enabled: (!SessionExit.state.armed || SessionExit.state.retry) && !SessionExit.state.checking;onClicked: SessionExit.closeAndWait()}
 }

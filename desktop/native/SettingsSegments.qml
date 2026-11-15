@@ -7,6 +7,8 @@ Rectangle {
     property var value
     property int segmentWidth: 52
     readonly property int selectedIndex: options.findIndex(option => option.value===value)
+    readonly property real optionWidth: Math.max(0, (width - 4 - Math.max(0,options.length - 1)) / Math.max(1,options.length))
+    readonly property int optionHeight: Math.max(24, Theme.fontSize(11) + 10)
     property bool indicatorReady: false
     function updateIndicator() {
         segmentSlide.stop();segmentSlide.to=selection.targetX;
@@ -15,23 +17,26 @@ Rectangle {
     }
     Component.onCompleted: {indicatorReady=true;selection.x=selection.targetX;}
     signal selected(var value)
-    function focusSelection() {
-        for(var i=0;i<segmentRow.children.length;i++) {
-            var item=segmentRow.children[i];
-            if(item.modelData && item.modelData.value===value){item.forceActiveFocus(Qt.TabFocusReason);return;}
-        }
+    function focusOption(index) {
+        const item=segmentRepeater.itemAt(index);
+        if(item) item.forceActiveFocus(Qt.TabFocusReason);
     }
-    implicitWidth: segmentRow.implicitWidth+4;implicitHeight: 28
-    radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
+    function focusSelection() {
+        focusOption(Math.max(0, selectedIndex));
+    }
+    implicitWidth: Math.ceil(segmentWidth * Math.max(1,Theme.textScale)) * options.length + Math.max(0,options.length-1) + 4
+    implicitHeight: optionHeight + 4
+    Layout.fillWidth: true;Layout.minimumWidth: 0
+    radius: Theme.corner(9);color: Theme.background;border.color: Theme.controlBorder;border.width: Theme.surfaceOutline
     Rectangle {
         id: selection;objectName: "segmentSelection"
         visible: segments.selectedIndex>=0
-        readonly property real targetX:2+Math.max(0,segments.selectedIndex)*(segments.segmentWidth+1)
+        readonly property real targetX:2+Math.max(0,segments.selectedIndex)*(segments.optionWidth+1)
         onTargetXChanged:segments.updateIndicator()
         x:2;y:2
-        width:segments.segmentWidth;height:24;radius:Theme.corner(8)
-        color:Theme.selectedSurface
-        Rectangle {visible:Theme.fold;anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.leftMargin:4;anchors.rightMargin:4;height:2;color:Theme.accentInk}
+        width:segments.optionWidth;height:segments.optionHeight;radius:Theme.corner(8)
+        color: Theme.selectedSurface
+        Rectangle {anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom;anchors.bottomMargin:2;width:Math.min(parent.width,20);height:2;radius:1;color:Theme.accentInk}
     }
     NumberAnimation {id:segmentSlide;objectName:"segmentSlide";target:selection;property:"x";duration:Theme.motion;easing.type:Easing.OutCubic}
     readonly property bool motionDisabled:Theme.reducedMotion
@@ -39,15 +44,24 @@ Rectangle {
     Row {
         id: segmentRow;x: 2;y: 2;spacing: 1
         Repeater {
+            id: segmentRepeater
             model: segments.options
             Rectangle {
                 required property var modelData
-                activeFocusOnTab: true
+                required property int index
+                activeFocusOnTab: segments.enabled && index===Math.max(0,segments.selectedIndex)
                 Keys.onSpacePressed: segments.selected(modelData.value)
                 Keys.onReturnPressed: segments.selected(modelData.value)
-                width: segments.segmentWidth;height: 24;radius: Theme.corner(8)
+                Keys.onEnterPressed: segments.selected(modelData.value)
+                Keys.onLeftPressed: segments.focusOption((index+segments.options.length-1)%segments.options.length)
+                Keys.onRightPressed: segments.focusOption((index+1)%segments.options.length)
+                Keys.onPressed: event => {
+                    if(event.key===Qt.Key_Home){segments.focusOption(0);event.accepted=true;}
+                    else if(event.key===Qt.Key_End){segments.focusOption(segments.options.length-1);event.accepted=true;}
+                }
+                width: segments.optionWidth;height: segments.optionHeight;radius: Theme.corner(8)
                 border.width: activeFocus ? (Theme.highContrast ? 2 : 1) : 0;border.color: Theme.focusColor
-                color: segments.value === modelData.value ? "transparent" : hit.containsMouse ? Theme.hover : "transparent"
+                color: segments.value === modelData.value ? "transparent" : hit.pressed ? Theme.selectedSurface : hit.containsMouse ? Theme.hover : "transparent"
                 Canvas {
                     id: segmentGlyph;x: 6;anchors.verticalCenter: parent.verticalCenter;width: 12;height: 12;visible: !!modelData.glyph
                     property string kind: modelData.glyph || ""
@@ -62,9 +76,11 @@ Rectangle {
                         c.stroke();
                     }
                 }
-                Text { anchors.verticalCenter: parent.verticalCenter;x: modelData.glyph ? 21 : 3;width: parent.width-x-3;text: modelData.label;color: !segments.enabled ? Theme.disabled : segments.value===modelData.value ? Theme.text : Theme.muted;font.pixelSize: Theme.fontSize(11);horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight }
+                Text { anchors.verticalCenter: parent.verticalCenter;x: modelData.glyph ? 21 : 3;width: Math.max(0,parent.width-x-3);text: modelData.label;color: !segments.enabled ? Theme.disabled : segments.value===modelData.value ? Theme.text : Theme.muted;font.pixelSize: Theme.fontSize(11);horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight }
                 MouseArea { id: hit;anchors.fill: parent;hoverEnabled: true;enabled: segments.enabled;onClicked: {Orbit.hideTooltip();segments.selected(modelData.value);}onEntered: {Orbit.queueItemTooltip(hit,modelData.label,width/2,height);}onExited: Orbit.hideTooltip() }
-                Accessible.name: modelData.label;Accessible.role: Accessible.Button;Accessible.onPressAction: segments.selected(modelData.value)
+                Accessible.name: modelData.label;Accessible.role: Accessible.RadioButton
+                Accessible.checked: segments.value===modelData.value
+                Accessible.onPressAction: if(segments.enabled) segments.selected(modelData.value)
             }
         }
     }

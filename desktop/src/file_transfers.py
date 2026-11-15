@@ -84,7 +84,11 @@ class Transfer:
             if Gio:
                 def copied(current,total,*_):
                     delta=current-self.current_bytes;self.current_bytes=current;self.current_total=total;self.bytes+=max(0,delta);self.progress()
-                Gio.File.new_for_path(str(source)).copy(Gio.File.new_for_path(str(destination)),Gio.FileCopyFlags.NOFOLLOW_SYMLINKS,self.token.gio,copied,None)
+                try:
+                    Gio.File.new_for_path(str(source)).copy(Gio.File.new_for_path(str(destination)),Gio.FileCopyFlags.NOFOLLOW_SYMLINKS,self.token.gio,copied,None)
+                except Exception:
+                    self.token.check()
+                    raise
             else:
                 descriptor=os.open(source,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0))
                 with os.fdopen(descriptor,'rb') as incoming,destination.open('xb') as outgoing:
@@ -106,7 +110,7 @@ class Transfer:
             result=unique_name(result)
         return result
     def run(self,sources,move=False):
-        if not 1<=len(sources)<=MAX_SOURCES:raise ValueError('Choose between1 and128 files')
+        if not 1<=len(sources)<=MAX_SOURCES:raise ValueError(f'Choose between 1 and {MAX_SOURCES} items')
         self.check_root();done=[];skipped=[]
         for index,source in enumerate(sources):
             self.check_root();source=Path(source);before=identity(source)
@@ -117,23 +121,28 @@ class Transfer:
             if source==destination:
                 # Copy in place is a duplicate; cut in place changes nothing.
                 if move:skipped.append(str(source));continue
-            self.publish(dict(conflict='',current=source.name,completed=len(done),count=len(sources),message=('Moving ' if move else 'Copying ')+source.name))
+            self.current=source.name;self.current_bytes=0;self.current_total=0
+            self.publish(dict(conflict='',current=source.name,currentBytes=0,currentTotal=0,
+                completed=len(done),count=len(sources),message=('Moving ' if move else 'Copying ')+source.name))
             if move:
                 try:
+                    self.check_root()
                     self.rename(source,destination);done.append(str(destination));self.progress(True,completed=len(done));continue
                 except OSError as error:
                     if error.errno!=errno.EXDEV:raise
             # Only our private staging directory can be cleaned after failure.
-            stage=Path(tempfile.mkdtemp(prefix='.abstract-transfer-',dir=self.directory));owned=identity(stage)[:2]
+            stage=Path(tempfile.mkdtemp(prefix='.mellipi-transfer-',dir=self.directory));owned=identity(stage)[:2]
             try:
                 self.snapshots={};staged=stage/'item';self.copy(source,staged);self.check_root()
                 try:self.rename(staged,destination)
                 except (FileExistsError,ValueError):
                     destination=self.destination(source.name)
                     if destination is None:skipped.append(str(source));continue
+                    self.check_root()
                     self.rename(staged,destination)
                 done.append(str(destination));self.progress(True,completed=len(done))
                 if move:
+                    self.token.check()
                     if any(identity(Path(path))!=saved for path,saved in self.snapshots.items()):raise ValueError('Copied successfully; the changed original was kept: '+source.name)
                     if not self.trash:raise ValueError('Copied successfully; use the file manager to remove the original')
                     try:self.trash(source)

@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from file_chooser import FileChooser
-from qt_app import style_dialog, AppWindow, symbolic_icon, themed_choice, themed_prompt
+from qt_app import exec_owned_dialog, style_dialog, AppWindow, symbolic_icon, themed_choice, themed_prompt
 
 MAX_IMAGE_PIXELS = 16_000_000
 MAX_IMAGE_BYTES = 80 * 1024 * 1024
@@ -318,7 +318,9 @@ class PhotosWindow(AppWindow):
         self.revision = self.saved_revision = None
         toolbar = QHBoxLayout()
         toolbar.setSpacing(4)
-        toolbar.addWidget(action('Open image', 'document-open-symbolic', self.choose_file, self, QKeySequence.StandardKey.Open))
+        self.open_button = action('Open image', 'document-open-symbolic', self.choose_file, self, QKeySequence.StandardKey.Open)
+        toolbar.addWidget(self.open_button)
+        self.open_button.hide()
         self.previous = action('Previous image', 'go-previous-symbolic', lambda: self.move(-1), self, Qt.Key.Key_Left)
         self.next = action('Next image', 'go-next-symbolic', lambda: self.move(1), self, Qt.Key.Key_Right)
         toolbar.addWidget(self.previous)
@@ -386,7 +388,7 @@ class PhotosWindow(AppWindow):
         QShortcut(QKeySequence('Escape'), self).activated.connect(lambda: self.set_mode(''))
         QShortcut(QKeySequence.StandardKey.Save, self).activated.connect(self.save_as)
 
-        self.start_stage = self.empty_stage('Open an image', 'Choose a file, drop an image here, or paste from the clipboard.', 'Open image…', self.choose_file)
+        self.start_stage = self.empty_stage('Photos', 'Drop an image here or paste from the clipboard.', 'Open image…', self.choose_file)
         self.content.addWidget(self.start_stage, 1)
         self.canvas.hide()
         self.content.addWidget(self.canvas, 1)
@@ -447,6 +449,7 @@ class PhotosWindow(AppWindow):
 
     def display(self, path, image):
         self.start_stage.hide()
+        self.open_button.show()
         self.canvas.show()
         self.path = path
         self.history.clear()
@@ -590,6 +593,8 @@ class PhotosWindow(AppWindow):
 
     def resize_dialog(self):
         source = self.canvas.image
+        if source.isNull():
+            return
         dialog = style_dialog(QDialog(self), self)
         dialog.setWindowTitle('Resize image')
         form = QFormLayout(dialog)
@@ -614,9 +619,15 @@ class PhotosWindow(AppWindow):
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
+        width.setFocus()
+        width.selectAll()
+        try:
+            size = (width.value(), height.value()) if exec_owned_dialog(dialog) == QDialog.DialogCode.Accepted else None
+        finally:
+            dialog.deleteLater()
+        if size is not None:
             try:
-                self.resize_photo(width.value(), height.value())
+                self.resize_photo(*size)
             except ValueError as error:
                 themed_prompt(self, 'Could not resize', str(error), 'OK')
 

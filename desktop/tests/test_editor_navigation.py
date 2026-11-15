@@ -49,6 +49,8 @@ class EditorNavigationTests(TestCase):
         self.editor.show_replace()
         self.app.processEvents()
         self.assertGreater(self.editor.query.width(), 160)
+        self.assertEqual(self.editor.query.size(), self.editor.replacement.size())
+        self.assertEqual(self.editor.query.x(), self.editor.replacement.x())
         self.editor.resize(900, 440)
         self.app.processEvents()
         self.assertEqual(tuple(button.text() for button in self.editor.compact_actions), labels)

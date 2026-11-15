@@ -35,10 +35,13 @@ Item {
     readonly property var tasks: Orbit.dockApps
     readonly property var emptyTask: ({id:"",name:"",icon:"",windows:[]})
     readonly property var emptySpace: ({id:-1,active:false})
-    readonly property int taskStart: horizontal ? workspaceColumn.x+workspaceColumn.width+16 : workspaceColumn.y+workspaceColumn.height+40
-    readonly property int taskSlotWidth: horizontal ? (Theme.extraCompact ? 56 : Theme.compact ? 64 : 76) : width-10
-    readonly property int taskSlotHeight: horizontal ? frame.thickness-12 : Theme.extraCompact ? 35 : Theme.compact ? 43 : 52
-    readonly property int taskSpacing: 3
+    readonly property real iconScale: (Orbit.appearance.taskbarIconScale || 100)/100
+    readonly property int appIconSize: Math.round((Theme.extraCompact ? 20 : Theme.compact ? 24 : 28)*iconScale)
+    readonly property int utilityIconSize: Math.round(16*iconScale)
+    readonly property int taskStart: horizontal ? workspaceColumn.x+workspaceColumn.width+10 : workspaceColumn.y+workspaceColumn.height+24
+    readonly property int taskSlotWidth: horizontal ? Math.max(appIconSize+10, Theme.extraCompact ? 34 : Theme.compact ? 40 : 46) : width-10
+    readonly property int taskSlotHeight: horizontal ? frame.thickness-12 : Math.max(appIconSize+8, Theme.extraCompact ? 30 : Theme.compact ? 35 : 41)
+    readonly property int taskSpacing: 2
     readonly property int taskLaneLength: Math.max(0,(horizontal ? footer.x : footer.y)-taskStart-8)
     readonly property int taskSlotLength: horizontal ? taskSlotWidth : taskSlotHeight
     readonly property int overflowLength: horizontal ? 30 : 25
@@ -75,7 +78,7 @@ Item {
     }
     Rectangle {visible: frame.inset===0 && Orbit.appearance.taskbarLength!=="fit";x: spine.edge==="right" ? spine.width-3 : 0;y: Theme.corner(12);width: 3;height: spine.horizontal ? spine.height-2*Theme.corner(12) : 32;color: Theme.accentInk}
     IconButton {
-        id: home;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 26 : Theme.compact ? 32 : 38;iconName: "fold"
+        id: home;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 26 : Theme.compact ? 32 : 38;iconName: "fold";phosphor: true;bare: true;glyphSize: spine.utilityIconSize
         hint: "Apps, windows and actions · Super";accessibleLabel: "Open Mellipi apps, windows and actions"
         onClicked: spine.openPanel("launcher")
     }
@@ -161,13 +164,18 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: Theme.corner(8)
-                    color: hit.containsMouse ? Theme.hover : task.current ? Theme.selectedSurface : "transparent"
+                    color: "transparent"
                     border.width: task.activeFocus ? 2 : task.current && Theme.highContrast ? 1 : 0
                     border.color: task.activeFocus ? Theme.focusColor : Theme.controlBorder
                 }
                 Rectangle {objectName: "spineTaskRunningIndicator_"+modelData.id;x: spine.horizontal ? (task.current ? 10 : parent.width/2-2) : 0;y: spine.horizontal ? parent.height-2 : task.current ? 9 : parent.height/2-2;width: spine.horizontal ? (task.current ? parent.width-20 : 4) : 2;height: spine.horizontal ? 2 : task.current ? 23 : 4;color: task.current ? Theme.accentInk : Theme.muted;visible: task.running}
-                Image {x: Math.round((parent.width-(Theme.extraCompact ? 20 : Theme.compact ? 24 : 28))/2);y: spine.horizontal && !Theme.extraCompact && Theme.textScale <= 1.1 ? 4 : Math.round((parent.height-height)/2);width: Theme.extraCompact ? 20 : Theme.compact ? 24 : 28;height: width;source: modelData.icon ? Theme.iconSource(modelData.icon) : "";sourceSize: Qt.size(32,32);fillMode: Image.PreserveAspectFit}
-                Text {visible: spine.horizontal && !Theme.extraCompact && Theme.textScale <= 1.1;x: 3;anchors.bottom: parent.bottom;anchors.bottomMargin: 4;width: parent.width-6;text: modelData.name;font.pixelSize: Theme.detailSize;color: task.current ? Theme.text : Theme.muted;elide: Text.ElideRight;horizontalAlignment: Text.AlignHCenter;textFormat: Text.PlainText}
+                Image {
+                    anchors.centerIn: parent
+                    width: Math.min(spine.appIconSize,parent.width-4,parent.height-4);height: width
+                    source: modelData.icon ? Theme.taskbarIconSource(modelData.icon, modelData.internal===true) : ""
+                    sourceSize: Qt.size(Math.max(24, width*2), Math.max(24, width*2));fillMode: Image.PreserveAspectFit
+                    opacity: hit.pressed ? .7 : 1
+                }
                 Rectangle {
                     visible: modelData.windows.length > 1
                     anchors.right: parent.right; anchors.top: parent.top
@@ -214,26 +222,25 @@ Item {
             columns: spine.horizontal ? spine.denseFooter ? Math.ceil(iconCount/2) : iconCount : 2
             spacing: 0
             readonly property int iconCount: placementButton.visible ? 7 : 6
-            readonly property int buttonWidth: spine.horizontal ? (Theme.extraCompact ? 22 : Theme.compact ? 28 : 32) : Math.floor((frame.thickness-(Theme.extraCompact ? 12 : 16))/2)
+            readonly property int buttonWidth: spine.horizontal ? (Theme.extraCompact ? 22 : Theme.compact ? 26 : 30) : Math.floor((frame.thickness-(Theme.extraCompact ? 12 : 16))/2)
             readonly property int buttonHeight: spine.horizontal ? buttonWidth : Theme.extraCompact ? 24 : Theme.compact ? 27 : 32
-            readonly property color iconInk: Theme.text
-            IconButton {objectName: "spineCapture";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: Orbit.panel==="screenshot" ? Theme.accentInk : footerIcons.iconInk;iconName: "camera";hint: "Screenshot";onClicked: spine.openPanel("screenshot")}
-            IconButton {objectName: "spineNotifications";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: Orbit.panel==="notifications" ? Theme.accentInk : footerIcons.iconInk;iconName: "bell";hint: "Notifications";onClicked: spine.openPanel("notifications")
+            readonly property color iconInk: Theme.accentInk
+            IconButton {objectName: "spineCapture";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;accent: Orbit.panel==="screenshot";glyphColor: footerIcons.iconInk;iconName: "camera";hint: "Screenshot";onClicked: spine.openPanel("screenshot")}
+            IconButton {objectName: "spineNotifications";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;accent: Orbit.panel==="notifications";glyphColor: footerIcons.iconInk;iconName: "bell";hint: "Notifications";onClicked: spine.openPanel("notifications")
                 Rectangle {x: Math.round(parent.width/2)+6;y: Math.max(2,Math.round(parent.height/2)-9);width: 4;height: 4;radius: 2;color: Theme.accentInk;visible: System.notifications.length>0}
             }
-            IconButton {objectName: "spineSound";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: Orbit.panel==="music" ? Theme.accentInk : footerIcons.iconInk;iconName: System.values.muted ? "mute" : "volume";hint: "Volume and playback";onClicked: spine.openPanel("music")}
-            IconButton {objectName: "spineBackground";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: spine.edge==="left" ? "chevron-right" : spine.edge==="right" ? "chevron-left" : spine.edge==="top" ? "chevron-down" : "chevron-up";hint: "Background apps";onClicked: spine.openPanel("tray")}
-            IconButton {objectName: "spineUsage";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "usage";hint: "System Monitor";onClicked: Orbit.openSystemMonitor()}
-            IconButton {objectName: "spineControls";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: Orbit.panel==="quick" ? Theme.accentInk : footerIcons.iconInk;iconName: "settings";hint: "Quick controls";onClicked: spine.openPanel("quick")}
+            IconButton {objectName: "spineSound";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;accent: Orbit.panel==="music";glyphColor: footerIcons.iconInk;iconName: System.values.muted ? "mute" : "volume";hint: "Volume and playback";onClicked: spine.openPanel("music")}
+            IconButton {objectName: "spineBackground";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: spine.edge==="left" ? "chevron-right" : spine.edge==="right" ? "chevron-left" : spine.edge==="top" ? "chevron-down" : "chevron-up";hint: "Background apps";onClicked: spine.openPanel("tray")}
+            IconButton {objectName: "spineUsage";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "usage";hint: "System Monitor";onClicked: Orbit.openSystemMonitor()}
+            IconButton {objectName: "spineControls";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;accent: Orbit.panel==="quick";glyphColor: footerIcons.iconInk;iconName: "settings";hint: "Quick controls";onClicked: spine.openPanel("quick")}
             IconButton {
-                id: placementButton;objectName: "spineAutoSnap"
+                id: placementButton;objectName: "spineAutoSnap";phosphor: true;bare: true;glyphSize: spine.utilityIconSize
                 visible: Orbit.nativePlacementSupported === true
                 width: footerIcons.buttonWidth;height: footerIcons.buttonHeight
                 padding: Theme.extraCompact ? 2 : 4
                 glyphColor: Orbit.windowPlacementEnabled ? footerIcons.iconInk : Theme.muted
-                phosphor: true
-                iconName: "layouts"
-                hint: "Auto-snap · " + (!Orbit.windowPlacementEnabled ? "Off" : "Grid " + Orbit.windowGridCount)
+                iconName: "start-spaces"
+                hint: "Auto-snap · " + (Orbit.windowPlacementEnabled ? "On" : "Off")
                 onClicked: spine.openPanel("window-placement")
             }
         }

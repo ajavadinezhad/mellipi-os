@@ -1,0 +1,19 @@
+{
+  "id": "lagoon",
+  "name": "Lagoon",
+  "description": "Deep ocean slate, glowing sea glass accents, and soft white text.",
+  "mode": "dark",
+  "darkLevel": "normal",
+  "accent": "#64e4cf",
+  "background": "#101d25",
+  "palette": {
+    "background": "#101d25",
+    "surface": "#172b34",
+    "raised": "#203744",
+    "hover": "#294756",
+    "border": "#6c9aa8",
+    "text": "#ebf8f7",
+    "muted": "#b6d1d6",
+    "faint": "#9dbec6"
+  }
+}

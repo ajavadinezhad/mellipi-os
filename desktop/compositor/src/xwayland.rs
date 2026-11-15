@@ -331,6 +331,7 @@ impl OrbitCompositor {
             self.window_motions.pending_open.remove(&id);
             }
         }
+        self.reflow_auto_placement();
         self.request_redraw();
     }
     /// Called by the regular Wayland SelectionHandler for client selections.
@@ -378,6 +379,15 @@ impl XwmHandler for OrbitCompositor {
         }
         if geometry.loc == (0, 0).into() {
             geometry.loc = (80, 80).into();
+        }
+        if let Some(owner) = surface.is_transient_for().and_then(|id| {
+            self.space.elements().find(|window| {
+                window.x11_surface().is_some_and(|owner| owner.window_id() == id)
+            })
+        }) {
+            if let Some(location) = self.dialog_origin(owner, geometry.size) {
+                geometry.loc = location;
+            }
         }
         geometry = self.bounded_x11_geometry(&surface, geometry);
         let _ = surface.configure(geometry);

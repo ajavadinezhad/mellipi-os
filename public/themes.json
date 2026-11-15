@@ -176,6 +176,86 @@
         "muted": "#ceced1",
         "faint": "#adadb2"
       }
+    },
+    {
+      "id": "lagoon",
+      "name": "Lagoon",
+      "mode": "dark",
+      "accent": "#64e4cf",
+      "palette": {
+        "background": "#101d25",
+        "surface": "#172b34",
+        "raised": "#203744",
+        "hover": "#294756",
+        "border": "#6c9aa8",
+        "text": "#ebf8f7",
+        "muted": "#b6d1d6",
+        "faint": "#9dbec6"
+      }
+    },
+    {
+      "id": "saffron",
+      "name": "Saffron",
+      "mode": "dark",
+      "accent": "#f5cf57",
+      "palette": {
+        "background": "#120e08",
+        "surface": "#1e180e",
+        "raised": "#2b2314",
+        "hover": "#3a301c",
+        "border": "#937c47",
+        "text": "#fff6dd",
+        "muted": "#d9c7a0",
+        "faint": "#b9a57b"
+      }
+    },
+    {
+      "id": "rosewater",
+      "name": "Rosewater",
+      "mode": "light",
+      "accent": "#73294f",
+      "palette": {
+        "background": "#f4e8ec",
+        "surface": "#fff7fa",
+        "raised": "#eedde4",
+        "hover": "#e7d0db",
+        "border": "#916878",
+        "text": "#33202c",
+        "muted": "#654658",
+        "faint": "#715264"
+      }
+    },
+    {
+      "id": "citron",
+      "name": "Citron",
+      "mode": "light",
+      "accent": "#536215",
+      "palette": {
+        "background": "#f3f4df",
+        "surface": "#fbfcec",
+        "raised": "#e8ebce",
+        "hover": "#dce3b8",
+        "border": "#777e4e",
+        "text": "#252b14",
+        "muted": "#505a32",
+        "faint": "#57613a"
+      }
+    },
+    {
+      "id": "cobalt",
+      "name": "Cobalt",
+      "mode": "dark",
+      "accent": "#b7c3ff",
+      "palette": {
+        "background": "#142958",
+        "surface": "#1b3568",
+        "raised": "#25447d",
+        "hover": "#2b4d8b",
+        "border": "#8cabe7",
+        "text": "#f3f6ff",
+        "muted": "#d2e0ff",
+        "faint": "#b6caf2"
+      }
     }
   ]
 }

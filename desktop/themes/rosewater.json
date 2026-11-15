@@ -1,0 +1,19 @@
+{
+  "id": "rosewater",
+  "name": "Rosewater",
+  "description": "Dusty rose and warm blush surfaces with deep mulberry ink.",
+  "mode": "light",
+  "darkLevel": "normal",
+  "accent": "#73294f",
+  "background": "#f4e8ec",
+  "palette": {
+    "background": "#f4e8ec",
+    "surface": "#fff7fa",
+    "raised": "#eedde4",
+    "hover": "#e7d0db",
+    "border": "#916878",
+    "text": "#33202c",
+    "muted": "#654658",
+    "faint": "#715264"
+  }
+}

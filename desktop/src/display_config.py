@@ -2,6 +2,19 @@
 import json,math,os,re,stat,tempfile
 from pathlib import Path
 
+# Common desktop and video sizes, plus standard ultrawide families. Only
+# entries also reported by the connector are offered; this never adds modes.
+STANDARD_RESOLUTIONS=frozenset((
+    (640,480), (800,600), (1024,768), (1152,864), (1280,720), (1280,800),
+    (1280,960), (1280,1024), (1360,768), (1366,768), (1400,1050), (1440,900),
+    (1600,900), (1600,1200), (1680,1050), (1920,1080), (1920,1200), (1920,1440),
+    (2048,1080), (2048,1152), (2048,1536), (2160,1440), (2256,1504),
+    (2560,1080), (2560,1440), (2560,1600), (2880,1620), (2880,1800),
+    (3000,2000), (3200,1800), (3200,2000), (3440,1440), (3840,1600),
+    (3840,2160), (3840,2400), (4096,2160), (4480,2520), (5120,1440),
+    (5120,2160), (5120,2880), (6016,3384), (7680,2160), (7680,4320),
+))
+
 SCALES=(.5,.75,1.,1.25,1.5,1.75,2.,2.5,3.)
 TRANSFORMS=('normal','90','180','270','flipped','flipped-90','flipped-180','flipped-270')
 
@@ -9,22 +22,30 @@ def mode_name(mode):
     if mode['refresh']==0:return f'{int(mode["width"])}x{int(mode["height"])}'
     return f'{int(mode["width"])}x{int(mode["height"])}@{int(mode["refresh"])/1000:.3f}Hz'
 
+def _usable_mode(mode):
+    return (isinstance(mode,dict) and
+            all(type(mode.get(k)) is int and mode[k]>0 for k in ('width','height')) and
+            type(mode.get('refresh')) is int and mode['refresh']>=0)
+
 def catalog(raw):
     rows=[]
     for output in raw[:32]:
         name=output.get('name','')
         if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',name) or not output.get('active'):continue
         supported={}
-        for mode in output.get('modes',[])[:256]+[output.get('current_mode') or {}]:
-            if not all(type(mode.get(k)) is int and mode[k]>0 for k in ('width','height')) or type(mode.get('refresh')) is not int or mode['refresh']<0:continue
+        current=output.get('current_mode') or {}
+        # An output in transition may advertise modes before it has a usable
+        # current mode. Wait for the next snapshot rather than losing all rows.
+        if not _usable_mode(current):continue
+        for mode in output.get('modes',[])[:256]+[current]:
+            if not _usable_mode(mode):continue
             width,height,refresh=(mode[key] for key in ('width','height','refresh'))
             supported[width,height,refresh]=dict(
                 value=mode_name(mode),
                 label=f'{width} × {height}'+(f' · {refresh/1000:g} Hz' if refresh else ''),
+                width=width,height=height,standard=(width,height) in STANDARD_RESOLUTIONS,
             )
         modes=[supported[key] for key in sorted(supported,reverse=True)]
-        current=output.get('current_mode') or {}
-        if not modes or not current:continue
         rect=output.get('rect',{})
         rows.append(dict(name=name,label=output.get('model') or name,modes=modes,mode=mode_name(current),scale=float(output.get('scale',1)),transform=output.get('transform','normal'),x=int(rect.get('x',0)),y=int(rect.get('y',0)),width=int(rect.get('width',0)),height=int(rect.get('height',0))))
     return rows

@@ -1,5 +1,6 @@
 """Mellipi's local file browser, in a normal desktop window."""
 import argparse
+from html import escape
 import os
 import sys
 from pathlib import Path
@@ -9,29 +10,23 @@ os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
 from PyQt6.QtCore import (
-    QDir, QEvent, QItemSelectionModel, QLocale, QModelIndex, QMimeData,
-    QRect, QSignalBlocker, QSize, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl,
+    QDateTime, QDir, QEvent, QItemSelectionModel, QLocale, QModelIndex, QMimeData,
+    QRect, QSignalBlocker, QSize, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl, pyqtSignal,
 )
 from PyQt6.QtGui import QAction, QFileSystemModel, QDesktopServices, QDrag, QFontMetrics, QIcon, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMainWindow, QMenu, QPushButton, QStackedWidget, QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QMainWindow, QMenu, QProgressBar, QPushButton, QStackedWidget, QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 from gi.repository import Gio
 from qt_app import style_dialog, ThemedInput, AppIdentityBadge, BASE_STYLE, ThemeWatch, apply_titlebar, original_icon, themed_prompt, widget_palette
 from qt_titlebar import TitleBar
 from desktop_icons import rename_no_replace, safe_name, trash_item
 from device_monitor import DeviceMonitor
-from file_transfers import MAX_SOURCES, CancelToken, Transfer
+from file_transfers import MAX_SOURCES, Cancelled, CancelToken, Transfer
 from file_archives import archive_suffix, compress, extract_here, preview_archive
 from storage_analyzer import analyze
 from files_icons import ACTIONS, PLACES, file_icon, icon as phosphor_icon
-
-
-class KeepBoth(CancelToken):
-    def conflict(self, path, publish):
-        self.check()
-        return 'keep-both'
 
 
 class FileJob(QThread):
@@ -40,12 +35,96 @@ class FileJob(QThread):
         self.operation = operation
         self.error = ""
         self.value = None
+        self.canceled = False
 
     def run(self):
         try:
             self.value = self.operation()
+        except Cancelled:
+            self.canceled = True
         except Exception as error:
             self.error = str(error)
+
+
+class TransferJob(FileJob):
+    progress = pyqtSignal(object)
+
+    def __init__(self, paths, folder, move, parent):
+        self.token = CancelToken()
+        super().__init__(lambda: Transfer(folder.resolve(), rename_no_replace, trash_item,
+                                          self.token, self.progress.emit).run(paths, move), parent)
+
+
+class TransferStrip(QFrame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setObjectName('fileTransfer')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        self.message = QLabel()
+        self.message.setTextFormat(Qt.TextFormat.PlainText)
+        self.message.setWordWrap(True)
+        layout.addWidget(self.message)
+        self.bar = QProgressBar()
+        self.bar.setAccessibleName('Current file transfer progress')
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(4)
+        layout.addWidget(self.bar)
+        controls = QHBoxLayout()
+        controls.addStretch()
+        self.keep = QPushButton('Keep Both')
+        self.skip = QPushButton('Skip')
+        self.cancel = QPushButton('Cancel Transfer')
+        for button in (self.keep, self.skip, self.cancel):
+            controls.addWidget(button)
+        self.keep.clicked.connect(lambda: self.resolve('keep-both'))
+        self.skip.clicked.connect(lambda: self.resolve('skip'))
+        self.cancel.clicked.connect(lambda: self.resolve('cancel'))
+        layout.addLayout(controls)
+        self.job = None
+        self.hide()
+
+    def start(self, job, count, move):
+        self.job = job
+        self.state = {'count': count}
+        self.cancel.setEnabled(True)
+        self.update_progress({'message': 'Preparing move…' if move else 'Preparing copy…'})
+        self.show()
+
+    def update_progress(self, patch):
+        if self.job is None or self.job.token.event.is_set():
+            return
+        self.state.update(patch)
+        collision = bool(self.state.get('conflict'))
+        self.keep.setVisible(collision)
+        self.skip.setVisible(collision)
+        self.bar.setVisible(not collision)
+        current, total = self.state.get('currentBytes', 0), self.state.get('currentTotal', 0)
+        self.bar.setRange(0, 100 if total else 0)
+        if total:
+            self.bar.setValue(min(100, current * 100 // total))
+        message = self.state.get('message', '')
+        if collision:
+            message += '. Keep Both gives the incoming item a different name.'
+        elif self.state.get('count', 0) > 1:
+            message += f" · {self.state.get('completed', 0)} of {self.state['count']} transferred"
+        self.message.setText(message)
+
+    def resolve(self, choice):
+        if self.job is None or (choice != 'cancel' and not self.state.get('conflict')):
+            return
+        if choice != 'cancel':
+            self.update_progress({'conflict': '', 'message': 'Continuing transfer…'})
+        self.job.token.resolve(choice)
+        if choice == 'cancel':
+            self.message.setText('Canceling transfer…')
+            self.keep.hide()
+            self.skip.hide()
+            self.cancel.setEnabled(False)
+
+    def finish(self):
+        self.job = None
+        self.hide()
 
 
 class StorageDialog(QDialog):
@@ -161,6 +240,10 @@ class StorageDialog(QDialog):
 
 class FolderModel(QFileSystemModel):
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if role == Qt.ItemDataRole.ToolTipRole and index.isValid() and index.column() == 0:
+            stamp = super().data(index.siblingAtColumn(3), Qt.ItemDataRole.DisplayRole)
+            name = escape(self.fileName(index))
+            return f'<div>{name}<br>Modified: {escape(str(stamp))}</div>' if stamp else f'<div>{name}</div>'
         if (role == Qt.ItemDataRole.DecorationRole and index.isValid()
                 and index.column() == 0 and hasattr(self, 'file_inks')):
             icon = file_icon(self.fileName(index), self.isDir(index), *self.file_inks)
@@ -399,8 +482,9 @@ class Files(QMainWindow):
         self.view.sortByColumn(0, Qt.SortOrder.AscendingOrder)
         self.view.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.view.header().setStretchLastSection(False)
-        for column, width in ((1, 84), (2, 112), (3, 145)):
-            self.view.setColumnWidth(column, width)
+        for column in (1, 2, 3):
+            self.view.header().setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+        self.view.viewport().installEventFilter(self)
         self.view.doubleClicked.connect(self.open_index)
         self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.view.customContextMenuRequested.connect(self.context_menu)
@@ -532,6 +616,8 @@ class Files(QMainWindow):
         self.content_layout.addWidget(self.search)
         self.content_layout.addLayout(body, 1)
         layout.addLayout(self.content_layout, 1)
+        self.transfer_strip = TransferStrip(self)
+        layout.addWidget(self.transfer_strip)
         self.setCentralWidget(central)
         central.setMouseTracking(True)
         central.installEventFilter(self)
@@ -720,6 +806,9 @@ class Files(QMainWindow):
         self.crumb_layout.addStretch()
 
     def eventFilter(self, watched, event):
+        if (event.type() == QEvent.Type.Resize and hasattr(self, 'theme_watch')
+                and watched is self.view.viewport()):
+            self.update_list_columns()
         if watched is getattr(self, 'address', None) and event.type() == QEvent.Type.Resize and hasattr(self, 'folder'):
             self.breadcrumb_timer.start(0)
         if event.type() == QEvent.Type.KeyPress and watched is getattr(self, 'search', None):
@@ -962,6 +1051,26 @@ class Files(QMainWindow):
         if hasattr(self, 'folder'):
             self.breadcrumb_timer.start(0)
         self.places_panel.setFixedWidth(max(round(sidebar_width * max(1, text_scale)), self.sidebar.minimumSize().width()))
+        self.update_list_columns()
+
+    def update_list_columns(self):
+        header = self.view.header()
+        metrics = header.fontMetrics()
+        date = QLocale().toString(QDateTime.currentDateTime(), QLocale.FormatType.ShortFormat)
+        sizes = {column: max(metrics.horizontalAdvance(value),
+                             metrics.horizontalAdvance(str(self.model.headerData(column, Qt.Orientation.Horizontal)))) + 22
+                 for column, value in ((1, '999.9 GiB'), (2, 'Plain Text'), (3, date))}
+        reserve_name = metrics.horizontalAdvance('Document name') + 32
+        available = self.view.viewport().width() - reserve_name
+        for column in (1, 2, 3):
+            visible = available >= sizes[column]
+            if self.view.isColumnHidden(column) == visible:
+                self.view.setColumnHidden(column, not visible)
+            if visible:
+                available -= sizes[column]
+                current = header.sectionSize(column)
+                if current != sizes[column]:
+                    header.resizeSection(column, sizes[column])
 
     def navigate(self, folder, record=True):
         folder = (self.folder / folder if hasattr(self, 'folder') else folder).absolute()
@@ -1123,6 +1232,9 @@ class Files(QMainWindow):
         self.model.setFilter(self.model.filter() ^ QDir.Filter.Hidden)
 
     def run_job(self, operation, completed=None):
+        self.start_job(operation, completed)
+
+    def start_job(self, operation, completed=None, transfer=None):
         if self.job is not None:
             self.statusBar().showMessage('A file operation is already running', 5000)
             return
@@ -1130,16 +1242,30 @@ class Files(QMainWindow):
         if monitor is not None and monitor.files_active_request is not None:
             self.statusBar().showMessage('Wait for the drive operation to finish', 5000)
             return
-        self.job = FileJob(operation, self)
+        if transfer is None:
+            self.job = FileJob(operation, self)
+        else:
+            paths, folder, move = transfer
+            self.job = TransferJob(paths, folder, move, self)
+            self.transfer_strip.start(self.job, len(paths), move)
+            self.job.progress.connect(self.transfer_strip.update_progress)
         self.statusBar().showMessage('Working…')
         self.job.finished.connect(lambda: self.job_finished(completed))
         self.job.start()
 
     def job_finished(self, completed):
         job, self.job = self.job, None
-        self.statusBar().showMessage(job.error or 'Done', 8000)
+        status = job.error or 'Done'
+        if isinstance(job, TransferJob):
+            self.transfer_strip.finish()
+            if job.canceled:
+                status = 'Transfer canceled. Items already transferred were kept.'
+            elif not job.error:
+                count, skipped = len(job.value['paths']), len(job.value['skipped'])
+                status = f'Transferred: {count} · Skipped: {skipped}' if skipped else f'Transferred: {count}'
+        self.statusBar().showMessage(status, 8000)
         job.deleteLater()
-        if not job.error and completed:
+        if not job.error and not job.canceled and completed:
             completed(job.value)
         self.finish_deferred_close(job.error)
 
@@ -1284,7 +1410,7 @@ class Files(QMainWindow):
 
     def transfer_paths(self, paths, folder, move=False):
         if paths:
-            self.run_job(lambda: Transfer(folder.resolve(), rename_no_replace, trash_item, KeepBoth()).run(paths, move))
+            self.start_job(None, transfer=(tuple(paths), folder, move))
 
 
 def main():

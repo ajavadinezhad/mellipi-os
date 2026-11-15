@@ -153,6 +153,7 @@ impl XdgShellHandler for OrbitCompositor {
             self.window_motions.pending_open.remove(&id);
             self.windows.retain(|(other, _)| *other != id);
         }
+        self.reflow_auto_placement();
         self.request_redraw();
     }
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {

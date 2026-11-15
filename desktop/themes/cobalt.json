@@ -1,0 +1,19 @@
+{
+  "id": "cobalt",
+  "name": "Cobalt",
+  "description": "Rich cobalt blue surfaces, bright periwinkle controls, and soft ice-white text.",
+  "mode": "dark",
+  "darkLevel": "normal",
+  "accent": "#b7c3ff",
+  "background": "#142958",
+  "palette": {
+    "background": "#142958",
+    "surface": "#1b3568",
+    "raised": "#25447d",
+    "hover": "#2b4d8b",
+    "border": "#8cabe7",
+    "text": "#f3f6ff",
+    "muted": "#d2e0ff",
+    "faint": "#b6caf2"
+  }
+}

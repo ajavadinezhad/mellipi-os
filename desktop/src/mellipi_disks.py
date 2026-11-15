@@ -160,7 +160,7 @@ class Disks(AppWindow):
         super().__init__('Disks')
         self.setWindowIcon(QIcon.fromTheme('mellipi-disks', QIcon.fromTheme('drive-harddisk')))
         self.resize(740, 490)
-        self.setMinimumSize(510, 320)
+        self.setMinimumSize(440, 300)
         self.job = None
         self.image = image
         if self.image and self.image.startswith('file:'):

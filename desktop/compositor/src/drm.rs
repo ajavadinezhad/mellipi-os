@@ -62,6 +62,27 @@ smithay::backend::renderer::element::render_elements! {
 }
 
 type Scanout = GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, ()>;
+
+fn select_output_timing<T: Copy>(
+    requested: &str,
+    stable_current: Option<T>,
+    advertised: &[T],
+    describe: impl Fn(T) -> Mode,
+) -> Option<T> {
+    let matches = |timing: T, exact: bool| {
+        let mode = describe(timing);
+        let (width, height) = (mode.size.w, mode.size.h);
+        requested == format!("{width}x{height}@{:.3}Hz", mode.refresh as f64 / 1000.0)
+            || (!exact && requested == format!("{width}x{height}"))
+    };
+    // KMS may already be using a custom timing absent from the EDID. Keep
+    // that exact timing when Settings asks to adjust scale or rotation in
+    // place; a size-only request still selects a connector-advertised mode.
+    stable_current
+        .filter(|timing| matches(*timing, true))
+        .or_else(|| advertised.iter().copied().find(|timing| matches(*timing, false)))
+}
+
 struct Surface {
     connector: connector::Handle,
     output: Output,
@@ -1134,21 +1155,15 @@ impl Backend {
             .drm
             .get_connector(surface.connector, true)
             .map_err(|e| e.to_string())?;
-        let mode = connector
-            .modes()
-            .iter()
-            .find(|mode| {
-                let (w, h) = mode.size();
-                mode_name
-                    == format!(
-                        "{w}x{h}@{:.3}Hz",
-                        Mode::from(**mode).refresh as f64 / 1000.0
-                    )
-                    || mode_name == format!("{w}x{h}")
-            })
-            .copied()
-            .ok_or("Unsupported display mode")?;
         let old_mode = surface.scanout.pending_mode();
+        let active_mode = surface.scanout.current_mode();
+        let mode = select_output_timing(
+            mode_name,
+            (active_mode == old_mode).then_some(active_mode),
+            connector.modes(),
+            Mode::from,
+        )
+        .ok_or("Unsupported display mode")?;
         let output = surface.output.clone();
         let old_scale = output.current_scale();
         let old_transform = output.current_transform();
@@ -1256,6 +1271,21 @@ mod saved_output_tests {
         std::fs::create_dir(&root).unwrap();root
     }
     fn settings(name:&str) -> serde_json::Value {json!({"name":name,"mode":"1920x1080@60.000Hz","scale":1.25,"transform":"90","x":1920,"y":0})}
+    #[test]
+    fn exact_active_custom_timing_is_preserved_without_broadening_mode_selection() {
+        // Model two timings with the same public signature but distinct
+        // timings internally, plus an ordinary advertised ultrawide mode.
+        let describe = |timing| match timing {
+            0 | 1 => Mode { size: (3240, 1356).into(), refresh: 60000 },
+            _ => Mode { size: (3440, 1440).into(), refresh: 59940 },
+        };
+        assert_eq!(select_output_timing("3240x1356@60.000Hz", Some(0), &[2], describe), Some(0));
+        assert_eq!(select_output_timing("3240x1356@60.000Hz", Some(0), &[1, 2], describe), Some(0));
+        assert_eq!(select_output_timing("3240x1356@59.940Hz", Some(0), &[2], describe), None);
+        assert_eq!(select_output_timing("3240x1356", Some(0), &[2], describe), None);
+        assert_eq!(select_output_timing("3240x1356@60.000Hz", None, &[2], describe), None);
+        assert_eq!(select_output_timing("3440x1440@59.940Hz", Some(0), &[2], describe), Some(2));
+    }
     #[test]
     fn reconnect_plan_selects_only_new_names_and_preserves_confirmed_values() {
         let saved=HashMap::from([("HDMI-A-1".to_owned(),settings("HDMI-A-1")),("DP-1".to_owned(),settings("DP-1"))]);

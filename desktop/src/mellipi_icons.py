@@ -44,6 +44,9 @@ PATHS = {
     'camera': 'M3 8h4l2-3h6l2 3h2l2 2v9H3z M15 13a3 3 0 1 0-6 0 3 3 0 0 0 6 0z',
     'bell': 'M4 17l2-3V9a6 6 0 0 1 12 0v5l2 3H4zm6 3h4',
     'wifi': 'M3 8a14 14 0 0 1 18 0M6 12a9 9 0 0 1 12 0m-9 4a4 4 0 0 1 6 0m-3 3h.1',
+    'brightness': 'M12 7a5 5 0 1 0 0 10 5 5 0 1 0 0-10zM12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M19 5l-1.5 1.5m-11 11L5 19',
+    'help': 'M12 3a9 9 0 1 0 .01 0zM9.5 9a2.5 2.5 0 1 1 3.8 2.1c-.9.56-1.3 1-1.3 2.4m0 3h.1',
+    'accessibility': 'M12 3a1.5 1.5 0 1 0 0 3 1.5 1.5 0 1 0 0-3zM4 9l8 1.5L20 9m-8 1.5V15m0 0-4 6m4-6 4 6',
     'battery': 'M3 7h14l2 2v8H3zm18 3v4M7 10v4m4-4v4',
     'user': 'M15 8a3 3 0 1 0-6 0 3 3 0 0 0 6 0zM5 20v-2a7 7 0 0 1 14 0v2',
     'microphone': 'M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0zm-3 5a6 6 0 0 0 12 0m-6 6v4m-3 0h6',
@@ -74,6 +77,11 @@ PATHS = {
     'sleep': 'M19 15a8 8 0 0 1-10-10 8 8 0 1 0 10 10z',
     'switch-user': 'M4 18v-2a5 5 0 0 1 9-3m-2-6a3 3 0 1 0-6 0 3 3 0 0 0 6 0zm3 9h7m-3-3 3 3-3 3',
     'search': 'M15 10a5 5 0 1 0-10 0 5 5 0 0 0 10 0zm-1 4 6 6',
+    'start-search': 'M14 4H7L3 8v6l4 4h7l4-4V8zM16.5 16.5 21 21',
+    'start-spaces': 'M4 4h7v6H4zm10 0h6v10h-6zM4 13h7v7H4zm10 4h6v3h-6z',
+    'start-tools': 'M3 9l3-4h5l2 2h6l2 2v10H3zm0 2h18m-12 3h6',
+    'start-library': 'M3 7l3-3h4v7H3zm11-3h7v7h-7zM3 14h7v7H3zm11 0h7v4l-3 3h-4z',
+    'start-calculate': 'M6 3h10l3 3v15H6zm0 7h13m-10 4h3m-1.5-1.5v3m4 2h2m-8 .5h3',
     'edit': 'M5 15 15 5l4 4L9 19H5zm8-8 4 4',
     'plus': 'M12 5v14M5 12h14',
     'copy': 'M8 8h9l3 3v9H8zM5 16H4V4h11v1',
@@ -110,6 +118,9 @@ ALIASES = {
     'view-list':'list','edit-clear':'erase',
     'document-save':'save','edit-find-replace':'replace',
     'system-log-out':'logout','system-shutdown':'shutdown','system-lock-screen':'lock',
+    'help-browser':'help','color-select':'edit','display-brightness':'brightness',
+    'bluetooth-active':'bluetooth','battery-good':'battery',
+    'preferences-desktop-accessibility':'accessibility','preferences-desktop-keyboard-shortcuts':'keyboard',
 }
 
 

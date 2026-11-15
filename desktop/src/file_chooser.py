@@ -2,10 +2,10 @@
 from pathlib import Path
 
 from PyQt6.QtCore import QIdentityProxyModel, QSize, QStandardPaths, Qt, QUrl
-from PyQt6.QtWidgets import QDialog, QFileDialog, QListView, QStyledItemDelegate, QToolButton, QTreeView
+from PyQt6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFileDialog, QLineEdit, QListView, QStyledItemDelegate, QToolButton, QTreeView
 
 from files_icons import PLACES, file_icon, icon
-from qt_app import BASE_STYLE, ThemeWatch, widget_palette
+from qt_app import BASE_STYLE, ThemeWatch, exec_owned_dialog, widget_palette
 
 
 class ChooserIcons(QIdentityProxyModel):
@@ -79,6 +79,10 @@ class FileChooser(QFileDialog):
         sidebar = self.findChild(QListView, 'sidebar')
         if sidebar is not None:
             sidebar.setItemDelegate(PlaceIcons(self))
+        for box in self.findChildren(QDialogButtonBox):
+            for button in box.buttons():
+                if box.buttonRole(button) == QDialogButtonBox.ButtonRole.AcceptRole:
+                    button.setProperty('mellipiPrimary', True)
         self.apply_theme()
         self.theme_watch.changed.connect(self.apply_theme)
         self.resize(730, 480)
@@ -94,6 +98,14 @@ class FileChooser(QFileDialog):
             }
             QHeaderView::section { background: %(raised)s; color: %(text)s; border: 0; padding: 5px; }
         """) % tokens)
+        # The stock chooser gives its filename editor a different height than
+        # its paired file-type field. Keep label baselines and controls lined up.
+        filename = self.findChild(QLineEdit, 'fileNameEdit')
+        filetype = self.findChild(QComboBox, 'fileTypeCombo')
+        if filename is not None and filetype is not None:
+            height = max(filename.sizeHint().height(), filetype.sizeHint().height())
+            filename.setMinimumHeight(height)
+            filetype.setMinimumHeight(height)
         for button_name, glyph in (('backButton', 'arrow-left'), ('forwardButton', 'arrow-right'),
                                    ('toParentButton', 'arrow-up'), ('newFolderButton', 'folder-plus')):
             button = self.findChild(QToolButton, button_name)
@@ -110,7 +122,7 @@ class FileChooser(QFileDialog):
     def _choose(cls, parent, caption, directory, filters, mode, save, options):
         dialog = cls(parent, caption, directory, filters, mode=mode, save=save, options=options)
         try:
-            if dialog.exec() != QDialog.DialogCode.Accepted:
+            if exec_owned_dialog(dialog) != QDialog.DialogCode.Accepted:
                 return [], ''
             return dialog.selectedFiles(), dialog.selectedNameFilter()
         finally:

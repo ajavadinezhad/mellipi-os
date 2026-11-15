@@ -120,8 +120,8 @@ class Monitor(AppWindow):
         self.timer.timeout.connect(self.sample)
         metrics = QHBoxLayout()
         metrics.setSpacing(8)
-        cpu_card, self.cpu_value = self.metric('CPU', 'cpu')
-        memory_card, self.memory_value = self.metric('Memory', 'memory')
+        cpu_card, self.cpu_value = self.metric_card('CPU', 'cpu')
+        memory_card, self.memory_value = self.metric_card('Memory', 'memory')
         metrics.addWidget(cpu_card, 1)
         metrics.addWidget(memory_card, 1)
         self.content.addLayout(metrics)
@@ -137,6 +137,9 @@ class Monitor(AppWindow):
         self.tree.setUniformRowHeights(True)
         self.tree.setSortingEnabled(True)
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.tree.header().setStretchLastSection(False)
+        self.themeChanged.connect(self.update_columns)
+        self.update_columns()
         self.tree.sortItems(2, Qt.SortOrder.DescendingOrder)
         self.tree.itemSelectionChanged.connect(self.update_action)
         self.content.addWidget(self.tree, 1)
@@ -153,7 +156,7 @@ class Monitor(AppWindow):
             self.end.setVisible(False)
 
     @staticmethod
-    def metric(label, kind):
+    def metric_card(label, kind):
         frame = QFrame()
         frame.setObjectName(kind + 'Metric')
         layout = QVBoxLayout(frame)
@@ -168,6 +171,14 @@ class Monitor(AppWindow):
         layout.addWidget(name)
         layout.addWidget(value)
         return frame, value
+
+    def update_columns(self):
+        header = self.tree.header()
+        metrics = header.fontMetrics()
+        for column, sample in ((1, '4194304'), (2, '1000.0%'), (3, '999.9 GiB')):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(column, metrics.horizontalAdvance(sample) + 24)
+            self.tree.headerItem().setTextAlignment(column, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
     def eligible(self):
         return self.isVisible() and not self.isMinimized()
@@ -244,6 +255,8 @@ class Monitor(AppWindow):
             cpu = max(0, 100 * (process.ticks - old.ticks) / elapsed) if old and elapsed > 0 else -1
             row = ProcessRow([process.name, str(process.pid), f'{cpu:.1f}%' if cpu >= 0 else '—',
                               size_label(process.rss)])
+            for column in (1, 2, 3):
+                row.setTextAlignment(column, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             for col, value in enumerate((process.name.casefold(), process.pid, cpu, process.rss)):
                 row.setData(col, Qt.ItemDataRole.UserRole, value)
             row.setData(0, Qt.ItemDataRole.UserRole + 1, process)

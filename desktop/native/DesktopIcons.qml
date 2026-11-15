@@ -10,8 +10,9 @@ Item {
     property string selectedPath: ""
     property var selectedPaths: []
     readonly property color selectionBlue: "#3584e4"
-    readonly property int iconCell: Theme.extraCompact ? 80 : Theme.compact ? 96 : 112
-    readonly property int iconSize: Theme.extraCompact ? 32 : Theme.compact ? 36 : 44
+    readonly property int baseIconSize: Theme.extraCompact ? 32 : Theme.compact ? 36 : 44
+    readonly property int iconSize: Math.round(baseIconSize*(Orbit.appearance.desktopIconScale || 100)/100)
+    readonly property int iconCell: (Theme.extraCompact ? 80 : Theme.compact ? 96 : 112) + iconSize - baseIconSize
     property var positions: ({})
     property string editingPath: ""
     property bool creatingFolder: false
@@ -157,7 +158,7 @@ Item {
                     x:4;y:2;width:parent.width-8;height:icons.iconCell-6;radius:Theme.corner(7)
                     color:icons.selectedPaths.indexOf(modelData.path)>=0?Qt.rgba(0.208,0.518,0.894,0.22):hit.containsMouse?Theme.hover:"transparent"
                     border.color:icons.selectedPaths.indexOf(modelData.path)>=0?icons.selectionBlue:"transparent"
-                    Image{anchors.horizontalCenter:parent.horizontalCenter;y:8;width:icons.iconSize;height:icons.iconSize;source:Theme.iconSource(modelData.icon);sourceSize:Qt.size(40,40);fillMode:Image.PreserveAspectFit}
+                    Image{anchors.horizontalCenter:parent.horizontalCenter;y:8;width:icons.iconSize;height:icons.iconSize;source:Theme.iconSource(modelData.icon);sourceSize:Qt.size(Math.max(40, icons.iconSize),Math.max(40, icons.iconSize));fillMode:Image.PreserveAspectFit}
                     Text{x:4;y:icons.iconSize+13;width:parent.width-8;height:Math.max(24,icons.iconCell-icons.iconSize-28);text:modelData.name;textFormat:Text.PlainText;color:Theme.text;font.pixelSize:Theme.fontSize(11);horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;maximumLineCount:2;elide:Text.ElideRight}
                     MouseArea {
                         id:hit;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.LeftButton|Qt.RightButton

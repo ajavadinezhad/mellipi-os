@@ -17,7 +17,8 @@ from PyQt6.QtWidgets import (
 
 from qt_app import AppWindow, themed_prompt
 from files_icons import icon
-from software_sources import SOURCES, friendly_error, install, installed_software, rank, refresh_apt, search
+from software_sources import (SOURCES, can_manage, executable, friendly_error, install,
+                              installed_software, manage, rank, refresh_apt, search, APT_GET, PKEXEC)
 
 
 class Job(QThread):
@@ -60,6 +61,7 @@ class SoftwareWindow(AppWindow):
         self.job = None
         self.installing = False
         self.refreshing = False
+        self.operation_notice = ''
         self.term = ''
         self.installed_only = False
         self.searching = False
@@ -145,7 +147,18 @@ class SoftwareWindow(AppWindow):
         self.install_button.setProperty('mellipiSymbolicIcon', 'system-software-install')
         self.install_button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.install_button.clicked.connect(self.confirm_install)
-        panel.addWidget(self.install_button)
+        actions = QHBoxLayout()
+        actions.addWidget(self.install_button)
+        self.update_button = QPushButton('Update')
+        self.update_button.setProperty('mellipiSymbolicIcon', 'view-refresh')
+        self.update_button.setToolTip('Install the available update from this package source')
+        self.update_button.clicked.connect(lambda: self.confirm_manage('update'))
+        actions.addWidget(self.update_button)
+        self.remove_button = QPushButton('Remove')
+        self.remove_button.setProperty('mellipiSymbolicIcon', 'edit-delete')
+        self.remove_button.clicked.connect(lambda: self.confirm_manage('remove'))
+        actions.addWidget(self.remove_button)
+        panel.addLayout(actions)
         layout.addWidget(self.detail)
 
         self.progress = QProgressBar()
@@ -155,7 +168,8 @@ class SoftwareWindow(AppWindow):
         self.progress.setFixedHeight(4)
         self.progress.hide()
         layout.addWidget(self.progress)
-        self.status = label('Search for an app or package.', wrap=True)
+        self.status = label(wrap=True)
+        self.status.hide()
         self.status.setAccessibleName('Software status')
         layout.addWidget(self.status)
         self.source_status = label(wrap=True)
@@ -195,11 +209,20 @@ class SoftwareWindow(AppWindow):
         self.detail_layout.setDirection(direction)
         self.source_layout.setDirection(direction)
         glyph = max(16, min(24, self.theme['font_size'] + 2))
+        control_height = max(glyph + 14, self.query.sizeHint().height(),
+                             self.source.sizeHint().height(), self.installed_button.sizeHint().height())
+        for control in (self.query, self.source, self.installed_button):
+            if control.minimumHeight() != control_height:
+                control.setFixedHeight(control_height)
         for button in (self.search_button, self.refresh_button):
             button.setIconSize(QSize(glyph, glyph))
-            button.setMinimumSize(glyph + 18, glyph + 14)
+            button.setFixedSize(control_height, control_height)
         self.suggestions.setVisible(wide and not self.term and not self.installed_only)
         self.fit_result_columns()
+
+    def set_status(self, text):
+        self.status.setText(text)
+        self.status.setVisible(bool(text))
 
     def fit_result_columns(self):
         width = self.list.viewport().width()
@@ -234,7 +257,12 @@ class SoftwareWindow(AppWindow):
             description = f'{description}\nClassic confinement is required for this package.'.lstrip()
         self.description.setText(description)
         self.description.setVisible(bool(description))
-        self.install_button.setVisible(not self.installed_only)
+        self.install_button.setVisible(not package.installed and not self.installed_only)
+        for action, button in (('update', self.update_button), ('remove', self.remove_button)):
+            button.setVisible(package.installed and self.installed_only)
+            button.setEnabled(not self.job and can_manage(package, action))
+        self.remove_button.setToolTip('Remove the selected app' if can_manage(package, 'remove')
+                                      else 'This app is protected or cannot be removed from Software')
         self.install_button.setEnabled(not package.installed and not package.classic and not self.job)
         if package.installed:
             self.install_button.setText('Installed')
@@ -254,7 +282,7 @@ class SoftwareWindow(AppWindow):
         self.list.clear()
         self.source_status.clear()
         self.refresh_button.hide()
-        self.status.setText('Reading installed software…' if installed else 'Searching software…')
+        self.set_status('Reading installed software…' if installed else 'Searching software…')
         self.start_search()
 
     def start_search(self, *_):
@@ -266,9 +294,9 @@ class SoftwareWindow(AppWindow):
         sources = (source,) if source else tuple(SOURCES)
         self.fit_layout()
         if self.installed_only:
-            self.status.setText('Reading installed software…')
+            self.set_status('Reading installed software…')
         elif self.term:
-            self.status.setText(f'Searching for “{self.term}”…')
+            self.set_status(f'Searching for “{self.term}”…')
         self.searching = True
         self.search_results = {}
         term = self.term
@@ -278,6 +306,8 @@ class SoftwareWindow(AppWindow):
         self.job = job
         job.finished.connect(lambda: self.finish_job(self.search_finished))
         self.install_button.setEnabled(False)
+        self.update_button.setEnabled(False)
+        self.remove_button.setEnabled(False)
         self.refresh_button.setEnabled(False)
         self.progress.show()
         job.start()
@@ -287,7 +317,8 @@ class SoftwareWindow(AppWindow):
             return
         self.search_results[source] = result
         self.search_finished(self.search_results, '')
-        self.status.setText('Searching remaining sources…')
+        if self.searching and not self.operation_notice:
+            self.set_status('Searching remaining sources…')
 
     def start_job(self, operation, finished):
         self.job = Job(operation, self)
@@ -300,6 +331,8 @@ class SoftwareWindow(AppWindow):
         self.refresh_button.setEnabled(False)
         self.list.setEnabled(False)
         self.install_button.setEnabled(False)
+        self.update_button.setEnabled(False)
+        self.remove_button.setEnabled(False)
         self.progress.show()
         self.job.start()
 
@@ -343,12 +376,15 @@ class SoftwareWindow(AppWindow):
 
     def search_finished(self, results, error):
         if error:
-            self.status.setText(error)
+            self.set_status(error)
             return
         self.source_status.setText(' • '.join(result.status for result in results.values()))
         apt = results.get('apt')
         needs_refresh = apt is not None and apt.needs_refresh
-        self.refresh_button.setVisible(needs_refresh)
+        refresh_available = executable(APT_GET) and executable(PKEXEC)
+        self.refresh_button.setVisible(refresh_available and
+                                       (needs_refresh or (self.installed_only and
+                                        self.source.currentData() in ('', 'apt'))))
         self.list.clear()
         packages = (package for result in results.values() for package in result.packages)
         ranked = rank(packages, self.term, limit=None)
@@ -363,32 +399,67 @@ class SoftwareWindow(AppWindow):
         count = self.list.topLevelItemCount()
         if self.installed_only:
             suffix = ' · Refine the filter to see more' if len(ranked) > count else ''
-            self.status.setText(f'{count} of {len(ranked)} matching installed packages{suffix}'
+            self.set_status(f'{count} of {len(ranked)} matching installed packages{suffix}'
                                 if count else 'No matching installed software.')
             if count:
                 self.list.setCurrentItem(self.list.topLevelItem(0))
         elif count:
-            self.status.setText(f'{count} result' + ('s' if count != 1 else ''))
+            self.set_status(f'{count} result' + ('s' if count != 1 else ''))
             self.list.setCurrentItem(self.list.topLevelItem(0))
         elif needs_refresh:
-            self.status.setText('Connect to the internet and refresh to find system packages.')
+            self.set_status('Connect to the internet and refresh to find system packages.')
         elif self.term:
-            self.status.setText('No matching software. Try a different name or source.')
+            self.set_status('No matching software. Try a different name or source.')
         else:
-            self.status.setText('Search for an app or package.')
+            self.set_status('')
+        if self.operation_notice:
+            self.set_status(self.operation_notice)
+            if not self.searching:
+                self.operation_notice = ''
 
     def start_refresh(self):
         if self.job:
             return
         self.refreshing = True
-        self.status.setText('Refreshing system packages…')
+        self.set_status('Refreshing system packages…')
         self.start_job(refresh_apt, self.refresh_finished)
 
     def refresh_finished(self, _, error):
         self.refreshing = False
         if error:
-            self.status.setText(f'Could not refresh system packages. {error}')
+            self.set_status(f'Could not refresh system packages. {error}')
             return
+        self.start_search()
+
+    def confirm_manage(self, action):
+        package = self.selected()
+        if self.job or not self.installed_only or not package or not can_manage(package, action):
+            return
+        title = action.title()
+        message = f'{title} {package.name}?\n\n{package.identifier} · {package.origin}'
+        if action == 'remove':
+            message += '\n\nClose the app before removing it. Personal files are not selected for removal.'
+        elif package.source == 'apt':
+            message += '\n\nSoftware uses your current package index. Refresh system packages first if needed.'
+        if not themed_prompt(self, f'{title} software', message, title, 'Cancel'):
+            return
+        self.set_status(f'{"Updating" if action == "update" else "Removing"} {package.name}…')
+        self.start_job(lambda: manage(package, action),
+                       lambda changed, error: self.manage_finished(package, action, changed, error))
+
+    def manage_finished(self, package, action, changed, error):
+        if error:
+            self.set_status(f'Could not {action} {package.name}.')
+            themed_prompt(self, f'{action.title()} failed', error, 'OK')
+            return
+        if action == 'remove':
+            self.operation_notice = f'{package.name} was removed.'
+        elif changed is False:
+            self.operation_notice = f'{package.name} is already current in the system package index.'
+        elif changed is True:
+            self.operation_notice = f'{package.name} was updated.'
+        else:
+            self.operation_notice = f'Update check completed for {package.name}.'
         self.start_search()
 
     def confirm_install(self):
@@ -401,13 +472,13 @@ class SoftwareWindow(AppWindow):
                              'Install', 'Cancel'):
             return
         self.installing = True
-        self.status.setText(f'Installing {package.name}…')
+        self.set_status(f'Installing {package.name}…')
         self.start_job(lambda: install(package), lambda _, error: self.install_finished(package, error))
 
     def install_finished(self, package, error):
         self.installing = False
         if error:
-            self.status.setText(f'Could not install {package.name}.')
+            self.set_status(f'Could not install {package.name}.')
             themed_prompt(self, 'Installation failed', error, 'OK')
             return
         item = self.list.currentItem()
@@ -415,7 +486,7 @@ class SoftwareWindow(AppWindow):
             item.setData(0, Qt.ItemDataRole.UserRole, replace(package, installed=True))
             item.setText(2, 'Installed')
             item.setToolTip(2, 'Installed')
-        self.status.setText(f'{package.name} is installed.')
+        self.set_status(f'{package.name} is installed.')
 
     def closeEvent(self, event):
         if self.searching:
@@ -424,9 +495,9 @@ class SoftwareWindow(AppWindow):
             event.ignore()
         elif self.job:
             if self.refreshing:
-                self.status.setText('Package refresh is still running.')
+                self.set_status('Package refresh is still running.')
             else:
-                self.status.setText('Installation is still running.' if self.installing else 'Search is still running.')
+                self.set_status('Installation is still running.' if self.installing else 'A software operation is still running.')
             event.ignore()
         else:
             super().closeEvent(event)

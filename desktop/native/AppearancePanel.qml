@@ -25,12 +25,12 @@ ScrollView {
                 Text {
                     visible: view.nativeFrames && typeof Orbit.nativePaletteSupported!=="undefined" && !Orbit.nativePaletteSupported && Orbit.appearance.themePreset && Orbit.appearance.themePreset!=="custom"
                     Layout.fillWidth:true;Layout.margins:4
-                    text:"Full native window-border colors activate after your next Mellipi login."
+                    text:"Window border colors update at your next sign-in."
                     wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(10)
                 }
                 ThemePicker {Layout.fillWidth:true;Layout.leftMargin:4;Layout.rightMargin:4}
-                Text {Layout.fillWidth:true;Layout.margins:4;text:typeof Orbit.themePresets!=="undefined" ? (Orbit.themePresets.find(row=>row.id===Orbit.appearance.themePreset) || {}).description || "Choose a theme to match the desktop, windows and lock screen." : "";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(10)}
-                Text {Layout.fillWidth:true;Layout.margins:4;text:Orbit.appearance.themePreset && Orbit.appearance.themePreset!=="custom" ? "Color changes create a custom style" : "Custom style";wrapMode:Text.Wrap;color:Theme.faint;font.pixelSize:Theme.fontSize(10)}
+                Text {Layout.fillWidth:true;Layout.margins:4;visible: text.length>0;text:typeof Orbit.themePresets!=="undefined" ? (Orbit.themePresets.find(row=>row.id===Orbit.appearance.themePreset) || {}).description || "" : "";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(10)}
+                Text {Layout.fillWidth:true;Layout.margins:4;visible: !!Orbit.appearance.themePreset && Orbit.appearance.themePreset!=="custom";text:"Editing theme colors switches to Custom.";wrapMode:Text.Wrap;color:Theme.faint;font.pixelSize:Theme.fontSize(10)}
                 SettingRow {
                     label: "High contrast"
                     SettingToggle {
@@ -73,7 +73,7 @@ ScrollView {
                     OrbitField { id: accentInput;Layout.fillWidth: true;text: Orbit.accentColor;maximumLength: 7;implicitHeight: 28;onAccepted: Orbit.setPreference("accent",text) }
                     IconButton { iconName: "check";hint: "Apply custom accent color";onClicked: Orbit.setPreference("accent",accentInput.text) }
                 }
-                SettingRow {label:"Pointer";SettingToggle {objectName:"cursorAccentToggle";label:"Use theme accent for arrow pointer";checked:Orbit.appearance.cursorAccent!==false;onToggled:Orbit.setPreference("cursorAccent",checked)}Text {text:"Use theme accent";color:Theme.muted;font.pixelSize:Theme.fontSize(11)}}
+                SettingRow {label:"Match pointer to theme";SettingToggle {objectName:"cursorAccentToggle";label:"Use theme accent for arrow pointer";checked:Orbit.appearance.cursorAccent!==false;onToggled:Orbit.setPreference("cursorAccent",checked)}}
             }
             SettingsGroup {
                 title: "Taskbar and layout"
@@ -87,6 +87,7 @@ ScrollView {
                     onSelected:value=>Orbit.setPreference("panelPosition",value)
                 }
                 SettingRow {label:"Taskbar length";SettingsSegments {objectName:"taskbarLengthSegments";value:Orbit.appearance.taskbarLength || "full";segmentWidth:80;options:[{label:"Full edge",value:"full"},{label:"Fit contents",value:"fit"}];onSelected:value=>Orbit.setPreference("taskbarLength",value)}}
+                SettingRow {label:"Taskbar icon size";SettingsSegments {objectName:"taskbarIconSize";segmentWidth:52;value:Orbit.appearance.taskbarIconScale || 100;options:[75,100,125,150].map(size => ({label:size+"%",value:size}));onSelected:size=>Orbit.setPreference("taskbarIconScale",size)}}
                 SettingRow {label:"Floating taskbar";SettingToggle {objectName:"floatingTaskbarToggle";label:"Floating taskbar";checked:Orbit.appearance.taskbarFloating===true;onToggled:Orbit.setPreference("taskbarFloating",checked)}}
                 SettingRow {label:"Density";SettingsSegments {objectName:"densitySegments";segmentWidth:82;value:Orbit.appearance.density || (Orbit.compact ? "compact" : "comfortable");options:[{label:"Comfortable",value:"comfortable"},{label:"Compact",value:"compact"},{label:"Extra compact",value:"extra"}];onSelected:value=>Orbit.setPreference("density",value)}}
                 SettingRow { label: "Shell corners";SettingsSegments { objectName:"cornerSegments"; value: Orbit.appearance.corners;options: [{label:"Square",value:"square"},{label:"Soft",value:"soft"},{label:"Round",value:"rounded"}];onSelected: value => Orbit.setPreference("corners",value) } }
@@ -101,6 +102,8 @@ ScrollView {
                     SettingsSegments { segmentWidth: Math.min(68,Math.floor(200/(Orbit.outputs.length+1)));value: Orbit.appearance.output;options: [{label:"Auto",value:""}].concat(Orbit.outputs.filter(o => o.name.length>0).map(o => ({label:o.name,value:o.name})));onSelected: value => Orbit.setPreference("output",value) }
                 }
                 SettingRow { label: "Desktop icons";SettingToggle { label: "Desktop icons";checked: Orbit.appearance.desktopIcons;onToggled: Orbit.setPreference("desktopIcons",checked) } }
+                SettingRow {label:"Desktop icon size";enabled:Orbit.appearance.desktopIcons;SettingsSegments {objectName:"desktopIconSize";segmentWidth:52;value:Orbit.appearance.desktopIconScale || 100;options:[75,100,125,150].map(size => ({label:size+"%",value:size}));onSelected:size=>Orbit.setPreference("desktopIconScale",size)}}
+
             }
             SettingsGroup {
                 title: "Background"

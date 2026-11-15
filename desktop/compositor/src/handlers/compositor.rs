@@ -78,13 +78,16 @@ impl CompositorHandler for OrbitCompositor {
             if had_buffer && !mapped {
                 self.forget_snap(id, &window);
                 self.pending_initial_focus.insert(id);
+                self.reflow_auto_placement();
             }
             if mapped
                 && self.pending_initial_focus.remove(&id)
                 && !self.protocols.is_locked()
                 && self.space.element_location(&window).is_some()
             {
-                self.place_new_window(id, &window);
+                if !self.center_transient_window(&window) {
+                    self.place_new_window(id, &window);
+                }
                 self.seat.get_keyboard().unwrap().set_focus(
                     self,
                     Some(surface.clone()),

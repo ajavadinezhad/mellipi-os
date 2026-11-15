@@ -2,7 +2,7 @@
 from pathlib import Path
 from functools import lru_cache
 
-from PyQt6.QtCore import QFileSystemWatcher, Qt, pyqtSignal, QObject
+from PyQt6.QtCore import QFileSystemWatcher, QPoint, Qt, pyqtSignal, QObject
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPalette
 from PyQt6.QtWidgets import QApplication, QAbstractButton, QDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget
 
@@ -41,6 +41,7 @@ class ThemeWatch(QObject):
                            font_size=round(14*prefs['textScale']),
                            outline_width=1 if prefs['highContrast'] else 0,
                            focus_width=2 if prefs['highContrast'] else 1,
+                           input_edge=palette['control_border'] if prefs['highContrast'] else palette['border'],
                            radius={'square': 0, 'soft': 4, 'rounded': 8}[prefs['corners']],
                            padding={'comfortable': 8, 'compact': 6, 'extra': 4}[prefs['density']])
         if self.tokens != self.signature:
@@ -119,10 +120,16 @@ BASE_STYLE = '''
     QPushButton#emptyStageAction:hover, QPushButton#emptyStageAction:focus { border-color: %(text)s; }
     QPushButton, QToolButton {
         background: %(raised)s; color: %(text)s;
-        padding: %(padding)dpx 8px; border: 1px solid transparent;
+        padding: %(padding)dpx 10px; border: 1px solid transparent;
         border-radius: %(radius)dpx;
     }
     QPushButton:hover, QToolButton:hover { background: %(hover)s; }
+    QDialogButtonBox QPushButton[mellipiPrimary="true"]:enabled {
+        background: %(accent)s; color: %(accent_text)s; font-weight: 600;
+    }
+    QDialogButtonBox QPushButton[mellipiPrimary="true"]:focus { border-color: %(accent_text)s; }
+    QDialogButtonBox QPushButton:default { font-weight: 600; }
+    QDialogButtonBox QPushButton:default:focus { border-color: %(focus)s; }
     QPushButton:pressed, QToolButton:pressed, QPushButton:checked, QToolButton:checked {
         background: %(selected_surface)s; color: %(text)s;
     }
@@ -135,29 +142,39 @@ BASE_STYLE = '''
         background: %(surface)s; color: %(text)s; border: 1px solid %(control_border)s;
         padding: 4px 7px;
     }
+    /* Reserve the focus border so text and size hints don't shift on focus. */
     QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit {
-        background: %(surface)s; color: %(text)s; border: 1px solid %(control_border)s;
+        background: %(surface)s; color: %(text)s;
+        border: %(focus_width)dpx solid %(input_edge)s;
         padding: %(padding)dpx; border-radius: %(radius)dpx;
         selection-background-color: %(accent)s; selection-color: %(accent_text)s; }
-    QComboBox { padding-right: 24px; }
+    QLineEdit:hover, QComboBox:hover, QAbstractSpinBox:hover {
+        border-color: %(control_border)s;
+    }
+    QComboBox { padding-right: 28px; }
     QComboBox::drop-down {
-        subcontrol-origin: padding; subcontrol-position: top right; width: 20px;
-        border-left: 1px solid %(separator)s; }
+        subcontrol-origin: padding; subcontrol-position: top right; width: 24px; }
     QComboBox QAbstractItemView {
-        background: %(raised)s; color: %(text)s; border: 1px solid %(control_border)s;
-        selection-background-color: %(selected_surface)s; selection-color: %(text)s; }
+        background: %(raised)s; color: %(text)s; border: 1px solid %(input_edge)s;
+        border-radius: %(radius)dpx; padding: 3px; outline: 0;
+        selection-background-color: %(selected_surface)s; selection-color: %(text)s;
+    }
+    QComboBox QAbstractItemView::item { padding: 4px 8px; }
     QLineEdit:focus, QComboBox:focus, QAbstractSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus {
         border: %(focus_width)dpx solid %(focus)s; }
     QLineEdit:disabled, QComboBox:disabled, QAbstractSpinBox:disabled, QPlainTextEdit:disabled, QTextEdit:disabled {
         color: %(faint)s; border-color: %(separator)s; }
+    /* Spin boxes and editable combos already draw the input frame. */
+    QAbstractSpinBox QLineEdit, QAbstractSpinBox QLineEdit:focus,
+    QComboBox QLineEdit, QComboBox QLineEdit:focus {
+        background: transparent; border: 0; border-radius: 0; padding: 0;
+    }
     QTabWidget::pane { border: 0; }
     QTabBar::tab { padding: %(padding)dpx 10px; background: %(raised)s; color: %(muted)s;
         border-bottom: 2px solid transparent; }
     QTabBar::tab:selected { background: %(selected_surface)s; color: %(text)s; border-bottom-color: %(focus)s; }
     QTabBar::tab:focus { border-bottom-color: %(focus)s; }
     QAbstractItemView:focus { border: 1px solid %(focus)s; }
-    QDialogButtonBox QPushButton:default { background: %(accent)s; color: %(accent_text)s; }
-    QDialogButtonBox QPushButton:default:focus { border-color: %(accent_text)s; }
     QAbstractItemView { background: %(surface)s; color: %(text)s;
         alternate-background-color: %(raised)s; border: %(outline_width)dpx solid %(control_border)s;
         selection-background-color: %(selected_surface)s; selection-color: %(text)s; }
@@ -170,6 +187,23 @@ BASE_STYLE = '''
     QProgressBar { background: %(surface)s; border: 0; }
     QProgressBar::chunk { background: %(focus)s; }
 '''
+
+
+def exec_owned_dialog(dialog):
+    """Keep modal prompts with their owner; the compositor places them on Wayland."""
+    owner = dialog.parentWidget()
+    if owner is not None:
+        owner = owner.window()
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        if not QApplication.platformName().startswith('wayland'):
+            dialog.ensurePolished()
+            if not dialog.testAttribute(Qt.WidgetAttribute.WA_Resized):
+                dialog.adjustSize()
+            available = owner.screen().availableGeometry()
+            wanted = owner.frameGeometry().center() - QPoint(dialog.width() // 2, dialog.height() // 2)
+            dialog.move(max(available.left(), min(wanted.x(), available.right() + 1 - dialog.width())),
+                        max(available.top(), min(wanted.y(), available.bottom() + 1 - dialog.height())))
+    return dialog.exec()
 
 
 def style_dialog(dialog, parent):
@@ -187,7 +221,7 @@ class ThemedInput:
         dialog.setLabelText(label)
         setup(dialog)
         try:
-            accepted = dialog.exec() == QDialog.DialogCode.Accepted
+            accepted = exec_owned_dialog(dialog) == QDialog.DialogCode.Accepted
             return value(dialog) if accepted else None, accepted
         finally:
             dialog.deleteLater()
@@ -232,26 +266,27 @@ def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
     dialog.setPalette(widget_palette(parent.theme_watch.tokens))
     dialog.setStyleSheet((BASE_STYLE + """
         QDialog#themedPrompt { border: 1px solid %(separator)s; }
-        QWidget#promptHeader { background: %(selected_surface)s; }
-        QLabel#promptHeading { color: %(accent_ink)s; font-weight: bold; }
+        QLabel#promptHeading { color: %(text)s; font-size: %(headingSize)dpx; font-weight: 650; }
         QPushButton#promptPrimary { background: %(accent)s; color: %(accent_text)s; }
         QPushButton#promptPrimary:hover { border-color: %(text)s; }
-        QPushButton#promptCancel { background: %(selected_surface)s; color: %(accent_ink)s; }
+        QPushButton#promptCancel { background: transparent; color: %(text)s; }
         QPushButton#promptCancel:hover { background: %(hover)s; }
-    """) % parent.theme_watch.tokens)
+    """) % dict(parent.theme_watch.tokens, headingSize=round(parent.theme_watch.tokens["font_size"] * 1.25)))
     dialog.setObjectName('themedPrompt')
     layout = QVBoxLayout(dialog)
-    layout.setContentsMargins(1, 1, 1, 1)
+    layout.setContentsMargins(18, 16, 18, 16)
+    layout.setSpacing(10)
     header = QWidget(dialog)
-    header.setObjectName('promptHeader')
     heading_layout = QHBoxLayout(header)
+    heading_layout.setContentsMargins(0, 0, 0, 0)
     heading = QLabel(title, header)
     heading.setTextFormat(Qt.TextFormat.PlainText)
     heading.setObjectName('promptHeading')
     heading_layout.addWidget(heading)
     layout.addWidget(header)
     body = QVBoxLayout()
-    body.setContentsMargins(12, 6, 12, 12)
+    body.setContentsMargins(0, 0, 0, 0)
+    body.setSpacing(14)
     label = QLabel(message, dialog)
     label.setTextFormat(Qt.TextFormat.PlainText)
     label.setWordWrap(True)
@@ -281,7 +316,10 @@ def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
     dismiss.setFocus()
     body.addLayout(buttons)
     layout.addLayout(body)
-    return dialog.exec()
+    try:
+        return exec_owned_dialog(dialog)
+    finally:
+        dialog.deleteLater()
 
 
 class AppIdentityBadge(QLabel):

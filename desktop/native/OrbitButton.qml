@@ -5,9 +5,11 @@ Button {
     id: control
     property bool accent: false
     property bool quiet: false
+    property bool bare: false
     property string hint: ""
     property bool enterHeld: false
     readonly property bool visuallyDown: down || enterHeld
+    readonly property color primaryInk: background && background.foreground !== undefined ? background.foreground : Theme.accentText
     function pressEnter(event) {
         event.accepted=true;
         if(!event.isAutoRepeat && enabled && !pressed && !enterHeld) {enterHeld=true;Orbit.hideTooltip();}
@@ -33,27 +35,14 @@ Button {
     font.pixelSize: Theme.fontSize(12)
     padding: Theme.extraCompact ? 5 : Theme.compact ? 8 : 12
     contentItem: Text {
-        text: control.text; font: control.font; color: !control.enabled ? Theme.disabled : control.accent ? Theme.accentText : Theme.text
+        text: control.text; font: control.font; color: !control.enabled ? Theme.disabled : control.accent ? control.primaryInk : Theme.text
         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight; textFormat: Text.PlainText
     }
-    background: Rectangle {
-        id:buttonFill
-        property bool ready:false
-        readonly property color targetColor:control.accent ? (control.visuallyDown ? Qt.darker(Theme.accent,1.15) : control.hovered ? Theme.accentHover : Theme.accent) : control.visuallyDown ? Theme.hover : control.hovered ? Theme.hover : control.quiet ? "transparent" : Theme.raised
-        onTargetColorChanged:{pressFade.stop();pressFade.to=targetColor;if(ready && !Theme.reducedMotion)pressFade.restart();else color=targetColor;}
-        Component.onCompleted:{color=targetColor;ready=true;}
-        radius: Theme.corner(Theme.compact ? 10 : 12)
-        border.color: control.activeFocus ? (control.accent ? Theme.accentText : Theme.focusColor) : control.accent || control.quiet ? "transparent" : Theme.border
-        border.width: control.activeFocus ? 2 : control.quiet || control.accent ? 0 : Theme.surfaceOutline
-        Rectangle {
-            visible: Theme.fold && !control.accent && control.visuallyDown
-            anchors.left: parent.left;anchors.right: parent.right;anchors.bottom: parent.bottom
-            anchors.leftMargin: 5;anchors.rightMargin: 5;height: 1;color: Theme.accent
-        }
-        ColorAnimation {id:pressFade;objectName:"buttonPressFade";target:buttonFill;property:"color";duration:control.visuallyDown ? Math.min(60,Theme.motion) : Theme.motion}
-        readonly property bool motionDisabled:Theme.reducedMotion
-        onMotionDisabledChanged:if(motionDisabled){pressFade.stop();buttonFill.color=buttonFill.targetColor;}
+    background: ControlSurface {
+        controlEnabled: control.enabled;focused: control.activeFocus
+        hovered: !control.bare && control.hovered;pressed: !control.bare && control.visuallyDown
+        primary: control.accent && !control.bare;quiet: control.quiet || control.bare;animate: true
     }
     onPressedChanged: if(pressed){enterHeld=false;Orbit.hideTooltip();}
     onHoveredChanged: {

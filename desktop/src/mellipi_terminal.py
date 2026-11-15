@@ -103,35 +103,38 @@ class TerminalWindow(Gtk.Window):
         self._search_terminal = None
         self._search_matched = False
         self.search_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE)
-        self.search_bar = Gtk.Box(spacing=6)
+        self.search_bar = Gtk.Grid(column_spacing=6, row_spacing=4)
         self.search_bar.get_style_context().add_class('terminal-search')
         self.search_revealer.add(self.search_bar)
-        self.search_entry = Gtk.SearchEntry(placeholder_text='Find in this tab', max_length=256)
-        self.search_entry.set_width_chars(9)
+        self.search_entry = Gtk.SearchEntry(placeholder_text='Find in tab', max_length=256)
+        self.search_entry.set_width_chars(7)
         self.search_entry.set_max_width_chars(22)
         self.search_entry.get_accessible().set_name('Find in this terminal tab')
         self.search_entry.connect('changed', self.update_search)
         self.search_entry.connect('key-press-event', self.search_key_pressed)
-        self.search_bar.pack_start(self.search_entry, True, True, 0)
+        self.search_entry.set_hexpand(True)
+        self.search_bar.attach(self.search_entry, 0, 0, 1, 1)
+        search_options = Gtk.Box(spacing=8)
         self.search_case = Gtk.CheckButton(label='Match case')
         self.search_case.connect('toggled', self.update_search)
-        self.search_bar.pack_start(self.search_case, False, False, 0)
+        search_options.pack_start(self.search_case, False, False, 0)
         self.search_status = Gtk.Label(xalign=0)
         self.search_status.get_style_context().add_class('terminal-search-status')
         self.search_status.get_accessible().set_name('Search status')
-        self.search_status.set_width_chars(8)
-        self.search_bar.pack_start(self.search_status, False, False, 0)
+        self.search_status.set_ellipsize(Pango.EllipsizeMode.END)
+        search_options.pack_start(self.search_status, True, True, 0)
+        self.search_bar.attach(search_options, 0, 1, 4, 1)
         self.search_buttons = {}
-        for icon, title, callback in (
+        for column, (icon, title, callback) in enumerate((
             ('go-up', 'Previous match', lambda: self.find_match(False)),
             ('go-down', 'Next match', lambda: self.find_match(True)),
             ('close', 'Close find', self.hide_search),
-        ):
+        ), start=1):
             button = Gtk.Button()
             button.set_tooltip_text(title)
             button.get_accessible().set_name(title)
             button.connect('clicked', lambda _button, action=callback: action())
-            self.search_bar.pack_start(button, False, False, 0)
+            self.search_bar.attach(button, column, 0, 1, 1)
             self.search_buttons[icon] = button
         content.pack_start(self.search_revealer, False, False, 0)
         content.pack_start(self.notebook, True, True, 0)
@@ -250,14 +253,16 @@ class TerminalWindow(Gtk.Window):
                                border-bottom: 1px solid %(separator)s; }
             .terminal-search-status, .terminal-shortcut { color: %(muted)s; }
             .terminal-search entry, .terminal-search button {
-                min-height: 28px;
+                min-height: %(search_height)dpx; padding: 0 6px;
                 background: %(surface)s; color: %(text)s; border: 1px solid %(search_border)s;
                 border-radius: %(radius)dpx; box-shadow: none;
             }
+            .terminal-search button { min-width: %(search_height)dpx; padding: 0; }
             .terminal-search entry:focus, .terminal-search button:focus { border-color: %(focus)s; }
             .terminal-search button:hover { background: %(hover)s; }
             .terminal-search entry selection { background: %(accent)s; color: %(accent_text)s; }
-        ''' % dict(palette, padding=pad, radius=radius, identity_bg=identity_bg, header_height=header_height, label_size=round(14*prefs['textScale']),
+        ''' % dict(palette, padding=pad, radius=radius, identity_bg=identity_bg, header_height=header_height,
+                   label_size=round(14*prefs['textScale']), search_height=max(28, round(22*prefs['textScale'])),
                    search_border=palette['control_border'])).encode())
         for i in range(self.notebook.get_n_pages()):
             self.style_terminal(self.notebook.get_nth_page(i).get_child())
@@ -359,20 +364,27 @@ class TerminalWindow(Gtk.Window):
         elif not self.search_revealer.get_reveal_child():
             self.current_terminal().grab_focus()
 
-    def alert(self, title, message, buttons=Gtk.ButtonsType.CLOSE):
+    def alert(self, title, message, buttons=Gtk.ButtonsType.CLOSE, *, confirm_label=None):
         dialog = Gtk.MessageDialog(transient_for=self, modal=True, buttons=buttons,
                                    text=title, use_header_bar=False)
+        dialog.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
         dialog.set_titlebar(Gtk.HeaderBar(title='Mellipi Terminal', show_close_button=False))
         primary = dialog.get_widget_for_response(
             Gtk.ResponseType.OK if buttons == Gtk.ButtonsType.OK_CANCEL else Gtk.ResponseType.CLOSE)
         if primary is not None:
             primary.get_style_context().add_class('suggested-action')
-        dialog.set_default_response(
-            Gtk.ResponseType.CANCEL if buttons == Gtk.ButtonsType.OK_CANCEL else Gtk.ResponseType.CLOSE)
+            if confirm_label:
+                primary.set_label(confirm_label)
+        safe_response = Gtk.ResponseType.CANCEL if buttons == Gtk.ButtonsType.OK_CANCEL else Gtk.ResponseType.CLOSE
+        dialog.set_default_response(safe_response)
         dialog.format_secondary_text(message)
-        response = dialog.run()
-        dialog.destroy()
-        return response
+        safe_button = dialog.get_widget_for_response(safe_response)
+        if safe_button is not None:
+            safe_button.grab_focus()
+        try:
+            return dialog.run()
+        finally:
+            dialog.destroy()
 
     def confirm_window_close(self, _window, _event):
         count = self.notebook.get_n_pages()
@@ -381,11 +393,11 @@ class TerminalWindow(Gtk.Window):
         message = ('This will stop the program running in this tab.' if count == 1
                    else 'This will close all tabs and their running programs.')
         return self.alert('Close terminal window?', message,
-                          Gtk.ButtonsType.OK_CANCEL) != Gtk.ResponseType.OK
+                          Gtk.ButtonsType.OK_CANCEL, confirm_label='Close Window') != Gtk.ResponseType.OK
 
     def confirm_close(self, page):
         if self.alert('Close terminal tab?', 'The program running in this tab will lose its terminal.',
-                      Gtk.ButtonsType.OK_CANCEL) == Gtk.ResponseType.OK:
+                      Gtk.ButtonsType.OK_CANCEL, confirm_label='Close Tab') == Gtk.ResponseType.OK:
             self.remove_tab(page)
 
     @staticmethod

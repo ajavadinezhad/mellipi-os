@@ -3,11 +3,14 @@
   const themePicker = document.getElementById("website-theme");
   const tourTheme = document.getElementById("desktop-tour-theme");
   const themeCaptures = document.querySelectorAll("[data-theme-capture]");
+  const wallpaperPreviews = new Set(["lagoon", "saffron", "rosewater", "citron", "cobalt"]);
   const updateCaptures = theme => {
-    tourTheme.textContent = `${theme.name} theme · High contrast`;
+    const wallpaperOnly = wallpaperPreviews.has(theme.id);
+    const captureTheme = wallpaperOnly ? "dark" : theme.id;
+    tourTheme.textContent = wallpaperOnly ? "Desktop screenshots: Dark theme · High contrast" : `${theme.name} theme · High contrast`;
     for (const link of themeCaptures) {
       const variant = link.querySelector(".tour-preview") ? "?v=high-contrast" : "?v=lossless";
-      const path = `assets/themes/${theme.id}-${link.dataset.themeCapture}.webp${variant}`;
+      const path = `assets/themes/${captureTheme}-${link.dataset.themeCapture}.webp${variant}`;
       link.href = path;
       link.querySelector("img").src = path;
     }

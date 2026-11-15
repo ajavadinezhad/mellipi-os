@@ -116,6 +116,8 @@ class Recorder(AppWindow):
         label = QLabel('&Input')
         input_row.addWidget(label)
         self.inputs = QComboBox()
+        self.inputs.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.inputs.setMinimumContentsLength(14)
         label.setBuddy(self.inputs)
         self.inputs.setAccessibleName('Recording input')
         input_row.addWidget(self.inputs, 1)
@@ -158,7 +160,7 @@ class Recorder(AppWindow):
         actions.addWidget(self.play_button)
         actions.addWidget(self.open_button)
         self.content.addLayout(actions)
-        self.status = QLabel('Recording starts only when you press Record.')
+        self.status = QLabel()
         self.status.setObjectName('muted')
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.TextFormat.PlainText)
@@ -191,6 +193,8 @@ class Recorder(AppWindow):
                                 else 'Default input', None)
         for device in available:
             self.inputs.addItem(device.description(), bytes(device.id()))
+        for index in range(self.inputs.count()):
+            self.inputs.setItemData(index, self.inputs.itemText(index), Qt.ItemDataRole.ToolTipRole)
         if previous is not None:
             index = self.inputs.findData(previous)
             if index >= 0:

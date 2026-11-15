@@ -1,0 +1,19 @@
+{
+  "id": "saffron",
+  "name": "Saffron",
+  "description": "Deep espresso, saffron-yellow focus, and warm cream text.",
+  "mode": "dark",
+  "darkLevel": "normal",
+  "accent": "#f5cf57",
+  "background": "#120e08",
+  "palette": {
+    "background": "#120e08",
+    "surface": "#1e180e",
+    "raised": "#2b2314",
+    "hover": "#3a301c",
+    "border": "#937c47",
+    "text": "#fff6dd",
+    "muted": "#d9c7a0",
+    "faint": "#b9a57b"
+  }
+}

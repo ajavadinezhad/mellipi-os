@@ -212,12 +212,18 @@ ColumnLayout {
         OrbitField {
             visible: !launcher.showLayouts;id: search;objectName: "foldAppSearch";Layout.fillWidth: true;implicitHeight: launcher.toolbarHeight
             placeholderText: "Search apps, windows, actions…";font.pixelSize: Theme.labelSize
+            leftPadding: 34;rightPadding: 10
+            Image {
+                anchors.left: parent.left;anchors.leftMargin: 10;anchors.verticalCenter: parent.verticalCenter
+                width: 17;height: 17;sourceSize: Qt.size(24,24)
+                source: Theme.symbolicIconSource("start-search", Theme.accentInk)
+            }
             onTextChanged: launcher.query=text
             onAccepted: {launcher.flushRebuild(); if(!launcher.showLayouts && launcher.results.length)launcher.activate(launcher.results[0]);}
             Keys.onDownPressed: {launcher.flushRebuild(); if(!launcher.showLayouts && resultsList.count){resultsList.currentIndex=0;resultsList.forceActiveFocus();}}
         }
-        IconButton {objectName: "foldLayoutsButton";iconName: launcher.showLayouts ? "apps" : "layouts";hint: launcher.showLayouts ? "Apps & windows" : "Saved layouts";accessibleLabel: launcher.showLayouts ? "Return to app and window search" : "Open saved layouts";enabled: Arrangements.available;implicitHeight:launcher.toolbarHeight;onClicked:launcher.showLayouts=!launcher.showLayouts}
-        IconButton {objectName: "foldToolsButton";iconName: "folder";implicitHeight: launcher.toolbarHeight;hint: "Files & notes";accessibleLabel: "Open files and notes";onClicked: launcher.toolsRequested()}
+        IconButton {objectName: "foldLayoutsButton";iconName: launcher.showLayouts ? "start-library" : "start-spaces";hint: launcher.showLayouts ? "Apps & windows" : "Saved layouts";accessibleLabel: launcher.showLayouts ? "Return to app and window search" : "Open saved layouts";enabled: Arrangements.available;implicitHeight:launcher.toolbarHeight;onClicked:launcher.showLayouts=!launcher.showLayouts}
+        IconButton {objectName: "foldToolsButton";iconName: "start-tools";implicitHeight: launcher.toolbarHeight;hint: "Files & notes";accessibleLabel: "Open files and notes";onClicked: launcher.toolsRequested()}
     }
     ColumnLayout {
         id: savedSpaces
@@ -307,8 +313,9 @@ ColumnLayout {
         }
         SettingsSegments {
             objectName: "launcherSortOptions"
+            Layout.maximumWidth: implicitWidth
             value: Orbit.appearance.launcherSort || "frequent"
-            segmentWidth: Math.max(76,Math.ceil(Theme.fontSize(11)*5.8))
+            segmentWidth: 76
             options: [{label:"Most used",value:"frequent"},{label:"Recent",value:"recent"},{label:"A–Z",value:"name"}]
             onSelected: value => Orbit.setPreference("launcherSort",value)
         }
@@ -373,22 +380,25 @@ ColumnLayout {
             RowLayout {
                 anchors.fill: parent;anchors.margins: Theme.extraCompact ? 6 : Theme.compact ? 9 : 12;spacing: Theme.extraCompact ? 7 : 10
                 Rectangle {
-                    readonly property bool systemGlyph: modelData.kind==="action" || modelData.kind==="calculation"
-                    readonly property color tint: modelData.kind==="calculation" ? "#55b99b" : Theme.accent
+                    readonly property string icon: modelData.icon || "application-x-executable"
+                    readonly property bool systemGlyph: modelData.kind==="action" ||
+                        modelData.kind==="calculation" || icon.indexOf("mellipi-")===0
+                    readonly property color ink: Theme.legibleInk(Theme.accent,4.5,[Theme.luminance(color)])
                     Layout.preferredWidth: 32
                     Layout.preferredHeight: 32
-                    radius: Theme.corner(7)
-                    color: systemGlyph ? (Theme.highContrast ? Theme.raised :
+                    radius: Theme.corner(8)
+                    color: Theme.highContrast ? Theme.raised :
                         Qt.tint(result.color.a>0 ? result.color : Theme.surface,
-                                Qt.rgba(tint.r,tint.g,tint.b,.15))) : "transparent"
-                    border.width: systemGlyph && Theme.highContrast ? 1 : 0
+                                Qt.rgba(Theme.accent.r,Theme.accent.g,Theme.accent.b,.14))
+                    border.width: Theme.highContrast ? 1 : 0
                     border.color: Theme.controlBorder
                     Image {
                         anchors.centerIn: parent
-                        width: parent.systemGlyph ? 19 : 27
+                        width: parent.systemGlyph ? 20 : 23
                         height: width
-                        source: parent.systemGlyph ? Theme.symbolicIconSource(modelData.icon,
-                            Theme.legibleInk(parent.tint,4.5,[Theme.luminance(parent.color)])) : Theme.iconSource(modelData.icon)
+                        source: parent.systemGlyph ? Theme.symbolicIconSource(
+                            modelData.kind==="calculation" ? "start-calculate" : parent.icon, parent.ink)
+                            : Theme.iconSource(parent.icon)
                         sourceSize: Qt.size(32,32)
                         fillMode: Image.PreserveAspectFit
                     }
@@ -414,7 +424,7 @@ ColumnLayout {
             parent:resultsList;anchors.centerIn:parent;width:Math.max(0,resultsList.width-32)
             height:emptyLabel.implicitHeight+emptyReset.implicitHeight+10;visible:resultsList.count===0
             Text {id:emptyLabel;width:parent.width;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;text:launcher.pinnedOnly ? "No pinned apps match your search" : "No matching apps, windows or actions";color:Theme.muted;font.pixelSize:Theme.fontSize(12)}
-            IconButton {id:emptyReset;objectName:"launcherClearFilters";anchors.top:emptyLabel.bottom;anchors.topMargin:10;anchors.horizontalCenter:parent.horizontalCenter;iconName:"apps";hint:"Show all apps";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.pinnedOnly=false;search.text="";launcher.query="";launcher.focusSearch();}}
+            IconButton {id:emptyReset;objectName:"launcherClearFilters";anchors.top:emptyLabel.bottom;anchors.topMargin:10;anchors.horizontalCenter:parent.horizontalCenter;iconName:"start-library";hint:"Show all apps";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.pinnedOnly=false;search.text="";launcher.query="";launcher.focusSearch();}}
         }
     }
     RowLayout {

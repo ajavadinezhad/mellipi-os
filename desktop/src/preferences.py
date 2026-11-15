@@ -9,8 +9,9 @@ DEFAULTS={'compact':True,'accent':'#a9d9c3','profile':'economy','mode':'dark','p
 PRESETS=[{'name':'Sage','color':'#a9d9c3'},{'name':'Blue','color':'#a8c9ff'},{'name':'Violet','color':'#c8b6ff'},{'name':'Rose','color':'#f3b6c6'},{'name':'Amber','color':'#edcd98'},{'name':'Coral','color':'#ffb59e'}]
 LOCK_KEYS=frozenset(('idleLockEnabled','idleLockMinutes','displayOffMinutes','lockBeforeSleep'))
 DEFAULTS.update(idleLockEnabled=True,idleLockMinutes=10,displayOffMinutes=0,lockBeforeSleep=True)
+DEFAULTS.update(taskbarIconScale=100,desktopIconScale=100)
 DEFAULTS.update(cursorAccent=True,density='compact',textScale=1.0,highContrast=False,themeContrast={},themePreset='custom')
-DEFAULTS.update(windowSnap=True,windowPlacementEnabled=True,windowPlacement='grid-2',appPlacements={},independentWorkspaces=False)
+DEFAULTS.update(windowSnap=True,windowPlacementEnabled=True,windowPlacement='auto',appPlacements={},independentWorkspaces=False)
 THEME_PREFERENCES=('custom',*THEME_IDS)
 THEME_COLOR_KEYS=frozenset(('mode','darkLevel','accent','backgroundColor'))
 
@@ -40,6 +41,7 @@ class Preferences:
         except (OSError,ValueError): pass
     @staticmethod
     def validate(key,value):
+        if key in ('taskbarIconScale','desktopIconScale') and type(value) in (int,float) and value in (75,100,125,150):return int(value)
         if key=='density' and value in ('comfortable','compact','extra'):return value
         if key=='themePreset' and value in THEME_PREFERENCES:return value
         if key=='highContrast' and type(value) is bool:return value
@@ -54,8 +56,8 @@ class Preferences:
                    for app,row in value.items()):
                 return deepcopy(value)
         if key=='windowPlacement' and isinstance(value,str):
-            value={'columns':'grid-2','rows':'grid-2','main-stack':'grid-3','grid':'grid-4'}.get(value,value)
-            if value in tuple(f'grid-{count}' for count in range(2,10)):return value
+            if value in ('auto','columns','rows','main-stack','grid',*(f'grid-{count}' for count in range(2,10))):
+                return 'auto'
         if key=='themeContrast' and isinstance(value,dict) and all(
             theme_id in THEME_PREFERENCES and type(enabled) is bool
             for theme_id,enabled in value.items()

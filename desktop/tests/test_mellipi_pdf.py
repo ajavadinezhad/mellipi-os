@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
@@ -91,3 +91,25 @@ class PdfPositionsTests(unittest.TestCase):
             storage.path.chmod(0o644)
             self.assertEqual(storage.get('middle', 8), 1)
             self.assertFalse(storage.save('other', 4))
+
+    def test_close_after_successful_export_but_not_after_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            window = PdfWindow()
+            self.addCleanup(window.deleteLater)
+            window.document = Path(tmp) / 'original.pdf'
+            window.marks = [('note', 1, (), 'Notes')]
+            window.annotation_dirty = True
+            window.show()
+            request = Mock()
+            with (patch.object(window, 'annotation_request', request),
+                  patch('mellipi_pdf.themed_choice', return_value=1) as choice,
+                  patch('mellipi_pdf.FileChooser.getSaveFileName', return_value=(str(Path(tmp) / 'copy.pdf'), ''))):
+                self.assertFalse(window.close())
+                self.assertIs(choice.call_args.args[0], window)
+                request.call_args.args[3](None, 'No space left')
+                self.app.processEvents()
+                self.assertTrue(window.isVisible())
+                self.assertTrue(window.annotation_dirty)
+                self.assertFalse(window.close())
+                request.call_args.args[3]({'saved': True}, '')
+                self.wait(lambda: not window.isVisible())

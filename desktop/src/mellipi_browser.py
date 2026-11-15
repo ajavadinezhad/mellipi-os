@@ -4,22 +4,24 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import stat
 import sys
 import tempfile
 from pathlib import Path
 from urllib.parse import urlencode
 
-from PyQt6.QtCore import QMimeDatabase, QProcess, QSize, QUrl, Qt
-from PyQt6.QtGui import QColor, QKeySequence, QShortcut
+from PyQt6.QtCore import QLocale, QMimeDatabase, QProcess, QSize, QUrl, Qt
+from PyQt6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
+from PyQt6.sip import isdeleted
 from PyQt6.QtWidgets import (
-    QApplication, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu,
-    QPushButton, QTabWidget, QVBoxLayout, QWidget,
+    QApplication, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QProgressBar,
+    QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from file_chooser import FileChooser
 from installed_launcher import user_environment
-from qt_app import AppWindow, symbolic_icon
+from qt_app import AppWindow, symbolic_icon, themed_prompt
 
 
 def web_url(url):
@@ -122,7 +124,95 @@ class Bookmarks:
         return added
 
 
+class DownloadRow(QWidget):
+    def __init__(self, browser, request, target):
+        super().__init__(browser)
+        self.request = request
+        self.target = target
+        self.finished = False
+        layout = QHBoxLayout(self)
+        details = QVBoxLayout()
+        self.name = QLabel(target.name)
+        self.name.setTextFormat(Qt.TextFormat.PlainText)
+        self.name.setToolTip(str(target))
+        self.name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        details.addWidget(self.name)
+        self.status = QLabel(objectName='muted')
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
+        self.status.setWordWrap(True)
+        details.addWidget(self.status)
+        self.progress = QProgressBar()
+        self.progress.setAccessibleName(f'Download progress: {target.name}')
+        self.progress.setTextVisible(False)
+        self.progress.setRange(0, 100)
+        details.addWidget(self.progress)
+        layout.addLayout(details, 1)
+        self.cancel_button = browser.button(layout, 'window-close', 'Cancel download', self.cancel, toolbar=False)
+        self.folder_button = browser.button(
+            layout, 'folder-open', 'Show in folder', self.show_folder, toolbar=False)
+        request.stateChanged.connect(self.update_state)
+        request.receivedBytesChanged.connect(self.update_state)
+        request.totalBytesChanged.connect(self.update_state)
+        request.destroyed.connect(self.request_lost)
+        self.update_state()
+
+    def cancel(self):
+        if self.request is not None and not self.finished:
+            self.request.cancel()
+
+    def show_folder(self):
+        if not self.folder_button.isEnabled():
+            return
+        files = shutil.which('mellipi-files')
+        if files and self.target.is_file():
+            launched, _pid = QProcess.startDetached(files, ['--select', str(self.target)])
+            if launched:
+                return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.target.parent))):
+            self.status.setText('Could not open the download folder.')
+
+    def request_lost(self, *_):
+        self.request = None
+        if not self.finished:
+            self.apply_state('Download stopped', finished=True)
+
+    def update_state(self, *_):
+        request = self.request
+        if request is None:
+            return
+        state = request.state()
+        states = request.DownloadState
+        if state == states.DownloadCompleted:
+            self.apply_state('Saved', finished=True, saved=True)
+        elif state == states.DownloadCancelled:
+            self.apply_state('Canceled', finished=True)
+        elif state == states.DownloadInterrupted:
+            reason = request.interruptReasonString().strip()[:180]
+            self.apply_state(f'Interrupted: {reason}' if reason else 'Interrupted', finished=True)
+        else:
+            received, total = request.receivedBytes(), request.totalBytes()
+            label = QLocale().formattedDataSize(received)
+            if total > 0:
+                self.progress.setRange(0, 100)
+                self.progress.setValue(max(0, min(100, received * 100 // total)))
+                label = f'{label} of {QLocale().formattedDataSize(total)}'
+            else:
+                self.progress.setRange(0, 0)
+            self.apply_state(label if received else 'Starting…')
+
+    def apply_state(self, label, *, finished=False, saved=False):
+        self.finished = finished
+        self.status.setText(label)
+        self.progress.setVisible(not finished)
+        self.cancel_button.setVisible(not finished)
+        self.folder_button.setVisible(saved)
+        self.folder_button.setEnabled(saved)
+
+
 class Browser(AppWindow):
+    MAX_DOWNLOADS = 8
+    MAX_DOWNLOAD_ROWS = 48
+    DOWNLOAD_NOTICE = 'Download started · Ctrl+J for progress'
     extra_style = """
         QTabWidget::pane { border: 0; background: %(surface)s; }
         QPushButton#browserAction { padding: 4px; }
@@ -171,6 +261,8 @@ class Browser(AppWindow):
         self.address.setAccessibleName('Address and search')
         self.address.returnPressed.connect(self.navigate)
         self.button(self.actions, 'tab-new', 'New tab (Ctrl+T)', self.add_tab)
+        self.button(self.actions, 'edit-find', 'Find in page (Ctrl+F)', self.show_find)
+        self.button(self.actions, 'document-save', 'Downloads (Ctrl+J)', self.toggle_downloads)
         if not private:
             self.bookmark_button = self.button(self.actions, 'bookmark-new', 'Bookmarks (Ctrl+D to save or remove)', self.show_bookmarks)
             shortcut = QShortcut(QKeySequence('Ctrl+D'), self)
@@ -179,14 +271,56 @@ class Browser(AppWindow):
 
         self.content.addLayout(self.toolbar)
         self.update_toolbar_layout()
+        self.find_bar = QWidget()
+        find_layout = QHBoxLayout(self.find_bar)
+        find_layout.setContentsMargins(0, 0, 0, 0)
+        self.find_input = QLineEdit()
+        self.find_input.setPlaceholderText('Find in page')
+        self.find_input.setAccessibleName('Find in page')
+        self.find_input.setMaxLength(512)
+        self.find_input.textChanged.connect(self.find_in_page)
+        self.find_input.returnPressed.connect(lambda: self.find_in_page())
+        find_layout.addWidget(self.find_input, 1)
+        self.find_result = QLabel(objectName='muted')
+        find_layout.addWidget(self.find_result)
+        self.find_previous = self.button(
+            find_layout, 'go-up', 'Previous match', lambda: self.find_in_page(backward=True), toolbar=False)
+        self.find_next = self.button(
+            find_layout, 'go-down', 'Next match (Enter)', self.find_in_page, toolbar=False)
+        self.button(find_layout, 'window-close', 'Close find (Esc)', self.hide_find, toolbar=False)
+        self.find_view = None
+        self.find_generation = 0
+        self.find_bar.hide()
+        self.content.addWidget(self.find_bar)
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.setMovable(True)
         self.tabs.setTabsClosable(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.tabCloseRequested.connect(self.close_tab)
-        self.tabs.currentChanged.connect(lambda _: self.update_toolbar(update_address=True))
-        self.content.addWidget(self.tabs, 1)
+        self.tabs.currentChanged.connect(self.tab_switched)
+        self.pages = QStackedWidget()
+        self.pages.addWidget(self.tabs)
+        self.download_rows = []
+        self.download_page = QWidget()
+        downloads = QVBoxLayout(self.download_page)
+        header = QHBoxLayout()
+        header.addWidget(QLabel('Downloads', objectName='windowTitle'), 1)
+        self.button(header, 'window-close', 'Close downloads (Esc)', self.show_tabs, toolbar=False)
+        downloads.addLayout(header)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        download_list = QWidget()
+        self.download_list = QVBoxLayout(download_list)
+        self.download_list.setContentsMargins(0, 0, 0, 0)
+        self.download_empty = QLabel('No downloads in this window.', objectName='muted')
+        self.download_list.addWidget(self.download_empty)
+        self.download_list.addStretch()
+        scroll.setWidget(download_list)
+        downloads.addWidget(scroll, 1)
+        self.pages.addWidget(self.download_page)
+        self.content.addWidget(self.pages, 1)
         self.status = QLabel(objectName='muted')
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
@@ -202,7 +336,9 @@ class Browser(AppWindow):
             ('Alt+Left', lambda: self.current_action('Back')),
             ('Alt+Right', lambda: self.current_action('Forward')),
             ('Ctrl+R', lambda: self.current_action('Reload')),
-            ('Escape', lambda: self.current_action('Stop')),
+            ('Ctrl+F', self.show_find),
+            ('Ctrl+J', self.toggle_downloads),
+            ('Escape', self.escape),
         ):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(action)
@@ -211,11 +347,15 @@ class Browser(AppWindow):
         self.add_tab()
         self.refresh_icons()
 
-    def button(self, layout, icon, title, callback):
+    def button(self, layout, icon, title, callback, *, toolbar=True):
         button = QPushButton()
         button.setObjectName('browserAction')
         button.setProperty('mellipiSymbolicIcon', icon)
-        self.toolbar_buttons.append(button)
+        if toolbar:
+            self.toolbar_buttons.append(button)
+        elif self.toolbar_buttons:
+            sample = self.toolbar_buttons[0]
+            self.size_chrome_button(button, sample.minimumWidth(), sample.iconSize().width())
         button.setToolTip(title)
         button.setAccessibleName(title)
         button.clicked.connect(lambda _checked: callback())
@@ -229,14 +369,21 @@ class Browser(AppWindow):
 
     def update_toolbar_layout(self):
         scale = self.theme['text_scale']
-        side = max(32, round(30 * scale))
+        side = max(32, round(30 * scale), self.address.sizeHint().height())
         icon = round(16 * scale)
-        if self.toolbar_buttons[0].width() != side or self.address.minimumHeight() != side:
-            for button in self.toolbar_buttons:
-                button.setFixedSize(side, side)
-                button.setIconSize(QSize(icon, icon))
-            self.address.setMinimumHeight(side)
-        narrow = self.width() < len(self.toolbar_buttons) * (side + 5) + round(280 * scale)
+        if self.toolbar_buttons[0].minimumWidth() != side or self.toolbar_buttons[0].iconSize().width() != icon:
+            for button in self.findChildren(QPushButton, 'browserAction'):
+                self.size_chrome_button(button, side, icon)
+            self.address.setFixedHeight(side)
+        if hasattr(self, 'find_input'):
+            if self.find_input.minimumHeight() != side:
+                self.find_input.setFixedHeight(side)
+            width = self.find_result.fontMetrics().horizontalAdvance('No match')
+            if self.find_result.minimumWidth() != width:
+                self.find_result.setMinimumWidth(width)
+        required = (self.navigation.sizeHint().width() + self.actions.sizeHint().width()
+                    + 2 * self.toolbar.horizontalSpacing() + round(280 * scale))
+        narrow = max(0, self.centralWidget().contentsRect().width() - 16) < required
         if narrow == self.narrow_toolbar:
             return
         self.narrow_toolbar = narrow
@@ -252,6 +399,11 @@ class Browser(AppWindow):
             self.toolbar.addLayout(self.navigation, 0, 0)
             self.toolbar.addWidget(self.address, 0, 1)
             self.toolbar.addLayout(self.actions, 0, 2)
+
+    @staticmethod
+    def size_chrome_button(button, side, icon):
+        button.setFixedSize(side, side)
+        button.setIconSize(QSize(icon, icon))
 
     def bookmark_page(self):
         tab = self.tabs.currentWidget()
@@ -319,6 +471,65 @@ class Browser(AppWindow):
         self.status.setText(text)
         self.status.setVisible(bool(text))
 
+    def tab_switched(self, _index):
+        self.update_toolbar(update_address=True)
+        if not self.find_bar.isHidden():
+            self.reset_find()
+            self.find_in_page()
+
+    def show_find(self):
+        self.show_tabs()
+        self.find_bar.show()
+        self.find_in_page()
+        self.find_input.setFocus()
+        self.find_input.selectAll()
+
+    def reset_find(self):
+        self.find_generation += 1
+        if self.find_view is not None:
+            self.find_view.findText('')
+            self.find_view = None
+        self.find_result.clear()
+
+    def hide_find(self):
+        self.reset_find()
+        self.find_bar.hide()
+        view = self.bookmark_page()
+        if view is not None:
+            view.setFocus()
+        else:
+            self.focus_address()
+
+    def escape(self):
+        if self.pages.currentWidget() is self.download_page:
+            self.show_tabs()
+        elif not self.find_bar.isHidden():
+            self.hide_find()
+        else:
+            self.current_action('Stop')
+
+    def find_in_page(self, _changed=None, *, backward=False):
+        if self.find_bar.isHidden():
+            return
+        view = self.bookmark_page()
+        term = self.find_input.text()
+        self.find_generation += 1
+        generation = self.find_generation
+        self.find_previous.setEnabled(bool(view and term))
+        self.find_next.setEnabled(bool(view and term))
+        self.find_result.clear()
+        if view is None:
+            self.find_result.setText('No page')
+            return
+        self.find_view = view
+        flags = self.Page.FindFlag.FindBackward if backward else self.Page.FindFlag(0)
+
+        def completed(found):
+            if not isdeleted(self.find_result) and generation == self.find_generation and term:
+                self.find_result.setText('' if found else 'No match')
+
+        view.findText(term, flags, completed)
+
     def add_tab(self, url=None, foreground=True):
         # Allocate the renderer only once the tab actually loads an address.
         tab = QWidget()
@@ -331,6 +542,7 @@ class Browser(AppWindow):
         tab.layout_.addWidget(caption, 1)
         index = self.tabs.addTab(tab, caption.text())
         if foreground:
+            self.show_tabs()
             self.tabs.setCurrentIndex(index)
         if url is not None:
             self.open_url(tab, url)
@@ -348,11 +560,17 @@ class Browser(AppWindow):
 
         class RestrictedPage(base):
             def chooseFiles(self, mode, old_files, accepted_types):
+                # Qt's page belongs to the embedded web view. Anchor a
+                # chooser to the owning app, never a background tab.
+                view = self.parent()
+                owner = view.window() if view is not None else None
+                if not isinstance(owner, Browser) or owner.bookmark_page() is not view:
+                    return []
                 kind = self.FileSelectionMode
                 initial = old_files[0] if old_files and old_files[0] else ''
                 start = str(Path(initial).parent) if initial else ''
                 if mode == kind.FileSelectUploadFolder:
-                    folder = FileChooser.getExistingDirectory(self.parent(), 'Choose a folder to upload', start)
+                    folder = FileChooser.getExistingDirectory(owner, 'Choose a folder to upload', start)
                     return [folder] if folder else []
                 db = QMimeDatabase()
                 patterns = set()
@@ -369,11 +587,11 @@ class Browser(AppWindow):
                 filters = ('Accepted files (' + ' '.join(sorted(patterns)) +
                            ');;All files (*)') if patterns else 'All files (*)'
                 if mode == kind.FileSelectOpenMultiple:
-                    return FileChooser.getOpenFileNames(self.parent(), 'Choose files to upload', start, filters)[0]
+                    return FileChooser.getOpenFileNames(owner, 'Choose files to upload', start, filters)[0]
                 if mode == kind.FileSelectSave:
-                    path = FileChooser.getSaveFileName(self.parent(), 'Save file', initial, filters)[0]
+                    path = FileChooser.getSaveFileName(owner, 'Save file', initial, filters)[0]
                 else:
-                    path = FileChooser.getOpenFileName(self.parent(), 'Choose a file to upload', start, filters)[0]
+                    path = FileChooser.getOpenFileName(owner, 'Choose a file to upload', start, filters)[0]
                 return [path] if path else []
 
             def acceptNavigationRequest(self, url, kind, is_main_frame):
@@ -417,6 +635,7 @@ class Browser(AppWindow):
         view = tab.view or self.make_view(tab)
         view.setUrl(url)
         if tab is self.tabs.currentWidget():
+            self.show_tabs()
             view.setFocus()
 
     def navigate(self):
@@ -459,6 +678,8 @@ class Browser(AppWindow):
         if tab is self.tabs.currentWidget():
             self.update_toolbar(update_address=not self.address.hasFocus())
             self.message('' if ok else 'This page did not load. Check the address or try again.')
+            if ok and not self.find_bar.isHidden():
+                self.find_in_page()
 
     def page_stopped(self, tab):
         if tab is self.tabs.currentWidget():
@@ -490,21 +711,73 @@ class Browser(AppWindow):
             if tab.view:
                 tab.view.page().setBackgroundColor(QColor(self.theme['surface']))
 
+    def show_tabs(self):
+        returning = self.pages.currentWidget() is self.download_page
+        self.pages.setCurrentWidget(self.tabs)
+        if returning:
+            view = self.bookmark_page()
+            if view is not None:
+                view.setFocus()
+            else:
+                self.focus_address()
+
+    def toggle_downloads(self):
+        if self.pages.currentWidget() is self.download_page:
+            self.show_tabs()
+            return
+        if not self.find_bar.isHidden():
+            self.hide_find()
+        if self.status.text() == self.DOWNLOAD_NOTICE:
+            self.message('')
+        self.pages.setCurrentWidget(self.download_page)
+
+    def downloads_at_capacity(self):
+        return sum(not row.finished for row in self.download_rows) >= self.MAX_DOWNLOADS
+
     def download(self, request):
+        if self.downloads_at_capacity():
+            request.cancel()
+            self.message('Too many active downloads. Open Downloads to check their progress.')
+            return
         filename = Path(request.downloadFileName()).name or 'download'
         suggested = Path(request.downloadDirectory()) / filename
         location, _ = FileChooser.getSaveFileName(self, 'Save download', str(suggested))
         if not location:
             request.cancel()
             return
-        target = Path(location)
+        target = Path(os.path.abspath(location))
+        # The chooser can run a nested event loop. Recheck before accepting.
+        if self.downloads_at_capacity() or any(
+                row.target == target and not row.finished for row in self.download_rows):
+            request.cancel()
+            self.message('Another download is using this destination or the download list is full.')
+            return
         request.setDownloadDirectory(str(target.parent))
         request.setDownloadFileName(target.name)
-        request.isFinishedChanged.connect(
-            lambda: self.message(f'Saved {target.name}' if request.state() ==
-                                 request.DownloadState.DownloadCompleted else f'Download stopped: {target.name}'))
-        self.message(f'Downloading {target.name}…')
+        row = DownloadRow(self, request, target)
+        self.download_rows.insert(0, row)
+        self.download_list.insertWidget(0, row)
+        self.download_empty.hide()
+        if len(self.download_rows) > self.MAX_DOWNLOAD_ROWS:
+            oldest_finished = next(old for old in reversed(self.download_rows) if old.finished)
+            self.download_rows.remove(oldest_finished)
+            self.download_list.removeWidget(oldest_finished)
+            oldest_finished.deleteLater()
+        self.refresh_icons()
+        if self.pages.currentWidget() is not self.download_page:
+            self.message(self.DOWNLOAD_NOTICE)
         request.accept()
+
+    def closeEvent(self, event):
+        active = [row for row in self.download_rows if not row.finished]
+        if active and not themed_prompt(
+                self, 'Close Browser?', 'Closing Browser cancels downloads that are still running.',
+                'Cancel downloads and close', 'Keep Browser open'):
+            event.ignore()
+            return
+        for row in active:
+            row.cancel()
+        super().closeEvent(event)
 
 
 def main(argv=None):

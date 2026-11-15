@@ -46,7 +46,7 @@ def check_auto_snap(client,parent_env,settings):
     origin_y=region['y']+inner.get('y',0)
     bounds=client.snapshot()['outputs'][0]['rect']
     center_x,center_y=bounds['width']//2,bounds['height']//2
-    qa.wait(lambda:client.status().get('window_placement')=='grid-2')
+    qa.wait(lambda:client.status().get('window_placement')=='auto')
     button=qa.wait(lambda:qa.control('qa-shell-item:spineAutoSnap'))
     assert button['x']>center_x and button['y']>center_y,button
     with closing(VirtualPointer(parent_env)) as pointer:
@@ -66,11 +66,8 @@ def check_auto_snap(client,parent_env,settings):
             panel=qa.control('qa-shell-item:windowPlacementPanel')
             return panel and panel['y']+panel['height']<=button['y']
         qa.wait(anchored)
-        for count in (3, 7, 9, 4):
-            click(qa.control('qa-shell-item:windowPlacementOptions'),(count-2+.5)/8)
-            qa.wait(lambda:client.status()['window_placement']==f'grid-{count}')
-            assert qa.control('status')['panel']=='window-placement'
-        for layout in ('off','grid-4','off'):
+        assert not qa.control('qa-shell-item:windowPlacementOptions')
+        for layout in ('off','auto','off'):
             toggle=qa.control('qa-shell-item:windowPlacementToggle')
             body=qa.control('qa-shell-item:panelBody')
             assert body['y']<=toggle['y'] and toggle['y']+toggle['height']<=body['y']+body['height'],(body,toggle)
@@ -78,10 +75,10 @@ def check_auto_snap(client,parent_env,settings):
             try:qa.wait(lambda:client.status()['window_placement']==layout,4)
             except AssertionError as error:
                 raise AssertionError((layout,toggle,client.status()['pointer'],qa.control('status')['panel'],json.loads(settings.read_text()).get('windowPlacementEnabled'))) from error
-        assert json.loads(settings.read_text())['windowPlacement']=='grid-4'
+        assert json.loads(settings.read_text())['windowPlacementEnabled'] is False
         click(button)
         qa.wait(lambda:qa.control('status')['panel']!='window-placement')
-    print('PASS bottom-right Auto-snap opens beside its icon and switches layouts and placement',flush=True)
+    print('PASS bottom-right Auto-snap opens beside its icon and toggles automatic placement',flush=True)
 
 def measure(root):
     def sample():

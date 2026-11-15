@@ -11,6 +11,9 @@ ColumnLayout {
     property string expanded: ""
     property bool draft: false
     readonly property var currentOutput: DisplayControls.outputs.find(o => o.name===outputName) || ({modes:[]})
+    readonly property var activeMode: currentOutput.modes.find(m => m.value===currentOutput.mode)
+    readonly property var selectableModes: currentOutput.modes.filter(m => m.standard !== false)
+    readonly property var selectedMode: currentOutput.modes.find(m => m.value===chosenMode)
     readonly property bool pending: DisplayControls.state.pending
     readonly property bool editing: DisplayControls.state.available && !DisplayControls.state.busy && !pending
     spacing: 10
@@ -49,7 +52,7 @@ ColumnLayout {
                 title: "Display"
                 AudioDevicePicker {
                     objectName: "displayOutputPicker";accessibleLabel: "Display";enabled: panel.editing
-                    devices: DisplayControls.outputs.map(o => ({name:o.name,description:o.name+" · "+o.label}))
+                    devices: DisplayControls.outputs.map(o => ({name:o.name,description:o.label && o.label!==o.name ? o.label+" · "+o.name : o.name}))
                     selectedName: panel.outputName;emptyLabel: "No configurable display"
                     expanded: panel.expanded==="output"
                     onToggled: panel.expanded=expanded ? "" : "output"
@@ -58,8 +61,12 @@ ColumnLayout {
                 AudioDevicePicker {
                     objectName: "displayModePicker";accessibleLabel: "Resolution and refresh rate";enabled: panel.editing
                     visibleChoices: 7
-                    devices: panel.currentOutput.modes.map(m => ({name:m.value,description:m.label}))
-                    selectedName: panel.chosenMode;emptyLabel: "No modes reported"
+                    devices: panel.selectableModes.map(m => ({name:m.value,description:m.label}))
+                    selectedName: panel.chosenMode
+                    readonly property string customLabel: panel.activeMode && panel.activeMode.standard===false
+                        ? panel.activeMode.label+" · Current custom mode" : ""
+                    chooseLabel: customLabel || "Choose a resolution"
+                    emptyLabel: customLabel || "No standard modes reported"
                     expanded: panel.expanded==="mode"
                     onToggled: panel.expanded=expanded ? "" : "mode"
                     onSelected: name => {panel.draft=true;panel.chosenMode=name;panel.expanded="";}
@@ -77,15 +84,24 @@ ColumnLayout {
                     onToggled: panel.expanded=expanded ? "" : "scale"
                     onSelected: name => {panel.draft=true;panel.chosenScale=Number(name);panel.expanded="";}
                 }
-                Text {
-                    Layout.fillWidth: true;Layout.margins: 6
-                    text: "Display scale changes the size of apps and desktop controls. Select a scale, then choose Apply."
-                    wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11)
-                }
                 SettingsSegments {
                     objectName: "displayRotation";Layout.fillWidth: true;segmentWidth: Math.max(42,Math.floor((body.availableWidth-24)/4))
                     value: panel.chosenTransform;options: [{label:"Normal",value:"normal"},{label:"90°",value:"90"},{label:"180°",value:"180"},{label:"270°",value:"270"}]
                     onSelected: value => {panel.draft=true;panel.chosenTransform=value;}
+                }
+                Text {
+                    objectName: "displayEffectiveSize"
+                    Layout.fillWidth: true;Layout.margins: 6
+                    visible: panel.selectedMode !== undefined
+                    text: {
+                        const mode = panel.selectedMode;
+                        if (!mode || !mode.width || !mode.height || panel.chosenScale <= 0) return "";
+                        const sideways = ["90", "270", "flipped-90", "flipped-270"].includes(panel.chosenTransform);
+                        const width = Math.ceil((sideways ? mode.height : mode.width) / panel.chosenScale);
+                        const height = Math.ceil((sideways ? mode.width : mode.height) / panel.chosenScale);
+                        return "Effective display size: " + width + " × " + height + " logical pixels";
+                    }
+                    wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11)
                 }
             }
             SettingsGroup {

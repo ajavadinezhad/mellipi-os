@@ -15,6 +15,7 @@ use smithay::{
 pub(crate) enum WindowPlacement {
     #[default]
     Off,
+    Auto,
     Columns,
     Grid,
     Rows,
@@ -26,6 +27,7 @@ impl WindowPlacement {
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "off" => Some(Self::Off),
+            "auto" => Some(Self::Auto),
             "columns" => Some(Self::Columns),
             "grid" => Some(Self::Grid),
             "rows" => Some(Self::Rows),
@@ -39,6 +41,7 @@ impl WindowPlacement {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Off => "off",
+            Self::Auto => "auto",
             Self::Columns => "columns",
             Self::Grid => "grid",
             Self::Rows => "rows",
@@ -49,7 +52,7 @@ impl WindowPlacement {
 
     fn zones(self) -> Vec<SnapZone> {
         match self {
-            Self::Off => vec![],
+            Self::Off | Self::Auto => vec![],
             Self::Columns => vec![SnapZone::Left, SnapZone::Right],
             Self::Rows => vec![SnapZone::Top, SnapZone::Bottom],
             Self::MainStack => vec![SnapZone::Left, SnapZone::TopRight, SnapZone::BottomRight],
@@ -79,6 +82,12 @@ impl WindowPlacement {
                     })
                     .collect()
             }
+        }
+    }
+    fn zones_for_count(self, count: usize) -> Vec<SnapZone> {
+        match self {
+            Self::Auto if count > 0 => Self::Count(count.min(9)).zones(),
+            _ => self.zones(),
         }
     }
     fn fallback_zones(self) -> &'static [SnapZone] {
@@ -124,7 +133,53 @@ fn eligible(window: &Window) -> bool {
         })
 }
 
+fn centered_dialog_origin(
+    parent: Rectangle<i32, Logical>,
+    size: Size<i32, Logical>,
+    workarea: Rectangle<i32, Logical>,
+) -> Point<i32, Logical> {
+    let axis = |parent_origin, parent_size, size, area_origin, area_size| {
+        let available: i32 = area_size - size;
+        let preferred: i32 = parent_origin + (parent_size - size) / 2;
+        preferred.clamp(area_origin, area_origin + available.max(0))
+    };
+    (
+        axis(parent.loc.x, parent.size.w, size.w, workarea.loc.x, workarea.size.w),
+        axis(parent.loc.y, parent.size.h, size.h, workarea.loc.y, workarea.size.h),
+    ).into()
+}
+
 impl OrbitCompositor {
+    pub(crate) fn dialog_origin(&self, parent: &Window, size: Size<i32, Logical>) -> Option<Point<i32, Logical>> {
+        let parent = self.space.element_geometry(parent)?;
+        let center = parent.loc + Point::<i32, Logical>::from((parent.size.w / 2, parent.size.h / 2));
+        let (output, bounds) = self.space.outputs().filter_map(|output| {
+            self.space.output_geometry(output).map(|bounds| (output, bounds))
+        }).filter(|(_, bounds)| bounds.overlaps(parent)).max_by_key(|(_, bounds)| {
+            let size = bounds.intersection(parent).unwrap().size;
+            (bounds.contains(center), i64::from(size.w) * i64::from(size.h))
+        })?;
+        let mut workarea = layer_map_for_output(output).non_exclusive_zone();
+        workarea.loc += bounds.loc;
+        Some(centered_dialog_origin(parent, size, workarea))
+    }
+
+    pub(crate) fn center_transient_window(&mut self, window: &Window) -> bool {
+        let Some(parent_surface) = window.toplevel().and_then(|top| top.parent()) else {
+            return false;
+        };
+        let size = window.geometry().size;
+        if size.w <= 1 || size.h <= 1 {
+            return false;
+        }
+        let location = self.space.elements().find(|owner| {
+            owner.wl_surface().is_some_and(|surface| surface.as_ref() == &parent_surface)
+        }).and_then(|owner| self.dialog_origin(owner, size));
+        if let Some(location) = location {
+            self.space.map_element(window.clone(), location, true);
+        }
+        true
+    }
     fn placement_output(&self, opening: &Window) -> Option<Output> {
         let output_at = |point: Point<f64, Logical>| {
             self.space.outputs().find(|output| {
@@ -159,6 +214,23 @@ impl OrbitCompositor {
     }
 
     pub(crate) fn place_new_window(&mut self, id: u64, window: &Window) -> bool {
+        if matches!(self.window_placement, WindowPlacement::Auto)
+            && !self.protocols.is_locked() && eligible(window)
+        {
+            // A new toplevel starts at a placeholder position. Choose the same
+            // output the user was interacting with before laying out its grid.
+            if let Some(output) = self.placement_output(window) {
+                if let Some(bounds) = self.space.output_geometry(&output) {
+                    let mut area = layer_map_for_output(&output).non_exclusive_zone();
+                    area.loc += bounds.loc;
+                    if self.space.element_location(window).is_some_and(|loc| !bounds.contains(loc)) {
+                        self.space.map_element(window.clone(), area.loc, false);
+                    }
+                }
+            }
+            self.reflow_auto_placement();
+            return self.snapped_windows.contains_key(&id);
+        }
         let zones = self.window_placement.zones();
         if zones.is_empty() || self.protocols.is_locked() || !eligible(window) {
             return false;
@@ -237,6 +309,10 @@ impl OrbitCompositor {
     }
 
     pub(crate) fn place_restored_window(&mut self, id: u64, window: &Window) {
+        if matches!(self.window_placement, WindowPlacement::Auto) {
+            self.reflow_auto_placement();
+            return;
+        }
         if matches!(self.window_placement, WindowPlacement::Off)
             || !eligible(window)
             || !self.snapped_windows.contains_key(&id)
@@ -251,12 +327,18 @@ impl OrbitCompositor {
         }
     }
 
+    pub(crate) fn reflow_auto_placement(&mut self) {
+        if matches!(self.window_placement, WindowPlacement::Auto) {
+            self.set_window_placement(WindowPlacement::Auto);
+        }
+    }
+
     pub(crate) fn set_window_placement(&mut self, layout: WindowPlacement) {
         self.window_placement = layout;
         if matches!(layout, WindowPlacement::Off) || self.protocols.is_locked() {
             return;
         }
-        let zones = layout.zones();
+        let automatic = matches!(layout, WindowPlacement::Auto);
         let outputs: Vec<_> = self.space.outputs().cloned().collect();
         for output in &outputs {
             let mut windows: Vec<_> = self
@@ -265,7 +347,11 @@ impl OrbitCompositor {
                 .filter_map(|(id, window)| {
                     let location = self.space.element_location(window)?;
                     let size = window.geometry().size;
-                    if !eligible(window) || size.w <= 1 || size.h <= 1 {
+                    if !eligible(window) || size.w <= 1 || size.h <= 1
+                        || (automatic && window.toplevel().is_some_and(|top| {
+                            !crate::handlers::compositor::has_buffer(top.wl_surface())
+                        }))
+                    {
                         return None;
                     }
                     let belongs = outputs
@@ -286,7 +372,12 @@ impl OrbitCompositor {
                     belongs.then(|| (*id, window.clone(), Rectangle::new(location, size)))
                 })
                 .collect();
-            windows.sort_by_key(|(id, _, rect)| (rect.loc.y, rect.loc.x, *id));
+            if automatic {
+                windows.sort_by_key(|(id, _, _)| *id);
+            } else {
+                windows.sort_by_key(|(id, _, rect)| (rect.loc.y, rect.loc.x, *id));
+            }
+            let zones = layout.zones_for_count(windows.len());
             let mut candidates: Vec<_> = windows
                 .iter()
                 .map(|(id, window, floating)| {
@@ -307,7 +398,14 @@ impl OrbitCompositor {
                 })
                 .collect();
             // Reserve the fewest available choices first for constrained apps.
-            candidates.sort_by_key(|(_, _, _, tiles)| tiles.len());
+            if automatic {
+                // First reserve the existing nine oldest grid candidates;
+                // newer windows can use a spare tile a constrained app cannot fit.
+                let preferred = candidates.len().min(9);
+                candidates[..preferred].sort_by_key(|(_, _, _, tiles)| tiles.len());
+            } else {
+                candidates.sort_by_key(|(_, _, _, tiles)| tiles.len());
+            }
             let Some(output_rect) = self.space.output_geometry(output) else {
                 continue;
             };
@@ -325,8 +423,12 @@ impl OrbitCompositor {
                         .snapped_windows
                         .get(&id)
                         .map_or(floating, |snap| snap.restore);
-                    self.apply_window_snap(id, window, output, zone, rect, restore);
-                    occupied.push(zone.rect(workarea));
+                    let unchanged = automatic && self.snapped_windows.get(&id).is_some_and(|snap| {
+                        snap.output_name == output.name() && snap.zone == zone
+                    });
+                    if unchanged || self.apply_window_snap(id, window, output, zone, rect, restore) {
+                        occupied.push(zone.rect(workarea));
+                    }
                 } else if let Some(restore) = self.forget_snap(id, window) {
                     self.apply_snap(window, restore, None);
                 }
@@ -360,6 +462,23 @@ mod tests {
     }
 
     #[test]
+    fn automatic_grid_grows_and_caps_at_nine() {
+        let auto = WindowPlacement::parse("auto").unwrap();
+        assert_eq!(auto.name(), "auto");
+        let area = Rectangle::new((0, 0).into(), (1920, 1080).into());
+        for count in 0..=12 {
+            let zones = auto.zones_for_count(count);
+            assert_eq!(zones.len(), count.min(9));
+            if !zones.is_empty() {
+                assert_eq!(zones.iter().map(|zone| {
+                    let r = zone.rect(area);
+                    r.size.w * r.size.h
+                }).sum::<i32>(), 1920 * 1080);
+            }
+        }
+    }
+
+    #[test]
     fn numbered_grids_cover_the_output_without_overlapping() {
         let workarea = Rectangle::new((-121, 22).into(), (1919, 1079).into());
         for count in 2..=9 {
@@ -388,5 +507,20 @@ mod tests {
         assert!(fixed_size((320, 100).into(), (320, 500).into()));
         assert!(!fixed_size((320, 100).into(), (0, 0).into()));
         assert!(!fixed_size((320, 100).into(), (640, 500).into()));
+    }
+}
+
+#[cfg(test)]
+mod dialog_tests {
+    use super::*;
+
+    #[test]
+    fn dialogs_center_on_the_owner_and_stay_in_its_output_workarea() {
+        let area = Rectangle::new((-1600, 48).into(), (1600, 852).into());
+        let owner = Rectangle::new((-1200, 200).into(), (800, 500).into());
+        assert_eq!(centered_dialog_origin(owner, (400, 300).into(), area), (-1000, 300).into());
+        let edge_owner = Rectangle::new((-200, 10).into(), (200, 140).into());
+        assert_eq!(centered_dialog_origin(edge_owner, (400, 300).into(), area), (-400, 48).into());
+        assert_eq!(centered_dialog_origin(owner, (2100, 1200).into(), area), area.loc);
     }
 }

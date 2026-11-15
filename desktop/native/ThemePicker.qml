@@ -23,17 +23,19 @@ SettingsChoice {
     delegate:ItemDelegate {
         required property var modelData
         required property int index
-        width:picker.width-2;implicitHeight:Math.max(38,Theme.fontSize(12)+18)
+        width:picker.optionWidth;implicitHeight:Math.max(38,Theme.fontSize(12)+18)
         highlighted:picker.highlightedIndex===index
         text:modelData.name
+        Accessible.name: text
+        Accessible.selected: picker.currentIndex===index
         contentItem:RowLayout {
             spacing:10
             Rectangle {Layout.preferredWidth:18;Layout.preferredHeight:18;radius:Theme.corner(3);color:modelData.background;border.color:modelData.palette.border
                 Rectangle {anchors.centerIn:parent;width:10;height:4;color:modelData.accent}
             }
             Text {Layout.fillWidth:true;text:modelData.name;color:Theme.text;font.pixelSize:Theme.fontSize(12);elide:Text.ElideRight}
-            Text {text:Orbit.appearance.themePreset===modelData.id ? "✓" : "";color:Theme.accentInk;font.pixelSize:12}
+            ControlMark {Layout.preferredWidth:12;Layout.preferredHeight:12;check:true;opacity:picker.currentIndex===index ? 1 : 0;ink:Theme.accentInk}
         }
-        background:Rectangle {color:parent.highlighted ? Theme.hover : picker.currentIndex===index ? Theme.selectedSurface : Theme.raised}
+        background:Rectangle {radius:Theme.corner(6);color:parent.highlighted ? Theme.hover : picker.currentIndex===index ? Theme.selectedSurface : "transparent"}
     }
 }
