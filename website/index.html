@@ -20,7 +20,7 @@
 </header>
 <main id="main">
 <section class="hero wrap">
-  <div class="hero-copy"><p class="eyebrow">An independent Wayland desktop</p><h1>A little more<br>room to think.</h1><p class="intro">A Linux desktop with animated workspaces, a searchable launcher, and built-in apps that follow your theme.</p><div class="hero-actions"><a class="button primary" href="#install">Get Mellipi <span aria-hidden="true">↘</span></a><a class="text-link" href="#experience">Take a closer look <span aria-hidden="true">↓</span></a></div><p class="release-note">Published download <span data-release>0.1.20</span> · Ubuntu 24.04 · x86-64</p></div>
+  <div class="hero-copy"><p class="eyebrow">An independent Wayland desktop</p><h1>A little more<br>room to think.</h1><p class="intro">A Linux desktop with animated workspaces, a searchable launcher, and built-in apps that follow your theme.</p><div class="hero-actions"><a class="button primary" href="#install">Get Mellipi <span aria-hidden="true">↘</span></a><a class="text-link" href="#desktop-updates">What’s new <span aria-hidden="true">↓</span></a></div><p class="release-note">Published download <span data-release>0.1.20</span> · Ubuntu 24.04 · x86-64</p></div>
   <div class="desktop-art" role="img" aria-label="Illustration of Mellipi’s compact side spine, workspace indicator and uncluttered desktop. This is a design illustration, not a screenshot.">
     <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
     <div class="art-spine"><img src="favicon.svg" width="27" height="27" alt=""><div class="art-spaces"><span class="active">01</span><span>02</span><span>03</span></div><div class="art-app app-files">▱</div><div class="art-app app-terminal">›_</div><div class="art-app app-settings">⊙</div><div class="spine-end"><span>◉</span><span>10:24</span></div></div>
@@ -83,34 +83,27 @@
 </section>
 <section id="desktop-updates" class="section wrap" aria-labelledby="desktop-updates-title">
   <div class="section-heading">
+    <p class="eyebrow">0.1.22 preview</p>
     <h2 id="desktop-updates-title">What’s new in Mellipi</h2>
-    <p>Mellipi 0.1.20 completed an offline install, Secure Boot, and graphical sign-in in a blank VM. See <a href="#install">Install</a> for the published downloads.</p>
+    <p>More of the everyday desktop is built in. See what’s changed, then <a href="#preview-image-title">try the live image</a>.</p>
   </div>
   <div class="feature-grid">
-    <article>
-      <h3>Find and install apps</h3>
-      <p>Mellipi Software searches APT and can use Flatpak and Snap when configured. After an offline install, refresh the package index directly in Software to find system packages.</p>
-    </article>
-    <article>
-      <h3>Files and Terminal</h3>
-      <p>Browse files and run commands in built-in apps that share the desktop’s theme and accent.</p>
-    </article>
-    <article>
-      <h3>Make the taskbar fit</h3>
-      <p>Place it on any edge, float it, or size it to its contents. Compact and Extra compact reduce its footprint.</p>
-    </article>
-    <article>
-      <h3>High contrast in your theme</h3>
-      <p>Make text and keyboard focus easier to see while keeping the theme’s colors. Each theme remembers its own contrast setting.</p>
-    </article>
-    <article>
-      <h3>Capture to PNG or clipboard</h3>
-      <p>Capture a window, a region, or the full screen. Save the PNG, copy it to the clipboard, or do both.</p>
-    </article>
-    <article>
-      <h3>Recover a working version</h3>
-      <p>Save the installed desktop version and restore it from a signed APT archive. The VM test verified that a document, desktop settings, and an installed app survived the update and rollback.</p>
-    </article>
+    <article><h3>One app per job</h3><p>The ISO ships Mellipi Files, Terminal, Editor, and Browser as the defaults, without a second set of apps doing the same jobs.</p></article>
+    <article><h3>A chooser that feels at home</h3><p>Open files, save a copy, and pick folders with the same theme, shortcuts, and Phosphor icons you see in Files.</p></article>
+    <article><h3>Useful tools built in</h3><p>Find what fills a folder, check CPU and memory, record audio, set a timer, or annotate a PDF.</p></article>
+    <article><h3>Color with a purpose</h3><p>App badges and file icons help you scan. Your accent still marks selection, while high contrast keeps borders and keyboard focus visible.</p></article>
+  </div>
+  <div class="screenshot-grid preview-captures">
+    <a class="screenshot-card" href="assets/preview/bios-browser.webp" aria-label="View Mellipi Browser in the Forest theme at full size">
+      <figure><img src="assets/preview/bios-browser.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi Browser open beside the taskbar on the Forest live desktop.">
+        <figcaption><span><strong>Mellipi Browser</strong><small>Forest · BIOS live VM</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
+      </figure>
+    </a>
+    <a class="screenshot-card" href="assets/preview/uefi-secure-boot.webp" aria-label="View the Secure Boot and installer check at full size">
+      <figure><img src="assets/preview/uefi-secure-boot.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi Terminal reports Secure Boot enabled, with the installer open behind it in the Forest theme.">
+        <figcaption><span><strong>Installer and Secure Boot</strong><small>Forest · UEFI live VM</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
+      </figure>
+    </a>
   </div>
 </section>
 <section id="install" class="install-section"><div class="wrap install-layout"><div><p class="eyebrow">Make some space</p><h2 id="install-heading">Start with Linux.<br>Add Mellipi.</h2><p id="install-overview">Install the Mellipi desktop and system controls on a supported Linux base. Current packages target <strong>Ubuntu 24.04 amd64</strong> with systemd and logind.</p><p class="essential-apps">Recent builds include Mellipi Files and Terminal, plus a text editor and web browser.</p><div id="live-image" class="live-image-card" hidden aria-labelledby="live-image-title"><h3 id="live-image-title">Live USB image</h3><p id="live-image-meta"></p><a id="live-image-download" class="button primary">Download live USB image <span aria-hidden="true">↓</span></a><p id="live-image-boot" class="live-image-boot">Secure Boot must be disabled for this unsigned image.</p><div class="live-image-links"><a id="live-image-checksums">Verify SHA256 <span aria-hidden="true">↗</span></a><a id="live-image-guide">USB &amp; installation guide <span aria-hidden="true">↗</span></a></div></div><div class="live-image-card" aria-labelledby="preview-image-title">

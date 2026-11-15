@@ -1910,6 +1910,14 @@
       "bytes": 33778,
       "sha256": "7e736ad615db97667cf23594f77e9e0a98303a0127c2e48a528baac805d8f11a"
     },
+    "assets/preview/bios-browser.webp": {
+      "bytes": 28334,
+      "sha256": "fc9d65311cc1d4cca9dace701b9230fccef533e2604c791ef5b7eccd478fe8fb"
+    },
+    "assets/preview/uefi-secure-boot.webp": {
+      "bytes": 26852,
+      "sha256": "af2f7fe15d84988a87fcbe874055e9d145252ad0002b21b60150985708df3a71"
+    },
     "assets/themes/black-appearance.webp": {
       "bytes": 36806,
       "sha256": "fcd5c3c42f4709599cedd52d2beabbee2e2bb258ecf5e5eb5480f13a0ba6f1f7"
@@ -2195,8 +2203,8 @@
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 16640,
-      "sha256": "30db9bcd0fbfef2a570def4eb3237629757acc3bd347a52b9baf7477f89f0cc8"
+      "bytes": 17310,
+      "sha256": "d2451e0c5383980ad2b0e72137e0a32412e9b278cf685502267f713ba3d0566e"
     },
     "site-config.json": {
       "bytes": 807,
@@ -9143,8 +9151,8 @@
       "sha256": "eec6e4be808e1a445e677dba1e20e5acb2f091825f5ff4c6ac49d5843b2185f9"
     },
     "style.css": {
-      "bytes": 14879,
-      "sha256": "063076f371af87d30b65ecf8e7bd5b2895b2bba60b1edd4419eec40d6e0a9ca6"
+      "bytes": 14915,
+      "sha256": "8e738f102cf90cc3bf22838d2effb87d934566fcb35ea5f098f20563fafe2ab9"
     },
     "theme-init.js": {
       "bytes": 2559,
