@@ -78,10 +78,17 @@ def check(environment=None,login=False):
     env=compositor_environment(environment);issues=[]
     if not BINARY.is_file() or not os.access(BINARY,os.X_OK):issues.append('Build the native backend: ./tools/build-native-compositor.sh --features drm')
     if not (ROOT/'backend/target/release/orbit-core').is_file():issues.append('Build the shell core: ./tools/build-core.sh')
+    qt_runtime=Path(env.get('MELLIPI_QT6_RUNTIME',str(ROOT/'.qt6-layer-shell')))
+    env['LD_LIBRARY_PATH']=str(qt_runtime)+(':'+env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
     try:
-        result=subprocess.run(['/usr/bin/python3','-c','from PyQt5 import QtCore,QtQuick,QtWidgets; from pathlib import Path; import gi,ctypes; ctypes.CDLL("libLayerShellQtInterface.so.5"); plugin=Path(QtCore.QLibraryInfo.location(QtCore.QLibraryInfo.PluginsPath))/"wayland-shell-integration/liblayer-shell.so"; loader=QtCore.QPluginLoader(str(plugin)); assert loader.load(), loader.errorString()'],capture_output=True,timeout=8,env=env)
-        if result.returncode:issues.append('Qt5/PyQt5 or the Wayland layer-shell plugin is unavailable. Install qtwayland5, layer-shell-qt and liblayershellqtinterface5 for this Qt version.')
-    except (OSError,subprocess.TimeoutExpired):issues.append('System Qt5 readiness check failed.')
+        probe=('from PyQt6 import QtCore,QtQuick,QtWidgets,QtMultimedia; import gi,ctypes,sys; '
+               'app=QtCore.QCoreApplication([]); ctypes.CDLL(sys.argv[1]); '
+               'loader=QtCore.QPluginLoader(sys.argv[2]); assert loader.load(), loader.errorString()')
+        result=subprocess.run(['/usr/bin/python3','-c',probe,str(qt_runtime/'libLayerShellQtInterface.so.5'),
+                               str(qt_runtime/'plugins/wayland-shell-integration/liblayer-shell.so')],
+                              capture_output=True,timeout=8,env=env)
+        if result.returncode:issues.append('PyQt6 or the matching Mellipi Qt 6 layer-shell plugin is unavailable.')
+    except (OSError,subprocess.TimeoutExpired):issues.append('System Qt 6 readiness check failed.')
     preflight=None
     if BINARY.is_file():
         try:
@@ -137,6 +144,7 @@ def transfer_previous_state(environment,nested=False):
     # Run only after a real installed compositor is ready, before its shell.
     # Checks, previews and failed/existing-session starts cannot consume state.
     if nested or environment.get('ORBIT_INSTALLED_SESSION')!='1':return
+    restored={}
     try:
         from backup_core import consume_settings_restore
         restored=consume_settings_restore(environment)
@@ -150,16 +158,29 @@ def transfer_previous_state(environment,nested=False):
         if result['preserved']:print('Mellipi: destination edits preserved during state handoff',flush=True)
     except (OSError,ValueError,KeyError,TypeError,sqlite3.Error) as error:
         print('Mellipi: previous state could not be fully transferred: '+str(error)[:180],file=sys.stderr,flush=True)
+    return restored
 
-def stop_owned(process):
-    if process is None or process.poll() is not None:return
-    try:os.killpg(process.pid,signal.SIGTERM)
-    except ProcessLookupError:return
-    try:process.wait(timeout=4)
-    except subprocess.TimeoutExpired:
-        try:os.killpg(process.pid,signal.SIGKILL)
-        except ProcessLookupError:pass
-        process.wait(timeout=2)
+def stop_owned(processes):
+    """Give all session-owned helpers one shared grace period."""
+    def signal_running(candidates, signum):
+        pending=[]
+        for process in candidates:
+            if process is None or process.poll() is not None:continue
+            try:os.killpg(process.pid,signum)
+            except ProcessLookupError:continue
+            pending.append(process)
+        return pending
+
+    def wait_until(pending, seconds):
+        deadline=time.monotonic()+seconds
+        remaining=[]
+        for process in pending:
+            try:process.wait(timeout=max(0,deadline-time.monotonic()))
+            except subprocess.TimeoutExpired:remaining.append(process)
+        return remaining
+
+    pending=wait_until(signal_running(processes,signal.SIGTERM),4)
+    wait_until(signal_running(pending,signal.SIGKILL),2)
 
 def run(nested=False,no_shell=False,qa_seconds=None):
     if not nested and graphical_session(os.environ):raise RuntimeError('A graphical desktop is already running. Keep apps open; use --check or --nested here. Native DRM login starts only after deliberately logging out and choosing Mellipi.')
@@ -177,7 +198,7 @@ def run(nested=False,no_shell=False,qa_seconds=None):
         try:
             compositor=subprocess.Popen([str(BINARY),*([] if nested else ['--drm'])],env=compositor_environment(),stdout=subprocess.PIPE,stderr=log_write,start_new_session=True)
             ready=wait_ready(compositor,log);environment=session_environment(ready,nested=nested)
-            transfer_previous_state(environment,nested=nested)
+            restored=transfer_previous_state(environment,nested=nested) or {}
             def drain():
                 drain_stream(compositor.stdout,log)
             output=threading.Thread(target=drain,name='orbit-native-log',daemon=True);output.start();threads.append(output)
@@ -209,6 +230,30 @@ def run(nested=False,no_shell=False,qa_seconds=None):
                 # Helpers read os.environ; the session owner has no private Qt paths.
                 os.environ.update(environment)
                 if not nested:
+                    # Apply restored placement before any startup app maps a window.
+                    from native_compositor import NativeCompositor
+                    from preferences import Preferences
+                    try:
+                        client=NativeCompositor(ready['control'])
+                        capabilities=client.status().get('capabilities',{})
+                        if 'data/outputs-native.json' in restored.get('restored',[]):
+                            path=Path(environment['ORBIT_DATA'])/'outputs-native.json'
+                            if path.stat().st_size<=65536:
+                                saved=json.loads(path.read_text())
+                                connected={row['name'] for row in client.snapshot()['outputs']}
+                                for name,settings in saved.items() if isinstance(saved,dict) else ():
+                                    if name in connected and isinstance(settings,dict) and settings.get('name')==name:
+                                        try:client.request('output_configure',settings=settings)
+                                        except (OSError,ValueError,RuntimeError) as error:
+                                            print('Mellipi: display restore skipped: '+str(error)[:160],file=sys.stderr,flush=True)
+                        prefs=Preferences().values
+                        if capabilities.get('independent_workspaces'):
+                            client.request('workspace-mode',independent=prefs['independentWorkspaces'])
+                        if capabilities.get('window_placement'):
+                            layout=prefs['windowPlacement'] if prefs['windowPlacementEnabled'] else 'off'
+                            client.request('window-placement',layout=layout)
+                    except (OSError,ValueError,RuntimeError):
+                        print('Mellipi: startup window placement will be retried by the shell',file=sys.stderr,flush=True)
                     autostart.update_activation_environment()
                     from session.audiostart import start_enabled_audio
                     audio_start=start_enabled_audio(environment)
@@ -242,8 +287,7 @@ def run(nested=False,no_shell=False,qa_seconds=None):
             # Only children started by this owner are terminated. No pkill, VT
             # change, display-manager action or signal to a pre-existing process.
             with children_lock:owned=list(children)
-            for child in owned:stop_owned(child)
-            stop_owned(compositor)
+            stop_owned([*owned,compositor])
             os.close(log_write)
             for thread in threads:thread.join(timeout=1)
             for signum,handler in previous.items():signal.signal(signum,handler)

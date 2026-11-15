@@ -1,11 +1,15 @@
 """Per-output static desktop/bar/dock surfaces; no extra processes or polling."""
 from pathlib import Path
 from panel_policy import panel_edge,panel_rect,panel_thickness
-from qt_compat import QObject,QQuickWindow,QUrl,QRegion,QT5
+import os
+from qt_compat import QObject,QQuickWindow,QUrl,QRegion,QT5,LAYER_SHELL
 if QT5:
     from PyQt5.QtQml import QQmlComponent,QQmlEngine
 else:
-    from PySide6.QtQml import QQmlComponent,QQmlEngine
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtQml import QQmlComponent,QQmlEngine
+    else:
+        from PySide6.QtQml import QQmlComponent,QQmlEngine
 from project_paths import PROJECT_ROOT as ROOT, SOURCE_ROOT
 
 class SecondaryScreens(QObject):
@@ -35,16 +39,16 @@ class SecondaryScreens(QObject):
                 root=self.component.create()
                 if root is None:
                     self.bridge.notify('Could not create monitor panels: '+'; '.join(e.toString() for e in self.component.errors())[:220]);continue
-                QQmlEngine.setObjectOwnership(root,QQmlEngine.CppOwnership)
+                QQmlEngine.setObjectOwnership(root,(QQmlEngine.CppOwnership if QT5 else QQmlEngine.ObjectOwnership.CppOwnership))
                 root.setProperty('screenName',name);root.setProperty('geometry',geometry)
                 windows=list(root.findChildren(QQuickWindow))
                 for window in windows:
-                    QQmlEngine.setObjectOwnership(window,QQmlEngine.CppOwnership);window.setScreen(screen)
+                    QQmlEngine.setObjectOwnership(window,(QQmlEngine.CppOwnership if QT5 else QQmlEngine.ObjectOwnership.CppOwnership));window.setScreen(screen)
                 row=dict(root=root,windows=windows,screen=screen,geometry=geometry,layout=self.bridge.appearance['shellLayout'],position=panel_edge(self.bridge.appearance),floating=self.bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(self.bridge.appearance));self.rows[name]=row
                 self.bridge.shellWindows.extend(windows)
             row['geometry']=geometry;row['root'].setProperty('geometry',geometry)
             for window in row['windows']:
-                if QT5:
+                if LAYER_SHELL:
                     from wayland_surfaces import configure
                     configure(window,window.objectName(),self.bridge.compact,self.bridge.appearance['dockAlign'],self.bridge.appearance['shellLayout']=='fold',panel_position=panel_edge(self.bridge.appearance),floating=self.bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(self.bridge.appearance))
                 if window.objectName()=='secondaryTopbarSurface':

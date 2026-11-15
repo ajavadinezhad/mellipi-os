@@ -6,6 +6,7 @@ TextField {
     property string accessibleLabel: placeholderText
     Accessible.name: accessibleLabel
     color: Theme.text; placeholderTextColor: Theme.faint; font.pixelSize: Theme.fontSize(Theme.compact ? 14 : 16)
+    selectionColor: Theme.accent; selectedTextColor: Theme.accentText
     selectByMouse: true; leftPadding: 17; rightPadding: 17; implicitHeight: Theme.extraCompact ? 32 : Theme.compact ? 42 : 54
-    background: Rectangle { color: Theme.background; radius: Theme.corner(13); border.color: field.activeFocus ? Theme.focusColor : Theme.border;border.width: field.activeFocus && Theme.highContrast ? 2 : 1 }
+    background: Rectangle { color: Theme.background; radius: Theme.corner(13); border.color: field.activeFocus ? Theme.focusColor : field.enabled ? Theme.controlBorder : Theme.border;border.width: field.activeFocus && Theme.highContrast ? 2 : 1 }
 }

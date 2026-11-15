@@ -14,6 +14,8 @@ mod touch_input;
 mod ipc;
 mod motion;
 mod window_motion;
+mod window_snap;
+mod window_placement;
 mod window_capture;
 mod native_system;
 mod protocols;

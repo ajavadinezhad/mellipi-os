@@ -7,7 +7,7 @@ Switch {
     implicitWidth: 36;implicitHeight: 28;padding: 0
     Accessible.name: label
     indicator: Rectangle {
-        x: 2;y: 5;width: 32;height: 18;radius: 9
+        x: 2;y: 5;width: 32;height: 18;radius: Theme.corner(9)
         color: !toggle.enabled ? Theme.border : toggle.checked ? Theme.accent : Theme.raised
         border.color: toggle.activeFocus ? Theme.focusColor : Theme.border
         border.width: toggle.activeFocus ? (Theme.highContrast ? 2 : 1) : Theme.surfaceOutline

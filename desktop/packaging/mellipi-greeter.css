@@ -1,0 +1,28 @@
+@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css");
+
+@define-color mellipi_surface #19251c;
+@define-color mellipi_raised #243329;
+@define-color mellipi_text #edf3e7;
+@define-color mellipi_accent #b8d893;
+@define-color mellipi_focus #b8d893;
+@define-color mellipi_onaccent #000000;
+@define-color mellipi_edge #637c64;
+
+window, dialog { color: @mellipi_text; }
+entry, combobox button {
+    background: @mellipi_surface;
+    color: @mellipi_text;
+    border: 1px solid @mellipi_edge;
+    border-radius: 6px;
+    box-shadow: none;
+}
+entry:focus, combobox button:focus {
+    border-color: @mellipi_focus;
+    box-shadow: inset 0 0 0 1px @mellipi_focus;
+}
+entry selection, button.suggested-action {
+    background: @mellipi_accent;
+    color: @mellipi_onaccent;
+}
+menu { background: @mellipi_raised; color: @mellipi_text; }
+menuitem:hover, menuitem:selected { background: @mellipi_accent; color: @mellipi_onaccent; }

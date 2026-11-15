@@ -1,10 +1,13 @@
 """QML binding and password-clearing checks with inert fake controllers."""
 import unittest
 from pathlib import Path
-from qt_compat import QObject,Property,Signal,Slot,QApplication,QQmlApplicationEngine,QUrl,QT5
+from qt_compat import QObject,Property,Signal,Slot,QApplication,QQmlApplicationEngine,QUrl,QT5,QT6_WAYLAND
 if QT5:
     from PyQt5.QtQml import QQmlComponent
     from PyQt5.QtCore import QMetaObject
+elif QT6_WAYLAND:
+    from PyQt6.QtQml import QQmlComponent, QQmlExpression, qmlContext
+    from PyQt6.QtCore import QMetaObject
 else:
     from PySide6.QtQml import QQmlComponent
     from PySide6.QtCore import QMetaObject
@@ -43,6 +46,9 @@ class SystemSettingsUiTests(unittest.TestCase):
         if QT5:
             from PyQt5 import sip
             sip.delete(self.item);sip.delete(self.component);sip.delete(self.engine)
+        elif QT6_WAYLAND:
+            from PyQt6.sip import delete
+            delete(self.item);delete(self.component);delete(self.engine)
         else:
             import shiboken6
             shiboken6.delete(self.item);shiboken6.delete(self.component);shiboken6.delete(self.engine)
@@ -54,7 +60,13 @@ class SystemSettingsUiTests(unittest.TestCase):
     def test_password_fields_are_masked_and_cleared_on_submit_and_hide(self):
         self.item.setProperty('adding',True)
         for field,value in [('systemUserNewLogin','new-user'),('systemUserNewDisplay','New User'),('systemUserNewPassword','not-a-real-password'),('systemUserNewConfirm','not-a-real-password')]:self.field(field).setProperty('text',value)
-        self.assertEqual(self.field('systemUserNewPassword').property('echoMode'),2)
+        password=self.field('systemUserNewPassword')
+        if QT6_WAYLAND:
+            value, undefined = QQmlExpression(qmlContext(password),password,'Number(echoMode)').evaluate()
+            self.assertFalse(undefined)
+        else:
+            value=password.property('echoMode')
+        self.assertEqual(value,2)
         QMetaObject.invokeMethod(self.field('systemUserCreate'),'clicked')
         self.assertEqual(len(self.tools.requests),1)
         self.assertEqual(self.field('systemUserNewPassword').property('text'),'');self.assertEqual(self.field('systemUserNewConfirm').property('text'),'')

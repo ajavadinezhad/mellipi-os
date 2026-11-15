@@ -6,7 +6,10 @@ from qt_compat import QObject,Property,Signal,Slot,QT5,dispose_native_io
 if QT5:
     from PyQt5.QtCore import QFileSystemWatcher
 else:
-    from PySide6.QtCore import QFileSystemWatcher
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtCore import QFileSystemWatcher
+    else:
+        from PySide6.QtCore import QFileSystemWatcher
 from privileged_controls import charge_limit_helper_available,set_charge_limit_privileged,forget_charge_limit_privileged
 SYSFS=Path('/sys/class/power_supply')
 FILES=('scope','type','present','capacity','status','energy_now','energy_full','charge_now','charge_full','charge_control_end_threshold','charge_control_start_threshold')

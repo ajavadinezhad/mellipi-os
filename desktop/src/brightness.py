@@ -7,7 +7,10 @@ from qt_compat import QObject,Property,Signal,Slot,QT5,dispose_native_io
 if QT5:
     from PyQt5.QtCore import QFileSystemWatcher
 else:
-    from PySide6.QtCore import QFileSystemWatcher
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtCore import QFileSystemWatcher
+    else:
+        from PySide6.QtCore import QFileSystemWatcher
 SYSFS=Path('/sys/class/backlight')
 EMPTY=dict(available=False,percent=0,name='',busy=False,backend='',externalId=0,reason='No laptop backlight detected. External monitors require DDC/CI support and a compatible control backend.')
 

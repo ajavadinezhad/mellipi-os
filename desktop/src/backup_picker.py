@@ -12,7 +12,6 @@ def picker_environment(source):
     allowed={'HOME','PATH','USER','LOGNAME','LANG','LANGUAGE','DISPLAY','WAYLAND_DISPLAY','XAUTHORITY','DBUS_SESSION_BUS_ADDRESS',
              'XDG_RUNTIME_DIR','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_STATE_HOME','XDG_CACHE_HOME','XDG_DATA_DIRS','XDG_CONFIG_DIRS','XDG_CURRENT_DESKTOP','XDG_SESSION_TYPE','XDG_SESSION_DESKTOP'}
     env={k:v for k,v in source.items() if k in allowed or k.startswith('LC_')}
-    env['ORBIT_QT']=source.get('ORBIT_QT','5')
     if source.get('ORBIT_WAYLAND_RUNTIME')=='system':env['ORBIT_WAYLAND_RUNTIME']='system'
     env['QT_WAYLAND_SHELL_INTEGRATION']='xdg-shell'
     if source.get('WAYLAND_DISPLAY'):env['QT_QPA_PLATFORM']='wayland'
@@ -37,20 +36,17 @@ def validate_selection(value,mode):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--mode',choices=('directory','files'),required=True);parser.add_argument('--initial',required=True);args=parser.parse_args()
     os.environ['QT_WAYLAND_SHELL_INTEGRATION']='xdg-shell';os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION',None)
-    if os.environ.get('ORBIT_QT')=='5':
-        from PyQt5.QtWidgets import QApplication,QFileDialog,QDialog
-        from PyQt5.QtGui import QIcon
-    else:
-        from PySide6.QtWidgets import QApplication,QFileDialog,QDialog
-        from PySide6.QtGui import QIcon
+    # Isolated mode drops the script directory; import from this trusted install.
+    sys.path.insert(0,str(Path(__file__).resolve().parent))
+    from PyQt6.QtWidgets import QApplication,QDialog
+    from file_chooser import FileChooser
+    from PyQt6.QtGui import QIcon
     app=QApplication([]);app.setApplicationName('Mellipi file picker');app.setDesktopFileName('mellipi-backup-picker');app.setWindowIcon(QIcon.fromTheme('folder'))
-    dialog=QFileDialog(None,'Choose a folder' if args.mode=='directory' else 'Choose files to back up',args.initial)
-    dialog.setOption(QFileDialog.DontUseNativeDialog,True)
-    dialog.setFileMode(QFileDialog.Directory if args.mode=='directory' else QFileDialog.ExistingFiles)
-    if args.mode=='directory':dialog.setOption(QFileDialog.ShowDirsOnly,True)
-    dialog.resize(760,500)
+    folder=args.mode=='directory'
+    dialog=FileChooser(None,'Choose a folder' if folder else 'Choose files to back up',args.initial,
+                       mode=FileChooser.FileMode.Directory if folder else FileChooser.FileMode.ExistingFiles)
     value={'status':'cancelled'}
-    if dialog.exec()==QDialog.Accepted:
+    if dialog.exec()==QDialog.DialogCode.Accepted:
         value={'status':'ok','paths':dialog.selectedFiles()}
         try:value['paths']=validate_selection(value,args.mode)
         except ValueError:value={'status':'error','error':'Choose fewer valid local files, or choose the original folder instead of a symlink.'}

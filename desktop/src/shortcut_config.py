@@ -9,7 +9,7 @@ LABELS={
     'snap-left':'Snap window left','snap-right':'Snap window right','maximize':'Maximize window','restore':'Restore window size','next-layout':'Next keyboard layout',
 }
 DEFAULTS=dict.fromkeys(LABELS,'')
-DEFAULTS.update(launcher='Ctrl+Mod1+space',quick='Ctrl+Mod1+s',screenshot='Print',terminal='Mod4+Return',
+DEFAULTS.update(launcher='Ctrl+Mod1+space',quick='Ctrl+Mod1+s',screenshot='Print',terminal='Ctrl+Mod1+t',
     **{'volume-up':'Mod4+F12','volume-down':'Mod4+F11','volume-mute':'Mod4+F10',
     'snap-left':'Mod4+Left','snap-right':'Mod4+Right','maximize':'Mod4+Up','restore':'Mod4+Down','next-layout':'Shift+Mod4+space'})
 ACTIONS=frozenset(LABELS)

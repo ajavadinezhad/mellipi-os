@@ -93,9 +93,11 @@ impl XdgShellHandler for OrbitCompositor {
             return;
         };
         if let Some(location) = self.space.element_location(&window) {
+            let restore = self.forget_snap(id, &window)
+                .unwrap_or(Rectangle::new(location, window.geometry().size));
             self.normal_geometry
                 .entry(id)
-                .or_insert(Rectangle::new(location, window.geometry().size));
+                .or_insert(restore);
         }
         let mut area = smithay::desktop::layer_map_for_output(&output).non_exclusive_zone();
         if let Some(geometry) = self.space.output_geometry(&output) {
@@ -119,7 +121,8 @@ impl XdgShellHandler for OrbitCompositor {
         else {
             return;
         };
-        if let Some(rect) = self.normal_geometry.remove(&id) {
+        let snapped_restore = self.forget_snap(id, &window);
+        if let Some(rect) = self.normal_geometry.remove(&id).or(snapped_restore) {
             if let Some(from)=self.window_rect(id){self.start_window_resize(id,from,rect);}
             surface.with_pending_state(|state| {
                 state.size = Some(rect.size);
@@ -145,6 +148,7 @@ impl XdgShellHandler for OrbitCompositor {
             self.refocus_after_unmap(&window);
             self.pending_initial_focus.remove(&id);
             self.normal_geometry.remove(&id);
+            self.snapped_windows.remove(&id);
             self.window_motions.active.remove(&id);
             self.window_motions.pending_open.remove(&id);
             self.windows.retain(|(other, _)| *other != id);
@@ -182,19 +186,31 @@ impl XdgShellHandler for OrbitCompositor {
         if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
             let pointer = seat.get_pointer().unwrap();
 
-            let window = self
+            let Some(window) = self
                 .space
                 .elements()
                 .find(|w| w.toplevel().is_some_and(|s| s.wl_surface() == wl_surface))
-                .unwrap()
-                .clone();
-            let initial_window_location = self.space.element_location(&window).unwrap();
-
-            let grab = MoveSurfaceGrab {
-                start_data,
-                window,
-                initial_window_location,
+                .cloned()
+            else {
+                return;
             };
+            if self.transition.is_some() || crate::window_snap::is_fullscreen(&window) {
+                return;
+            }
+            let Some(location) = self.space.element_location(&window) else {
+                return;
+            };
+            let mut drag = crate::window_snap::DragSnap::new(
+                Rectangle::new(location, window.geometry().size),
+                start_data.location,
+            );
+            // A client can request the move after queued pointer motion. Use
+            // the current pointer without weakening the click-serial check.
+            if let Some(rect) = drag.motion(self, &window, pointer.current_location()) {
+                self.space.map_element(window.clone(), rect.loc, true);
+                self.request_redraw();
+            }
+            let grab = MoveSurfaceGrab { start_data, window, drag };
 
             pointer.set_grab(self, grab, serial, Focus::Clear);
         }
@@ -225,6 +241,9 @@ impl XdgShellHandler for OrbitCompositor {
                 .clone();
             let initial_window_location = self.space.element_location(&window).unwrap();
             let initial_window_size = window.geometry().size;
+            if let Some((id, _)) = self.windows.iter().find(|(_, candidate)| candidate == &window) {
+                self.forget_snap(*id, &window);
+            }
 
             surface.with_pending_state(|state| {
                 state.states.set(xdg_toplevel::State::Resizing);

@@ -12,7 +12,7 @@ ColumnLayout {
             Layout.fillWidth: true;spacing: 5
             SessionActionButton {objectName: "sessionLock";iconName: "lock";text: "Lock";Layout.fillWidth: true;Layout.minimumWidth: 0;hint: "Lock the screen and keep your apps open";onClicked: Orbit.activateSystemAction("lock")}
             SessionActionButton {objectName: "sessionSwitchUser";iconName: "switch-user";text: "Switch user";Layout.fillWidth: true;Layout.minimumWidth: 0;enabled: Orbit.canSwitchUser===true;hint: enabled ? "Lock this session and return to the login screen" : "Switching users requires an Mellipi login session and a supported login screen";onClicked: Orbit.switchUser()}
-            SessionActionButton {objectName: "sessionLogout";iconName: "logout";text: Orbit.isWayland ? "Log out…" : "Exit Mellipi…";Layout.fillWidth: true;Layout.minimumWidth: 0;hint: "Review open apps before leaving";onClicked: Orbit.activateSystemAction("logout")}
+            SessionActionButton {objectName: "sessionLogout";iconName: "logout";text: Orbit.isWayland ? "Log out" : "Exit Mellipi";Layout.fillWidth: true;Layout.minimumWidth: 0;hint: "Return to the login screen";onClicked: Orbit.activateSystemAction("logout")}
         }
     }
     SettingsGroup {

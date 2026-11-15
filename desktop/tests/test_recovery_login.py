@@ -28,10 +28,11 @@ class RecoveryLoginTests(unittest.TestCase):
         with patch.object(m.os,'geteuid',return_value=1000),patch.dict(os.environ,{'DISPLAY':':0','WAYLAND_DISPLAY':'wayland-0'},clear=True),self.assertRaises(SystemExit):m.main()
     def test_plain_terminal_bypasses_bad_desktop_and_shell_environment(self):
         env={'DISPLAY':':1','XAUTHORITY':'/tmp/normal-login-cookie','LD_PRELOAD':'bad.so','PYTHONPATH':'bad','BASH_ENV':'bad.sh','ORBIT_SETTINGS_FILE':'bad.json','HOME':'/wrong','PROMPT_COMMAND':'bad','BASH_FUNC_bad%%':'bad','XAPPLRESDIR':'bad'}
-        with patch.object(m.os,'geteuid',return_value=1000),patch.object(m.os,'getuid',return_value=1000),patch.object(m.pwd,'getpwuid',return_value=SimpleNamespace(pw_dir='/home/test-user')),patch.object(m.Path,'is_file',return_value=True),patch.dict(os.environ,env,clear=True),patch.object(m.os,'execve') as execute:
+        with patch.object(m.os,'geteuid',return_value=1000),patch.object(m.os,'getuid',return_value=1000),patch.dict(os.environ,env,clear=True),patch.object(m.os,'execve') as execute:
             m.main()
         file,args,clean=execute.call_args.args
-        self.assertEqual(file,'/usr/bin/xterm');self.assertIn('/usr/lib/abstract/recovery_console.py',args)
+        self.assertEqual(file,'/usr/bin/python3');self.assertIn('/usr/lib/abstract/recovery_terminal.py',args);self.assertIn('-I',args)
+        self.assertEqual(clean['GDK_BACKEND'],'x11');self.assertEqual(clean['XDG_CONFIG_HOME'],'/nonexistent')
         self.assertEqual(clean['HOME'],'/');self.assertEqual(clean['DISPLAY'],':1')
         self.assertEqual(clean['XENVIRONMENT'],'/dev/null');self.assertEqual(clean['INPUTRC'],'/dev/null')
         for name in ('LD_PRELOAD','PYTHONPATH','BASH_ENV','ORBIT_SETTINGS_FILE','PROMPT_COMMAND','BASH_FUNC_bad%%','XAPPLRESDIR'):self.assertNotIn(name,clean)

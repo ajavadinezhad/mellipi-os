@@ -6,7 +6,10 @@ from qt_compat import QObject,Signal,Slot,QTimer,QT5,dispose_native_io
 if QT5:
     from PyQt5.QtCore import QFileSystemWatcher
 else:
-    from PySide6.QtCore import QFileSystemWatcher
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtCore import QFileSystemWatcher
+    else:
+        from PySide6.QtCore import QFileSystemWatcher
 import desktop
 MAX_WATCHES=256
 

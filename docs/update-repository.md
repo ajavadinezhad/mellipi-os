@@ -85,6 +85,9 @@ Preserve existing `public/apt/pool` files when adding a release so installed
 clients and older indexes can still fetch their referenced packages. The
 builder rejects a changed package at an existing immutable path. Keep at least
 the previous working release available while validating an update.
+Publish the shell and desktop profile together at each version. The builder
+rejects an unmatched pair or a profile without its exact shell dependency;
+publication QA checks that APT selects and can retrieve the matching pair.
 
 Stage the matching source material too:
 
@@ -162,6 +165,22 @@ sources intact. To roll back a bad release, select a retained known-good
 version through APT and test it; a repository rollback alone does not downgrade
 already installed packages. Keep Mint/Xfce or a working TTY recovery option
 while testing session changes.
+
+Before publishing a desktop cutover, run the signed transaction check with a
+`/var/lib/dpkg/status` copy from a disposable VM running the previous release:
+
+```sh
+python3 tools/qa-update-repository.py --url "file://$PWD/public/apt" \
+  --fingerprint <reviewed-primary-fingerprint> --installed-status prior.status
+```
+
+APT must select both new packages, then both retained previous packages, with
+no removals or unrelated changes. Both payload pairs are downloaded and
+verified against the signed index. This reads the baseline and writes only
+temporary state; it does not run installation scripts or boot either version.
+The isolated solver uses only the Mellipi archive and installed dependencies
+in the baseline; a change requiring new distribution packages needs a separate
+upgrade check in a disposable VM.
 
 
 ## Scheduled health checks and safe renewal

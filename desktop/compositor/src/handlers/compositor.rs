@@ -19,6 +19,15 @@ use smithay::{
 
 use super::xdg_shell;
 
+pub(crate) fn has_buffer(surface: &WlSurface) -> bool {
+    smithay::wayland::compositor::with_states(surface, |states| {
+        states
+            .data_map
+            .get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>()
+            .is_some_and(|state| state.lock().unwrap().buffer().is_some())
+    })
+}
+
 impl CompositorHandler for OrbitCompositor {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
@@ -36,6 +45,16 @@ impl CompositorHandler for OrbitCompositor {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        let toplevel = self
+            .windows
+            .iter()
+            .find(|(_, window)| {
+                window
+                    .toplevel()
+                    .is_some_and(|top| top.wl_surface() == surface)
+            })
+            .cloned();
+        let had_buffer = toplevel.is_some() && has_buffer(surface);
         on_commit_buffer_handler::<Self>(surface);
         self.protocol_commit(surface);
         if !is_sync_subsurface(surface) {
@@ -54,21 +73,22 @@ impl CompositorHandler for OrbitCompositor {
 
         xdg_shell::handle_commit(&mut self.popups, &self.space, surface);
         resize_grab::handle_commit(&mut self.space, surface);
-        let mapped = smithay::wayland::compositor::with_states(surface, |states| {
-            states.data_map.get::<smithay::backend::renderer::utils::RendererSurfaceStateUserData>()
-                .is_some_and(|state| state.lock().unwrap().buffer().is_some())
-        });
-        let first_map = self.windows.iter().find(|(id, window)| {
-            self.pending_initial_focus.contains(id)
-                && window.toplevel().is_some_and(|top| top.wl_surface() == surface)
-        }).map(|(id, _)| *id);
-        if let Some(id) = first_map.filter(|_| mapped) {
-            self.pending_initial_focus.remove(&id);
-            if !self.protocols.is_locked() && self.space.elements().any(|window| {
-                window.toplevel().is_some_and(|top| top.wl_surface() == surface)
-            }) {
+        if let Some((id, window)) = toplevel {
+            let mapped = has_buffer(surface);
+            if had_buffer && !mapped {
+                self.forget_snap(id, &window);
+                self.pending_initial_focus.insert(id);
+            }
+            if mapped
+                && self.pending_initial_focus.remove(&id)
+                && !self.protocols.is_locked()
+                && self.space.element_location(&window).is_some()
+            {
+                self.place_new_window(id, &window);
                 self.seat.get_keyboard().unwrap().set_focus(
-                    self, Some(surface.clone()), smithay::utils::SERIAL_COUNTER.next_serial(),
+                    self,
+                    Some(surface.clone()),
+                    smithay::utils::SERIAL_COUNTER.next_serial(),
                 );
                 self.sync_layer_focus();
             }

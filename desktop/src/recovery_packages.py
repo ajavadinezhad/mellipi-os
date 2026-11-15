@@ -60,7 +60,7 @@ def load_checkpoint(environment):
 def restore_command(specs):
     # APT resolves and authenticates packages through trusted configured sources;
     # never install user-supplied files or silently accept unauthenticated data.
-    return ['/usr/bin/apt-get','--allow-downgrades','install',*validate_specs(specs)]
+    return ['/usr/bin/apt-get','--allow-downgrades','--no-remove','install',*validate_specs(specs)]
 
 def recovery_environment(environment):
     """Do not forward user APT_CONFIG, dpkg overrides or GUI/session secrets."""

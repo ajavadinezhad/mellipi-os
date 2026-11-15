@@ -11,7 +11,7 @@ def export(output):
     os.environ.setdefault('QT_QUICK_BACKEND','software')
     sys.path.insert(0,str(SOURCE))
     from preferences import DEFAULTS
-    from theme_catalog import presets,PALETTE_KEYS
+    from theme_catalog import presets,PALETTE_KEYS,THEME_IDS
     from PyQt5.QtGui import QGuiApplication
     from PyQt5.QtQml import QQmlComponent,QQmlEngine
     from PyQt5.QtCore import QUrl
@@ -30,7 +30,7 @@ def export(output):
         rows.append(dict(id=ident,name=label,mode=mode,accent=DEFAULTS['accent'],palette=palette))
         obj.deleteLater()
     rows.extend({key:row[key] for key in ('id','name','mode','accent','palette')} for row in presets())
-    if len(rows)!=11:raise ValueError('Desktop theme catalog is incomplete')
+    if len(rows)!=3+len(THEME_IDS):raise ValueError('Desktop theme catalog is incomplete')
     output=Path(output);output.parent.mkdir(parents=True,exist_ok=True)
     output.write_text(json.dumps({'defaultTheme':'dark','themes':rows},indent=2)+'\n')
     return rows

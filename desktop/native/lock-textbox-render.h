@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define ORBIT_LOCK_PANEL_HEIGHT 400
 
@@ -40,13 +41,27 @@ static void orbit_textbox_status(cairo_t *cr, const char *text,
 }
 static void orbit_draw_lock_textbox(cairo_t *cr, double width,
 		const struct orbit_lock_textbox_visual *view) {
-	const double box_height = 48.0;
+	const char *density = getenv("ORBIT_LOCK_DENSITY");
+	const char *corners = getenv("ORBIT_LOCK_CORNERS");
+	const double box_height = density && !strcmp(density, "extra") ? 40 :
+		density && !strcmp(density, "compact") ? 44 : 48;
+	const double radius = corners && !strcmp(corners, "rounded") ? 8 :
+		corners && !strcmp(corners, "soft") ? 4 : 0;
 	const double font_size = view->font_size < 12 ? 12 :
 		(view->font_size > 24 ? 24 : view->font_size);
 	uint32_t border = view->invalid ? view->wrong :
 		(view->validating ? view->checking : view->border);
 	cairo_save(cr);
-	cairo_rectangle(cr, 1, 1, width - 2, box_height - 2);
+	if (radius) {
+		cairo_new_sub_path(cr);
+		cairo_arc(cr, width-1-radius, 1+radius, radius, -1.57079632679, 0);
+		cairo_arc(cr, width-1-radius, box_height-1-radius, radius, 0, 1.57079632679);
+		cairo_arc(cr, 1+radius, box_height-1-radius, radius, 1.57079632679, 3.14159265359);
+		cairo_arc(cr, 1+radius, 1+radius, radius, 3.14159265359, 4.71238898038);
+		cairo_close_path(cr);
+	} else {
+		cairo_rectangle(cr, 1, 1, width - 2, box_height - 2);
+	}
 	orbit_textbox_color(cr, view->inside);
 	cairo_fill_preserve(cr);
 	orbit_textbox_color(cr, border);
@@ -80,15 +95,15 @@ static void orbit_draw_lock_textbox(cairo_t *cr, double width,
 		double x = count ? 31 + (count - 1) * 14 : 14;
 		orbit_textbox_color(cr, border);
 		cairo_set_line_width(cr, 1);
-		cairo_move_to(cr, x, 15);cairo_line_to(cr, x, 33);cairo_stroke(cr);
+		cairo_move_to(cr, x, box_height / 2 - 9);cairo_line_to(cr, x, box_height / 2 + 9);cairo_stroke(cr);
 	}
 	cairo_set_font_size(cr, font_size > 16 ? 14 : 13);
 	if (view->validating) {
-		orbit_textbox_status(cr, view->caps_lock ? "Checking… · Caps Lock" : "Checking…", width, 73, view->checking);
+		orbit_textbox_status(cr, view->caps_lock ? "Checking… · Caps Lock" : "Checking…", width, box_height + 25, view->checking);
 	} else if (view->invalid) {
-		orbit_textbox_status(cr, view->caps_lock ? "Try again · Caps Lock" : "Try again", width, 73, view->wrong);
+		orbit_textbox_status(cr, view->caps_lock ? "Try again · Caps Lock" : "Try again", width, box_height + 25, view->wrong);
 	} else if (view->caps_lock) {
-		orbit_textbox_status(cr, "Caps Lock", width, 73, view->text);
+		orbit_textbox_status(cr, "Caps Lock", width, box_height + 25, view->text);
 	}
 	cairo_restore(cr);
 }

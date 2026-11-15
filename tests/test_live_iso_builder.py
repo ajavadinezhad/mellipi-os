@@ -23,6 +23,16 @@ class BuildBoundaryTest(unittest.TestCase):
    with self.assertRaisesRegex(SystemExit,'QEMU/KVM guest'):builder.guard('/home/abstract/abstract-iso/build')
    mkdir.assert_not_called()
 
+class ImageAppTests(unittest.TestCase):
+ def test_prunes_only_installed_replacements_and_keeps_update_backend(self):
+  base='mellipi-shell\tinstalled\nmellipi-desktop\tinstalled\nmellipi-browser\tinstalled\nlightdm\tinstalled\ncalamares\tinstalled\nsynaptic\tinstalled\n'
+  with mock.patch.object(builder,'chroot',side_effect=[SimpleNamespace(stdout=base+'xterm\tinstalled\nthunar\tinstalled\nepiphany-browser\tinstalled\nmousepad\tinstalled\nokular\tconfig-files\n'),None,SimpleNamespace(stdout=base)]) as call:
+   builder.prune_image_apps(Path('/fixture'))
+  self.assertEqual(call.call_args_list[1].args,(Path('/fixture'),'apt-get','-y','purge','epiphany-browser','mousepad','thunar','xterm'))
+ def test_audit_rejects_leftover_competitor(self):
+  with mock.patch.object(builder,'chroot',return_value=SimpleNamespace(stdout='vlc:amd64\tinstalled\n')):
+   with self.assertRaisesRegex(ValueError,'vlc'):builder.audit_image_apps(Path('/fixture'))
+
 class CalamaresModuleInputTest(unittest.TestCase):
  def setUp(self):
   self.temp=tempfile.TemporaryDirectory(prefix='abstract-module-input-');self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)/'root';self.root.mkdir()
@@ -59,7 +69,9 @@ class InstallerDefaultsTest(unittest.TestCase):
   self.theme=json.loads((ROOT/'desktop/themes/forest.json').read_text())
   self.theme['accent']='#a8cf94'
   theme.write_text(json.dumps(self.theme))
+  builder.write(self.root,'usr/share/applications/synaptic.desktop','[Desktop Entry]\nName=Synaptic\n')
   builder.configure_installer(self.root,'0.1.6');builder.configure_live(self.root,'0.1.6')
+  self.assertIn('NoDisplay=true',(self.root/'usr/local/share/applications/synaptic.desktop').read_text())
  def module(self,name):return yaml.safe_load((self.root/'etc/calamares/modules'/name).read_text())
  def test_partitioning_requires_explicit_choice_and_final_confirmation(self):
   settings=yaml.safe_load((self.root/'etc/calamares/settings.conf').read_text())
@@ -86,6 +98,10 @@ class InstallerDefaultsTest(unittest.TestCase):
   prefs=json.loads((self.root/'etc/skel/.config/abstract/settings.json').read_text());self.assertNotIn('idleLockEnabled',prefs);self.assertNotIn('lockBeforeSleep',prefs)
   self.assertIn('mellipi-terminal.desktop',prefs['pins'])
   self.assertIn('mellipi-files.desktop',prefs['pins'])
+  self.assertIn('mellipi-browser.desktop',prefs['pins'])
+  self.assertIn('mellipi-editor.desktop',prefs['pins'])
+  self.assertIn('x-scheme-handler/https=mellipi-browser.desktop;', (self.root/'etc/skel/.config/mimeapps.list').read_text())
+  self.assertIn('autologin-session=mellipi-qt6', (self.root/'etc/lightdm/lightdm.conf.d/50-abstract-session.conf').read_text())
   self.assertEqual(prefs['wallpaper'],'theme-forest')
   self.assertEqual(prefs['accent'],self.theme['accent'])
   hook=(self.root/'usr/share/initramfs-tools/scripts/casper-bottom/99mellipi-live').read_text();self.assertIn('"idleLockEnabled": false',hook);self.assertIn('"lockBeforeSleep": false',hook)

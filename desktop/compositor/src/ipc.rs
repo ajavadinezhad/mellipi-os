@@ -23,7 +23,7 @@ pub struct NativeIpc {
     last: Option<Value>,
     pub minimized: HashMap<u64, (usize, Point<i32, Logical>)>,
     pub shortcuts: Vec<NativeShortcut>,
-    show_desktop: HashMap<usize, Vec<u64>>,
+    show_desktop: HashMap<(Option<String>, usize), Vec<u64>>,
     suspend_publish: bool,
     fullscreen_restore: HashMap<u64, Rectangle<i32, Logical>>,
     pub capture_window: Option<CaptureWindow>,
@@ -335,9 +335,9 @@ impl OrbitCompositor {
         if window.x11_surface().is_some_and(|surface| surface.is_override_redirect()) {
             return Err("The selected surface is not an application window".into());
         }
-        let (workspace, location, minimized) = self.window_location(id, &window)
+        let (_, location, minimized) = self.window_location(id, &window)
             .ok_or("The selected window is not mapped")?;
-        if minimized || workspace != self.current_workspace {
+        if minimized || self.space.element_location(&window).is_none() {
             return Err("The selected window is no longer on this workspace".into());
         }
         let bounds = Rectangle::new(location, window.geometry().size);
@@ -369,7 +369,7 @@ impl OrbitCompositor {
         }
         match value["command"].as_str().unwrap_or("") {
             "status" => {
-                json!({"backend":"orbit-native","protocol_version":1,"capabilities":{"native_workspace_slide":true,"native_window_motion":true,"trusted_virtual_keyboard":true,"touch":self.seat.get_touch().is_some(),"primary_selection":true,"clipboard_text_retention":true,"client_dmabuf":self.dmabuf.global.is_some(),"clipboard_png":true,"native_png_clipboard":true,"themed_cursor":true,"layer_shell":true,"xdg_shell":true,"maximize_restore":true,"xwayland":self.xwayland.xwm.is_some(),"secure_lock":std::env::args().any(|arg|arg=="--drm"),"idle_notify":true,"idle_inhibit":true,"hardware_validated":false,"screen_copy":true,"screencopy_version":2,"legacy_ssd":true,"orbit_shell_adapter":true,"login_session":std::env::args().any(|arg|arg=="--drm")},"control_capabilities":self.native_system_capabilities(),"experimental":true,"xdisplay":self.xwayland.display,"xwayland_error":self.xwayland.error,"locked":self.protocols.is_locked(),"pointer":self.seat.get_pointer().map(|p|{let pos=p.current_location();json!({"x":pos.x,"y":pos.y,"header":self.header_at(pos).map(|(id,_,_)|id.to_string()),"grabbed":p.is_grabbed()})}),"workspace":self.current_workspace+1,"workspaces":4,"animating":self.has_animations(),"window_animations":self.window_motions.active.len(),"window_motion_enabled":self.window_motion_enabled,"rendered_frames":self.rendered_frames,"animation_frames":self.animation_frames,"wayland_display":self.socket_name.to_string_lossy(),"capture_based":false,"progress":self.transition.map(|t|(t.started.elapsed().as_secs_f64()/if self.economy {0.18}else{0.24}).min(1.0)).unwrap_or(1.0),"direction":self.transition.map(|t|t.direction as i32),"economy":self.economy,"reduced_motion":self.reduced_motion})
+                json!({"backend":"orbit-native","protocol_version":1,"capabilities":{"native_workspace_slide":true,"native_window_motion":true,"trusted_virtual_keyboard":true,"touch":self.seat.get_touch().is_some(),"primary_selection":true,"clipboard_text_retention":true,"client_dmabuf":self.dmabuf.global.is_some(),"clipboard_png":true,"native_png_clipboard":true,"themed_cursor":true,"layer_shell":true,"xdg_shell":true,"maximize_restore":true,"window_snap":true,"window_placement":true,"independent_workspaces":true,"xwayland":self.xwayland.xwm.is_some(),"secure_lock":std::env::args().any(|arg|arg=="--drm"),"idle_notify":true,"idle_inhibit":true,"hardware_validated":false,"screen_copy":true,"screencopy_version":2,"legacy_ssd":true,"orbit_shell_adapter":true,"login_session":std::env::args().any(|arg|arg=="--drm")},"control_capabilities":self.native_system_capabilities(),"experimental":true,"xdisplay":self.xwayland.display,"xwayland_error":self.xwayland.error,"locked":self.protocols.is_locked(),"pointer":self.seat.get_pointer().map(|p|{let pos=p.current_location();json!({"x":pos.x,"y":pos.y,"header":self.header_at(pos).map(|(id,_,_)|id.to_string()),"grabbed":p.is_grabbed()})}),"workspace":self.active_workspace()+1,"workspaces":4,"animating":self.has_animations(),"window_animations":self.window_motions.active.len(),"window_motion_enabled":self.window_motion_enabled,"window_snap_enabled":self.window_snap_enabled,"window_placement":self.window_placement.name(),"window_snap_preview":self.snap_preview.map(|(_, rect)|rect_value(rect)),"rendered_frames":self.rendered_frames,"animation_frames":self.animation_frames,"wayland_display":self.socket_name.to_string_lossy(),"capture_based":false,"progress":self.transition.map(|t|(t.started.elapsed().as_secs_f64()/if self.economy {0.18}else{0.24}).min(1.0)).unwrap_or(1.0),"direction":self.transition.map(|t|t.direction as i32),"economy":self.economy,"reduced_motion":self.reduced_motion})
             }
             "clipboard_png" => {
                 match crate::clipboard::read_png(value["path"].as_str().unwrap_or("")){
@@ -406,6 +406,23 @@ impl OrbitCompositor {
                     Err(error) => json!({"ok":false,"error":error}),
                 }
             }
+            "window-placement" => {
+                let Some(layout) = value["layout"].as_str().and_then(crate::window_placement::WindowPlacement::parse) else {
+                    return json!({"ok":false,"error":"unknown window placement layout"});
+                };
+                self.set_window_placement(layout);
+                json!({"ok":true})
+            }
+            "window-snap" => {
+                let Some(enabled) = value["enabled"].as_bool() else {
+                    return json!({"ok":false,"error":"window snap requires an enabled boolean"});
+                };
+                self.window_snap_enabled = enabled;
+                if !enabled {
+                    self.clear_snap_preview();
+                }
+                json!({"ok":true})
+            }
             "motion" => {
                 let settings = &value["settings"];
                 if !settings.is_object()
@@ -436,7 +453,10 @@ impl OrbitCompositor {
             }
             "show_desktop" => {
                 self.ipc.suspend_publish = true;
-                if let Some(ids) = self.ipc.show_desktop.remove(&self.current_workspace) {
+                let output = self.independent_workspaces.then(|| self.pointer_workspace_output()).flatten();
+                let workspace = self.active_workspace();
+                let key = (output.clone(), workspace);
+                if let Some(ids) = self.ipc.show_desktop.remove(&key) {
                     for id in ids {
                         self.restore_native(id);
                     }
@@ -446,8 +466,9 @@ impl OrbitCompositor {
                         .iter()
                         .filter_map(|(id, w)| {
                             self.window_location(*id, w)
-                                .filter(|(workspace, _, minimized)| {
-                                    *workspace == self.current_workspace && !*minimized
+                                .filter(|(ws, location, minimized)| {
+                                    *ws == workspace && !*minimized && self.space.element_location(w).is_some()
+                                        && output.as_ref().is_none_or(|name| self.workspace_output(*location).as_ref()==Some(name))
                                 })
                                 .map(|_| *id)
                         })
@@ -455,7 +476,7 @@ impl OrbitCompositor {
                     for id in &ids {
                         self.minimize_window(*id);
                     }
-                    self.ipc.show_desktop.insert(self.current_workspace, ids);
+                    self.ipc.show_desktop.insert(key, ids);
                 }
                 self.ipc.suspend_publish = false;
                 self.request_redraw();
@@ -474,6 +495,16 @@ impl OrbitCompositor {
             "focus" | "minimize" | "restore" | "snap" | "resize" | "fullscreen" | "constrain" => {
                 self.window_action(&value)
             }
+            "workspace-mode" => {
+                let Some(enabled) = value["independent"].as_bool() else {
+                    return json!({"ok":false,"error":"invalid workspace mode"});
+                };
+                if self.seat.get_pointer().is_some_and(|pointer| pointer.is_grabbed()) {
+                    return json!({"ok":false,"error":"finish the pointer interaction first"});
+                }
+                self.set_independent_workspaces(enabled);
+                json!({"ok":true})
+            }
             "workspace" => {
                 let Some(index) = value["workspace"].as_u64().filter(|v| (1..=4).contains(v))
                 else {
@@ -486,6 +517,11 @@ impl OrbitCompositor {
                         -1
                     },
                 );
+                if self.independent_workspaces {
+                    if let Some(output) = value["output"].as_str() {
+                        return json!({"ok":self.switch_output_workspace(output,index as usize - 1)});
+                    }
+                }
                 self.switch_workspace(index as usize - 1, direction as i32);
                 json!({"ok":true})
             }
@@ -592,7 +628,7 @@ impl OrbitCompositor {
                 .is_ok()
         });
     }
-    fn window_location(
+    pub(crate) fn window_location(
         &self,
         id: u64,
         window: &Window,
@@ -605,7 +641,7 @@ impl OrbitCompositor {
             .or_else(|| {
                 self.space
                     .element_location(window)
-                    .map(|loc| (self.current_workspace, loc, false))
+                    .map(|loc| (self.workspace_at(loc), loc, false))
             })
             .or_else(|| {
                 self.workspaces
@@ -620,7 +656,7 @@ impl OrbitCompositor {
     }
     pub fn snapshot(&self) -> Value {
         let locked = self.protocols.is_locked();
-        let outputs:Vec<_>=self.space.outputs().filter_map(|output|{let rect=self.space.output_geometry(output)?;let mut workarea=layer_map_for_output(output).non_exclusive_zone();workarea.loc+=rect.loc;let mode=output.current_mode();Some(json!({"name":output.name(),"active":true,"focused":true,"rect":rect_value(rect),"workarea":rect_value(workarea),"scale":output.current_scale().fractional_scale(),"transform":crate::native_system::transform_name(output.current_transform()),"current_mode":mode.map(|m|json!({"width":m.size.w,"height":m.size.h,"refresh":m.refresh})),"modes":output.modes().into_iter().map(|m|json!({"width":m.size.w,"height":m.size.h,"refresh":m.refresh})).collect::<Vec<_>>() }))}).collect();
+        let outputs:Vec<_>=self.space.outputs().filter_map(|output|{let rect=self.space.output_geometry(output)?;let mut workarea=layer_map_for_output(output).non_exclusive_zone();workarea.loc+=rect.loc;let mode=output.current_mode();Some(json!({"name":output.name(),"active":true,"focused":true,"workspace":self.output_workspace(&output.name()),"rect":rect_value(rect),"workarea":rect_value(workarea),"scale":output.current_scale().fractional_scale(),"transform":crate::native_system::transform_name(output.current_transform()),"current_mode":mode.map(|m|json!({"width":m.size.w,"height":m.size.h,"refresh":m.refresh})),"modes":output.modes().into_iter().map(|m|json!({"width":m.size.w,"height":m.size.h,"refresh":m.refresh})).collect::<Vec<_>>() }))}).collect();
         let default_area = outputs
             .first()
             .map(|o| o["workarea"].clone())
@@ -630,10 +666,16 @@ impl OrbitCompositor {
             vec![]
         } else {
             self.windows.iter().filter_map(|(id,window)|{
+            // Keep the role and placement for a potential remap, but a
+            // null-buffer commit withdraws the window from the desktop.
+            if window.toplevel().is_some_and(|surface| {
+                !crate::handlers::compositor::has_buffer(surface.wl_surface())
+            }) { return None; }
             let (workspace,location,minimized)=self.window_location(*id,window)?;
             let mut title=String::new();let mut klass=String::new();let mut pid=0;let mut maximized=false;let mut fullscreen=false;
             if let Some(surface)=window.toplevel(){with_states(surface.wl_surface(),|states|{if let Some(data)=states.data_map.get::<XdgToplevelSurfaceData>(){let data=data.lock().unwrap();title=data.title.clone().unwrap_or_default();klass=data.app_id.clone().unwrap_or_default();}});let states=surface.current_state();maximized=states.states.contains(xdg_toplevel::State::Maximized);fullscreen=states.states.contains(xdg_toplevel::State::Fullscreen);pid=surface.wl_surface().client().and_then(|c|c.get_credentials(&self.display_handle).ok()).map(|c|c.pid).unwrap_or(0);
             }else if let Some(surface)=window.x11_surface(){if surface.is_override_redirect(){return None;}title=surface.title();klass=surface.class();pid=surface.pid().unwrap_or(0) as i32;maximized=surface.is_maximized();fullscreen=surface.is_fullscreen();}
+            let transient=window.toplevel().is_some_and(|surface|surface.parent().is_some()) || window.x11_surface().is_some_and(|surface|surface.is_popup() || surface.is_transient_for().is_some());
             let active=!minimized&&window.wl_surface().is_some_and(|surface|focus.as_ref()==Some(surface.as_ref()));
             let mut geometry=window.geometry();geometry.loc=location;
             if let Some(surface)=window.x11_surface(){geometry=surface.geometry();}
@@ -647,10 +689,10 @@ impl OrbitCompositor {
                 contains("x", "width", location.x) && contains("y", "height", location.y)
             }).map(|output| output["workarea"].clone()).unwrap_or(default_area.clone());
             let frame=if !minimized&&crate::decoration::needs_header(window){json!({"x":geometry.loc.x,"y":geometry.loc.y-crate::decoration::HEIGHT,"width":geometry.size.w,"height":crate::decoration::HEIGHT})}else{json!({})};
-            Some(json!({"id":id.to_string(),"workspace":workspace+1,"desktop":workspace,"pid":pid,"klass":klass.chars().take(256).collect::<String>().to_lowercase(),"app_id":klass.chars().take(256).collect::<String>(),"title":title.chars().take(512).collect::<String>(),"active":active,"minimized":minimized,"maximized":maximized,"fullscreen":fullscreen,"workarea":area,"rect":rect_value(geometry),"x":geometry.loc.x,"y":geometry.loc.y,"width":geometry.size.w,"height":geometry.size.h,"frame":frame,"native":true}))
+            Some(json!({"id":id.to_string(),"workspace":workspace+1,"desktop":workspace,"pid":pid,"klass":klass.chars().take(256).collect::<String>().to_lowercase(),"app_id":klass.chars().take(256).collect::<String>(),"title":title.chars().take(512).collect::<String>(),"transient":transient,"active":active,"minimized":minimized,"maximized":maximized,"fullscreen":fullscreen,"snap":self.snapped_windows.get(id).filter(|snap| !matches!(snap.zone, crate::window_snap::SnapZone::GridCell { .. })).map(|snap| snap.zone.name()),"workarea":area,"rect":rect_value(geometry),"x":geometry.loc.x,"y":geometry.loc.y,"width":geometry.size.w,"height":geometry.size.h,"frame":frame,"native":true}))
         }).take(256).collect()
         };
-        json!({"backend":"orbit-native","windows":windows,"desktops":(0..self.workspaces.len()).map(|index|json!({"id":index,"active":index==self.current_workspace,"name":format!("Space {}",index+1)})).collect::<Vec<_>>(),"outputs":outputs,"locked":locked})
+        json!({"backend":"orbit-native","windows":windows,"desktops":(0..self.workspaces.len()).map(|index|json!({"id":index,"active":index==self.active_workspace(),"name":format!("Space {}",index+1)})).collect::<Vec<_>>(),"outputs":outputs,"independent_workspaces":self.independent_workspaces,"locked":locked})
     }
     pub fn minimize_window(&mut self, id: u64) -> bool {
         self.window_action(&json!({"command":"minimize","id":id}))["ok"] == true
@@ -690,13 +732,17 @@ impl OrbitCompositor {
         }
         self.window_motions.active.remove(&id);
         if let Some((workspace, location)) = self.ipc.minimized.remove(&id) {
-            let space = if workspace == self.current_workspace {
+            let visible = workspace == self.workspace_at(location);
+            let space = if visible {
                 &mut self.space
             } else {
                 &mut self.workspaces[workspace]
             };
-            space.map_element(window, location, false);
-            if workspace==self.current_workspace {self.start_window_open(id);}
+            space.map_element(window.clone(), location, false);
+            self.place_restored_window(id, &window);
+            if visible {
+                self.start_window_open(id);
+            }
             self.request_redraw();
         }
         true
@@ -707,6 +753,8 @@ impl OrbitCompositor {
         let Some((_, window)) = self.windows.iter().find(|(other, _)| *other == id).cloned() else {
             return false;
         };
+        let workspace = self.window_location(id, &window).map(|(workspace, _, _)| workspace);
+        self.forget_snap(id, &window);
         if let Some(surface) = window.x11_surface() {
             let surface = surface.clone();
             let geometry = self.bounded_x11_geometry(&surface, geometry);
@@ -722,7 +770,7 @@ impl OrbitCompositor {
             });
             surface.send_pending_configure();
             if self.space.element_location(&window).is_some() {
-                self.space.map_element(window, geometry.loc, false);
+                self.space.map_element(window.clone(), geometry.loc, false);
             } else {
                 for space in &mut self.workspaces {
                     if space.element_location(&window).is_some() {
@@ -731,6 +779,9 @@ impl OrbitCompositor {
                     }
                 }
             }
+        }
+        if let Some(workspace) = workspace {
+            self.reconcile_window_workspace(&window, workspace, geometry.loc);
         }
         self.request_redraw();
         true
@@ -771,10 +822,14 @@ impl OrbitCompositor {
             return json!({"ok":true});
         }
         if command == "focus" {
-            let Some((workspace, _, _)) = self.window_location(id, &window) else {
+            let Some((workspace, location, _)) = self.window_location(id, &window) else {
                 return json!({"ok":false,"error":"window is not mapped"});
             };
-            if workspace != self.current_workspace {
+            if self.independent_workspaces {
+                if let Some(output) = self.workspace_output(location) {
+                    self.switch_output_workspace(&output, workspace);
+                }
+            } else if workspace != self.current_workspace {
                 self.transition = None;
                 self.pending_workspace = None;
                 self.switch_workspace(
@@ -786,7 +841,7 @@ impl OrbitCompositor {
                     },
                 );
             }
-            if workspace != self.current_workspace {
+            if self.space.element_location(&window).is_none() {
                 return json!({"ok":false,"error":"workspace did not switch"});
             }
             self.space.raise_element(&window, true);
@@ -817,6 +872,9 @@ impl OrbitCompositor {
             else {
                 return json!({"ok":false,"error":"no output"});
             };
+            if enabled {
+                self.forget_snap(id, &window);
+            }
             let geometry = if enabled {
                 self.ipc
                     .fullscreen_restore
@@ -858,19 +916,18 @@ impl OrbitCompositor {
             self.request_redraw();
             return json!({"ok":true});
         }
-        let Some((_, location, _)) = self.window_location(id, &window) else {
+        let Some((workspace, location, _)) = self.window_location(id, &window) else {
             return json!({"ok":false,"error":"window is not mapped"});
         };
-        let Some(output) = self
-            .space
-            .outputs()
-            .find(|output| {
-                self.space
-                    .output_geometry(output)
-                    .is_some_and(|r| r.contains(location))
-            })
-            .or_else(|| self.space.outputs().next())
-            .cloned()
+        let requested_output = value["output"].as_str();
+        let Some(output) = self.space.outputs().find(|output| {
+            if let Some(name) = requested_output {
+                return output.name() == name;
+            }
+            self.space.output_geometry(output).is_some_and(|rect| rect.contains(location))
+        }).or_else(|| {
+            if requested_output.is_none() { self.space.outputs().next() } else { None }
+        }).cloned()
         else {
             return json!({"ok":false,"error":"no output"});
         };
@@ -880,23 +937,39 @@ impl OrbitCompositor {
         let mut rect = Rectangle::new(location, window.geometry().size);
         match command {
             "snap" => {
-                self.normal_geometry.entry(id).or_insert(rect);
-                let side = value["side"].as_str().unwrap_or("");
-                if !matches!(side, "left" | "right" | "top" | "bottom") {
-                    return json!({"ok":false,"error":"invalid snap side"});
-                }
-                rect = area;
-                if matches!(side, "left" | "right") {
-                    rect.size.w /= 2;
-                    if side == "right" {
-                        rect.loc.x += area.size.w - rect.size.w;
+                use crate::window_snap::{supports_tile, SnapZone};
+                let zone = match value["side"].as_str() {
+                    Some("left") => SnapZone::Left,
+                    Some("right") => SnapZone::Right,
+                    Some("top") => SnapZone::Top,
+                    Some("bottom") => SnapZone::Bottom,
+                    Some("top-left") => SnapZone::TopLeft,
+                    Some("top-right") => SnapZone::TopRight,
+                    Some("bottom-left") => SnapZone::BottomLeft,
+                    Some("bottom-right") => SnapZone::BottomRight,
+                    _ => return json!({"ok":false,"error":"invalid snap side"}),
+                };
+                let Some(tile) = self.snap_rect(&window, &output, zone)
+                    .filter(|tile| supports_tile(&window, *tile))
+                else {
+                    return json!({"ok":false,"error":"window does not fit this tile"});
+                };
+                if value["available_only"].as_bool() == Some(true) {
+                    let mut workarea = layer_map_for_output(&output).non_exclusive_zone();
+                    workarea.loc += self.space.output_geometry(&output).unwrap().loc;
+                    let occupied = self.windows.iter().any(|(other, window)| {
+                        *other != id && self.window_location(*other, window).is_some_and(|(ws, _, minimized)| ws == workspace && !minimized)
+                            && self.snapped_windows.get(other).is_some_and(|snap| snap.output_name == output.name() && snap.zone.rect(workarea).overlaps(zone.rect(workarea)))
+                    });
+                    if occupied {
+                        return json!({"ok":true,"placed":false});
                     }
-                } else {
-                    rect.size.h /= 2;
-                    if side == "bottom" {
-                        rect.loc.y += area.size.h - rect.size.h;
-                    }
                 }
+                let restore = self.snapped_windows.get(&id).map(|snap| snap.restore)
+                    .or_else(|| self.normal_geometry.get(&id).copied())
+                    .or_else(|| self.xwayland.restore.get(&id).copied())
+                    .unwrap_or(rect);
+                return json!({"ok":self.apply_window_snap(id,&window,&output,zone,tile,restore),"placed":true});
             }
             "resize" => {
                 let r = &value["rect"];
@@ -994,7 +1067,13 @@ impl OrbitCompositor {
             let Some((_, location, minimized)) = self.window_location(id, &window) else {
                 continue;
             };
-            if minimized || !sole_output && !output_rect.contains(location) {
+            if minimized {
+                continue;
+            }
+            if self.reflow_snap(id, &window, output) {
+                continue;
+            }
+            if !sole_output && !output_rect.contains(location) {
                 continue;
             }
             if let Some(surface) = window.x11_surface() {

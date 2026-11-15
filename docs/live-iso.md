@@ -6,10 +6,15 @@ It is not a remastered Mint, Xfce, GNOME or Plasma desktop image. LightDM is the
 login greeter; the included file manager and other applications do not install
 another desktop environment.
 
-The image contains the Linux kernel and firmware, Mellipi, Foot terminal,
-Thunar, Mousepad, Epiphany, package management and hardware services, plus the
+The image contains the Linux kernel and firmware, Mellipi’s Terminal, Files,
+Editor and Browser, package management and hardware services, plus the
 Calamares graphical installer. Installation copies the packaged filesystem
-locally and does not require downloading the desktop again.
+locally and does not require downloading the desktop again. The ISO rejects
+known competing apps when Mellipi provides a replacement. Synaptic stays
+available as the update backend through Settings, without a separate launcher.
+When adding a Mellipi app, update the ISO replacement list in
+`tools/build-live-iso.py` and switch any default handlers and pins to the
+Mellipi app. This policy never purges packages from an existing workstation.
 
 ## Try and install
 
@@ -20,7 +25,7 @@ locally and does not require downloading the desktop again.
    Review the drive carefully: writing an image replaces that drive's contents.
 3. Boot the USB and choose **Try or install Mellipi**. The live desktop opens
    automatically. It is temporary; changes are lost when the machine restarts.
-   Press **Super+Enter** to open the included Foot terminal.
+   Press **Super+Enter** to open Mellipi Terminal.
 4. Open **Install Mellipi** from the desktop or launcher. Choose language,
    keyboard, target disk/partitioning, user name and password. For manual
    partitioning, use ext4 for the root (`/`) partition. No disk operation
@@ -50,20 +55,24 @@ Required guest build tools include `debootstrap`, `squashfs-tools`, `xorriso`,
 fresh target by the builder. A larger build disk and sufficient free space are
 needed for the target filesystem, package downloads and compressed image.
 
-After transferring the verified Mellipi `.deb` pair and **public** archive
+After transferring the verified Mellipi `.deb` packages and **public** archive
 keyring and sibling `secure-boot-image.py` helper into the guest, run inside that VM:
 
 ```sh
 sudo python3 build-live-iso.py \
-  --version 0.1.20 \
+  --version 0.1.22 \
   --workdir /home/abstract/abstract-iso/build \
-  --core-deb /path/to/mellipi-shell_0.1.20_amd64.deb \
-  --desktop-deb /path/to/mellipi-desktop_0.1.20_all.deb \
+  --core-deb /path/to/mellipi-shell_0.1.22_amd64.deb \
+  --desktop-deb /path/to/mellipi-desktop_0.1.22_all.deb \
+  --browser-deb /path/to/mellipi-browser_0.1.22_all.deb \
   --keyring /path/to/mellipi-archive-keyring.gpg \
   --calamares-partition-module /path/to/reviewed-partition.so \
   --calamares-partition-sha256 SHA256_FROM_REVIEWED_MODULE_REPORT \
   --calamares-partition-provenance /path/to/reviewed-partition.so.json
 ```
+
+Use `--theme THEME_ID` to select a bundled theme for the live session, installer,
+and ISO greeter. The default is Forest.
 
 The builder supports `--phase bootstrap`, `install`, and `image` for inspected
 retries. It refuses to silently overwrite an existing squashfs or ISO.

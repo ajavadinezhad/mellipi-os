@@ -13,8 +13,8 @@
         "hover": "#d1e1e4",
         "border": "#b7cbd0",
         "text": "#15222d",
-        "muted": "#526473",
-        "faint": "#647582"
+        "muted": "#4b5b69",
+        "faint": "#52606b"
       }
     },
     {
@@ -29,8 +29,8 @@
         "hover": "#3a4f52",
         "border": "#536b6d",
         "text": "#e1e8ed",
-        "muted": "#a2b0bb",
-        "faint": "#788b9b"
+        "muted": "#c0cad1",
+        "faint": "#b8c2ca"
       }
     },
     {
@@ -46,7 +46,7 @@
         "border": "#3e4a53",
         "text": "#e1e8ed",
         "muted": "#adb7c4",
-        "faint": "#8b97a7"
+        "faint": "#96a1b0"
       }
     },
     {

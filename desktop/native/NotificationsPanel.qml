@@ -7,7 +7,7 @@ ColumnLayout {
     Component.onCompleted: Qt.callLater(function(){if(dndToggle.visible)dndToggle.forceActiveFocus(Qt.TabFocusReason);})
     RowLayout {
         Layout.fillWidth: true
-        OrbitButton {id:dndToggle;objectName:"notificationDndToggle"; text: System.doNotDisturb ? "DND on" : "Do not disturb";accent: System.doNotDisturb;onClicked: System.setDnd(!System.doNotDisturb) }
+        IconButton {id:dndToggle;objectName:"notificationDndToggle";iconName: "bell-off";hint: System.doNotDisturb ? "Turn off Do Not Disturb" : "Turn on Do Not Disturb";Accessible.checkable: true;Accessible.checked: System.doNotDisturb;accent: System.doNotDisturb;onClicked: System.setDnd(!System.doNotDisturb) }
         Item { Layout.fillWidth: true }
         OrbitButton { text: "Clear";quiet: true;enabled: System.notifications.length>0;onClicked: System.clearNotifications() }
     }

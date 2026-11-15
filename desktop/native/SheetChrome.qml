@@ -5,7 +5,7 @@ Canvas {
     property real cornerRadius: Theme.radius
     onCornerRadiusChanged: requestPaint()
     property color paperColor: Theme.background
-    property color edgeColor: Theme.highContrast ? Theme.border : "transparent"
+    property color edgeColor: Theme.highContrast ? Theme.border : Theme.separator
     onVisibleChanged: if(visible)requestPaint()
     onAvailableChanged: if(available)requestPaint()
     onWidthChanged: requestPaint()

@@ -115,7 +115,7 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth: true
-        OrbitButton {objectName: "displayRefresh";text: "Refresh";quiet: true;enabled: !DisplayControls.state.busy && !panel.pending;onClicked: DisplayControls.refresh()}
+        IconButton {objectName: "displayRefresh";iconName: "refresh";hint: "Refresh displays";enabled: !DisplayControls.state.busy && !panel.pending;onClicked: DisplayControls.refresh()}
         Item {Layout.fillWidth: true}
         OrbitButton {objectName: "displayRevert";visible: panel.pending;text: "Revert";enabled: !DisplayControls.state.busy;onClicked: DisplayControls.revert()}
         OrbitButton {

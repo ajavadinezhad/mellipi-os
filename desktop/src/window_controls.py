@@ -8,10 +8,23 @@ PATHS = {
 }
 
 
-def glyph_svg(name, color):
+CYBERPUNK_CONTROLS = {
+    'minimize': '#f15acb', 'maximize': '#a8c1da',
+    'restore': '#a8c1da', 'close': '#55d4f3',
+}
+
+
+def glyph_svg(name, color, cyberpunk=False, *, size=16):
+    if cyberpunk:
+        return (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 16 16">'
+            f'<circle cx="8" cy="8" r="7" fill="{CYBERPUNK_CONTROLS[name]}"/>'
+            f'<path d="{PATHS[name]}" stroke="#070e18" stroke-width="1.5" fill="none" '
+            'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        ).encode('ascii')
     path = PATHS[name]
     return (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 16 16">'
         f'<path d="{path}" fill="none" stroke="{color}" stroke-width="1.5" '
         'stroke-linecap="round" stroke-linejoin="round"/></svg>'
     ).encode('ascii')

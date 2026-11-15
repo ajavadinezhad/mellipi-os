@@ -4,26 +4,28 @@ import os
 import sys
 from pathlib import Path
 
-os.environ['ORBIT_QT'] = '5'
+os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt5.QtCore import (
-    QDir, QEvent, QFileSystemWatcher, QItemSelectionModel, QModelIndex, QMimeData,
+from PyQt6.QtCore import (
+    QDir, QEvent, QItemSelectionModel, QLocale, QModelIndex, QMimeData,
     QRect, QSignalBlocker, QSize, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl,
 )
-from PyQt5.QtGui import QColor, QDesktopServices, QDrag, QIcon, QKeySequence, QPainter, QPalette, QPixmap
-from PyQt5.QtWidgets import (
-    QAction, QApplication, QFileSystemModel, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
-    QMainWindow, QMenu, QMessageBox, QPushButton, QStackedWidget, QTreeView, QVBoxLayout, QWidget,
+from PyQt6.QtGui import QAction, QFileSystemModel, QDesktopServices, QDrag, QFontMetrics, QIcon, QKeySequence, QPainter
+from PyQt6.QtWidgets import (
+    QApplication, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMainWindow, QMenu, QPushButton, QStackedWidget, QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 from gi.repository import Gio
-from preferences import Preferences
-from app_palette import HEADER_HEIGHTS, colors
-from window_controls import glyph_svg
+from qt_app import style_dialog, ThemedInput, AppIdentityBadge, BASE_STYLE, ThemeWatch, apply_titlebar, original_icon, themed_prompt, widget_palette
+from qt_titlebar import TitleBar
 from desktop_icons import rename_no_replace, safe_name, trash_item
 from device_monitor import DeviceMonitor
 from file_transfers import MAX_SOURCES, CancelToken, Transfer
+from file_archives import archive_suffix, compress, extract_here, preview_archive
+from storage_analyzer import analyze
+from files_icons import ACTIONS, PLACES, file_icon, icon as phosphor_icon
 
 
 class KeepBoth(CancelToken):
@@ -46,31 +48,178 @@ class FileJob(QThread):
             self.error = str(error)
 
 
-class FolderModel(QFileSystemModel):
-    def set_folder_color(self, color):
-        # Match the folder symbol used by the taskbar, launcher, and sidebar.
-        source = Path('/usr/share/icons/Adwaita/symbolic/places/folder-symbolic.svg')
-        icon = QIcon(str(source)) if source.is_file() else QIcon.fromTheme('folder-symbolic')
-        pixels = icon.pixmap(32, 32)
-        if pixels.isNull():
-            return
-        painter = QPainter(pixels)
-        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-        painter.fillRect(pixels.rect(), QColor(color))
-        painter.end()
-        self.folder_icon = QIcon(pixels)
+class StorageDialog(QDialog):
+    def __init__(self, files, folder):
+        super().__init__(files)
+        self.files = files
+        self.folder = folder
+        self.job = None
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.setWindowTitle('Storage Analyzer')
+        self.resize(570, 420)
+        self.refresh_theme()
+        files.theme_watch.changed.connect(self.refresh_theme)
+        layout = QVBoxLayout(self)
+        title = QLabel(str(folder))
+        title.setTextFormat(Qt.TextFormat.PlainText)
+        title.setWordWrap(True)
+        layout.addWidget(title)
+        self.table = QTreeWidget()
+        self.table.setAccessibleName('Largest items')
+        self.table.setHeaderLabels(['Name', 'Size'])
+        self.table.setRootIsDecorated(False)
+        self.table.setUniformRowHeights(True)
+        self.table.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.currentItemChanged.connect(self.update_open)
+        self.table.itemActivated.connect(lambda *_: self.open_folder())
+        layout.addWidget(self.table, 1)
+        self.summary = QLabel('Scanning…')
+        self.summary.setTextFormat(Qt.TextFormat.PlainText)
+        self.summary.setWordWrap(True)
+        layout.addWidget(self.summary)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        self.open_button = QPushButton('Open Folder')
+        self.open_button.setEnabled(False)
+        self.open_button.clicked.connect(self.open_folder)
+        self.stop_button = QPushButton('Cancel Scan')
+        self.stop_button.clicked.connect(self.stop_or_close)
+        buttons.addWidget(self.open_button)
+        buttons.addWidget(self.stop_button)
+        layout.addLayout(buttons)
+        self.job = FileJob(lambda: analyze(folder, self.job.isInterruptionRequested), self)
+        self.job.finished.connect(self.scan_finished)
+        self.job.start()
 
-    def data(self, index, role=Qt.DisplayRole):
-        if role == Qt.DecorationRole and index.column() == 0 and self.isDir(index):
-            return getattr(self, 'folder_icon', None) or super().data(index, role)
+    def refresh_theme(self):
+        self.setStyleSheet(BASE_STYLE % self.files.theme_watch.tokens)
+
+    def update_open(self, item, _previous):
+        self.open_button.setEnabled(bool(item and item.data(0, Qt.ItemDataRole.UserRole)))
+
+    def open_folder(self):
+        item = self.table.currentItem()
+        if item and (name := item.data(0, Qt.ItemDataRole.UserRole)):
+            path = self.folder / name
+            if path.is_symlink() or not path.is_dir():
+                self.summary.setText('This folder is no longer available.')
+                return
+            self.files.navigate(path)
+            self.close()
+
+    def stop_or_close(self):
+        if self.job is None:
+            self.close()
+        else:
+            self.job.requestInterruption()
+            self.stop_button.setEnabled(False)
+            self.summary.setText('Stopping…')
+
+    def scan_finished(self):
+        job, self.job = self.job, None
+        job.deleteLater()
+        if self.files.close_when_idle:
+            self.close()
+            self.files.finish_deferred_close()
+            return
+        self.stop_button.setText('Close')
+        self.stop_button.setEnabled(True)
+        if job.error:
+            self.summary.setText(f'Could not scan this folder: {job.error}')
+            return
+        report = job.value
+        locale = QLocale()
+        def size_text(size):
+            return locale.formattedDataSize(size) if size < 2**63 else 'Over 8 EiB'
+        for row in report.rows:
+            item = QTreeWidgetItem([row.name, size_text(row.size)])
+            if row.folder:
+                item.setIcon(0, file_icon(row.name, True, *self.files.model.file_inks))
+                item.setData(0, Qt.ItemDataRole.UserRole, row.name)
+            self.table.addTopLevelItem(item)
+        summary = f'{size_text(report.total)} of file data · {report.entries:,} entries scanned'
+        if report.cancelled:
+            summary += ' · Scan cancelled'
+        elif report.incomplete:
+            summary += ' · Some entries were skipped or the scan limit was reached'
+        self.summary.setText(summary)
+
+    def reject(self):
+        if self.job is not None:
+            self.stop_or_close()
+        else:
+            super().reject()
+
+    def closeEvent(self, event):
+        if self.job is not None:
+            self.stop_or_close()
+            event.ignore()
+        else:
+            super().closeEvent(event)
+
+
+class FolderModel(QFileSystemModel):
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if (role == Qt.ItemDataRole.DecorationRole and index.isValid()
+                and index.column() == 0 and hasattr(self, 'file_inks')):
+            icon = file_icon(self.fileName(index), self.isDir(index), *self.file_inks)
+            if not icon.isNull():
+                return icon
         return super().data(index, role)
 
 
+MAX_CLIPBOARD_BYTES = 512 * 1024
+MAX_CLIPBOARD_URI = 4096
+
+
+def local_path(url):
+    if not url.isValid() or not url.isLocalFile() or url.authority().lower() not in ('', 'localhost'):
+        return None
+    url = QUrl(url)
+    url.setHost('')
+    value = url.toLocalFile()
+    if not value or '\0' in value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else None
+
+
 def local_paths(urls):
-    return list(dict.fromkeys(
-        Path(url.toLocalFile()) for url in urls
-        if url.isLocalFile() and Path(url.toLocalFile()).is_absolute()
-    ))
+    return list(dict.fromkeys(path for url in urls if (path := local_path(url)) is not None))
+
+
+def clipboard_transfer(mime):
+    """A cut request must name the same local files in both advertised formats."""
+    gnome = mime.data('x-special/gnome-copied-files')
+    uri_data = mime.data('text/uri-list')
+    if gnome.size() + uri_data.size() > MAX_CLIPBOARD_BYTES:
+        raise ValueError('Clipboard file list is too large')
+
+    def decode(lines):
+        if len(lines) > MAX_SOURCES:
+            raise ValueError(f'Transfer at most {MAX_SOURCES} items at a time')
+        paths = []
+        for line in lines:
+            if not line or len(line) > MAX_CLIPBOARD_URI:
+                raise ValueError('Clipboard contains an invalid file location')
+            path = local_path(QUrl.fromEncoded(line, QUrl.ParsingMode.StrictMode))
+            if path is None:
+                raise ValueError('Clipboard must contain local files')
+            paths.append(path)
+        return list(dict.fromkeys(paths))
+
+    uris = decode([line for line in bytes(uri_data).splitlines()
+                   if line and not line.startswith(b'#')])
+    lines = bytes(gnome).splitlines()
+    if not lines:
+        return uris, False
+    if lines[0] not in (b'copy', b'cut') or len(lines) < 2:
+        raise ValueError('Clipboard file list is invalid')
+    advertised = decode(lines[1:])
+    if lines[0] == b'cut' and uris and set(uris) != set(advertised):
+        raise ValueError('Clipboard file lists disagree; cut the files again')
+    return (advertised if lines[0] == b'cut' else uris or advertised), lines[0] == b'cut'
 
 
 class FolderFilter(QSortFilterProxyModel):
@@ -84,7 +233,7 @@ class FolderFilter(QSortFilterProxyModel):
             return self.query in source.fileName(source.index(row, 0, parent)).casefold()
         return True
 
-    def sort(self, column, order=Qt.AscendingOrder):
+    def sort(self, column, order=Qt.SortOrder.AscendingOrder):
         self.sourceModel().sort(column, order)
 
     def set_query(self, folder, query):
@@ -104,7 +253,7 @@ class FolderView(QTreeView):
         self.drag_scroll.timeout.connect(self.scroll_drag)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
-        self.setDragDropMode(QTreeView.DragDrop)
+        self.setDragDropMode(QTreeView.DragDropMode.DragDrop)
 
     def startDrag(self, _actions):
         paths = self.owner.selected()
@@ -115,12 +264,12 @@ class FolderView(QTreeView):
         drag = QDrag(self)
         drag.setMimeData(mime)
         index = self.currentIndex().sibling(self.currentIndex().row(), 0)
-        icon = index.data(Qt.DecorationRole)
+        icon = index.data(Qt.ItemDataRole.DecorationRole)
         if isinstance(icon, QIcon):
             drag.setPixmap(icon.pixmap(32, 32))
         # Transfer owns the move. A successful drop must never delete the
         # source from the view before the destination finishes copying it.
-        drag.exec_(Qt.CopyAction | Qt.MoveAction, Qt.CopyAction)
+        drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction, Qt.DropAction.CopyAction)
 
     def drop_details(self, event):
         paths = local_paths(event.mimeData().urls())
@@ -129,30 +278,30 @@ class FolderView(QTreeView):
             return None
         if monitor is not None and monitor.files_active_request is not None:
             return None
-        index = self.indexAt(event.pos())
+        index = self.indexAt(event.position().toPoint())
         source = self.owner.proxy.mapToSource(index)
         folder = self.owner.folder
         if source.isValid() and self.owner.model.isDir(source):
             folder = Path(self.owner.model.filePath(source))
         internal = isinstance(event.source(), FolderView)
-        action = Qt.MoveAction if internal and event.keyboardModifiers() & Qt.ShiftModifier else Qt.CopyAction
+        action = Qt.DropAction.MoveAction if internal and event.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier else Qt.DropAction.CopyAction
         if not event.possibleActions() & action:
             return None
         if internal and folder == self.owner.folder and all(path.parent == folder for path in paths):
-            if action == Qt.MoveAction or not event.keyboardModifiers() & Qt.ControlModifier:
+            if action == Qt.DropAction.MoveAction or not event.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier:
                 return None
         return paths, folder, action, index if folder != self.owner.folder else QModelIndex()
 
     def dragEnterEvent(self, event):
-        if event.possibleActions() & Qt.CopyAction and 1 <= len(local_paths(event.mimeData().urls())) <= MAX_SOURCES:
-            event.setDropAction(Qt.CopyAction)
+        if event.possibleActions() & Qt.DropAction.CopyAction and 1 <= len(local_paths(event.mimeData().urls())) <= MAX_SOURCES:
+            event.setDropAction(Qt.DropAction.CopyAction)
             event.accept()
         else:
             event.ignore()
 
     def dragMoveEvent(self, event):
         details = self.drop_details(event)
-        y = event.pos().y()
+        y = event.position().y()
         margin = self.autoScrollMargin()
         direction = -1 if y < margin else 1 if y >= self.viewport().height() - margin else 0
         bar = self.verticalScrollBar()
@@ -199,7 +348,7 @@ class FolderView(QTreeView):
             event.ignore()
             return
         paths, folder, action, _ = details
-        self.owner.transfer_paths(paths, folder, action == Qt.MoveAction)
+        self.owner.transfer_paths(paths, folder, action == Qt.DropAction.MoveAction)
         event.setDropAction(action)
         event.accept()
 
@@ -210,62 +359,6 @@ class FolderView(QTreeView):
             painter.setPen(self.palette().highlight().color())
             painter.drawRect(self.drop_rect.adjusted(0, 0, -1, -1))
             painter.end()
-
-
-class TitleBar(QFrame):
-    def __init__(self, window, navigation):
-        super().__init__()
-        self.owner = window
-        self.setObjectName('titlebar')
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(2, 0, 0, 0)
-        layout.setSpacing(4)
-        layout.addLayout(navigation, 1)
-        layout.addSpacing(18)
-        self.controls = {}
-        self.control_ink = '#ffffff'
-        for glyph, action in (('minimize', window.showMinimized),
-                              ('maximize', self.toggle_maximized),
-                              ('close', window.close)):
-            button = window.button('', action)
-            button.setObjectName('windowControl')
-            button.setFixedSize(32, 28)
-            self.controls[glyph] = button
-            layout.addWidget(button)
-        window.installEventFilter(self)
-
-    def eventFilter(self, watched, event):
-        if watched is self.owner and event.type() == QEvent.WindowStateChange:
-            self.update_controls(self.control_ink)
-        return super().eventFilter(watched, event)
-
-    def update_controls(self, ink):
-        self.control_ink = ink
-        for name, button in self.controls.items():
-            glyph = 'restore' if name == 'maximize' and self.owner.isMaximized() else name
-            pixmap = QPixmap()
-            pixmap.loadFromData(glyph_svg(glyph, ink), 'SVG')
-            button.setIcon(QIcon(pixmap))
-            button.setAccessibleName(glyph.capitalize())
-            button.setToolTip(glyph.capitalize())
-
-    def toggle_maximized(self):
-        if self.owner.isMaximized():
-            self.owner.showNormal()
-        else:
-            self.owner.showMaximized()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton and self.owner.windowHandle().startSystemMove():
-            event.accept()
-        else:
-            super().mousePressEvent(event)
-
-    def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.toggle_maximized()
-        else:
-            super().mouseDoubleClickEvent(event)
 
 
 class Files(QMainWindow):
@@ -280,15 +373,17 @@ class Files(QMainWindow):
             QIcon.setFallbackThemeName('Adwaita')
         if not QIcon.themeName():
             QIcon.setThemeName('Adwaita')
-        self.setWindowFlag(Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.resize(800, 565)
         self.history = []
         self.position = -1
         self.job = None
+        self.storage_dialog = None
+        self.close_when_idle = False
         self.model = FolderModel(self)
         self.model.setReadOnly(True)
-        self.model.setFilter(QDir.AllEntries | QDir.NoDotAndDotDot | QDir.AllDirs)
+        self.model.setFilter(QDir.Filter.AllEntries | QDir.Filter.NoDotAndDotDot | QDir.Filter.AllDirs)
         self.proxy = FolderFilter(self)
         self.proxy.setSourceModel(self.model)
         self.view = FolderView(self)
@@ -299,21 +394,29 @@ class Files(QMainWindow):
         self.view.setRootIsDecorated(False)
         self.view.setItemsExpandable(False)
         self.view.setUniformRowHeights(True)
-        self.view.setSelectionMode(QTreeView.ExtendedSelection)
+        self.view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         self.view.setSortingEnabled(True)
-        self.view.sortByColumn(0, Qt.AscendingOrder)
-        self.view.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.view.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+        self.view.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.view.header().setStretchLastSection(False)
         for column, width in ((1, 84), (2, 112), (3, 145)):
             self.view.setColumnWidth(column, width)
         self.view.doubleClicked.connect(self.open_index)
-        self.view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.view.customContextMenuRequested.connect(self.context_menu)
         self.location = QLineEdit()
         self.location.setAccessibleName('Folder location')
         self.location.returnPressed.connect(self.submit_location)
         self.location.installEventFilter(self)
         self.address = QStackedWidget()
+        # Ancestor buttons must not set a minimum width for the whole window.
+        from PyQt6.QtWidgets import QSizePolicy
+        self.address.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.address.setMinimumWidth(104)
+        self.breadcrumb_timer = QTimer(self)
+        self.breadcrumb_timer.setSingleShot(True)
+        self.breadcrumb_timer.timeout.connect(self.update_breadcrumbs)
+        self.address.installEventFilter(self)
         self.breadcrumbs = QWidget()
         self.breadcrumbs.setObjectName('breadcrumbs')
         self.crumb_layout = QHBoxLayout(self.breadcrumbs)
@@ -344,9 +447,10 @@ class Files(QMainWindow):
         up.setToolTip('Parent folder')
         top = QHBoxLayout()
         top.setSpacing(4)
+        self.identity_badge = AppIdentityBadge(self)
+        top.addWidget(self.identity_badge)
         for widget in (self.back, self.forward, up):
             widget.setObjectName('navigation')
-            widget.setFixedWidth(28)
             top.addWidget(widget)
         top.addWidget(self.address, 1)
         edit_location = self.button('Path', self.edit_location)
@@ -453,12 +557,28 @@ class Files(QMainWindow):
             action.setIconVisibleInMenu(True)
             action.setProperty('symbolicIcon', icon)
             action.setShortcut(QKeySequence(shortcut))
-            action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+            action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             action.triggered.connect(callback)
             self.view.addAction(action)
             self.actions.append(action)
+        self.archive_actions = []
+        for label, icon, callback in (
+            ('Preview Archive', 'package-x-generic', self.preview_selection),
+            ('Extract Here', 'folder-download', self.extract_selection),
+            ('Compress…', 'package-x-generic', self.compress_selection),
+        ):
+            action = QAction(QIcon.fromTheme(icon + '-symbolic', QIcon.fromTheme(icon)), label, self.view)
+            action.setIconVisibleInMenu(True)
+            action.setProperty('symbolicIcon', icon)
+            action.triggered.connect(callback)
+            self.archive_actions.append(action)
         menu = QMenu(self)
         menu.addActions(self.actions)
+        menu.addSeparator()
+        menu.addActions(self.archive_actions)
+        menu.addSeparator()
+        menu.addAction(self.storage_action('Analyze Storage…', self.analyze_current_folder))
+        menu.aboutToShow.connect(self.archive_selection_changed)
         menu_icon = QIcon.fromTheme('open-menu-symbolic', QIcon.fromTheme('open-menu'))
         actions_button = QPushButton(menu_icon, '⋯' if menu_icon.isNull() else '')
         actions_button.setObjectName('navigation')
@@ -472,14 +592,8 @@ class Files(QMainWindow):
             action.setShortcut(QKeySequence(shortcut))
             action.triggered.connect(callback)
             self.addAction(action)
-        self.settings = Path(os.environ.get('ORBIT_SETTINGS_FILE') or
-                             Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'abstract/settings.json')
-        self.last_appearance = None
-        self.watcher = QFileSystemWatcher(self)
-        self.watcher.fileChanged.connect(self.apply_theme)
-        self.watcher.directoryChanged.connect(self.apply_theme)
-        if self.settings.parent.is_dir():
-            self.watcher.addPath(str(self.settings.parent))
+        self.theme_watch = ThemeWatch(self)
+        self.theme_watch.changed.connect(self.apply_theme)
         self.apply_theme()
         if not self.navigate(initial):
             self.navigate(Path.home())
@@ -518,7 +632,7 @@ class Files(QMainWindow):
                 for path in self.search_selection:
                     index = self.proxy.mapFromSource(self.model.index(str(path)))
                     if index.isValid():
-                        selection.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                        selection.select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
                 self.search_selection = []
         finally:
             self.filtering = False
@@ -544,12 +658,44 @@ class Files(QMainWindow):
         paths = [self.folder]
         while paths[-1] != base:
             paths.append(paths[-1].parent)
-        visible = list(reversed(paths[:4]))
-        if len(paths) > len(visible):
-            more = QPushButton('…')
+        metrics = self.breadcrumbs.fontMetrics()
+        current_font = self.breadcrumbs.font()
+        current_font.setWeight(current_font.Weight.DemiBold)
+        current_metrics = QFontMetrics(current_font)
+        budget = max(40, self.address.width() - 8)
+        separator_width = metrics.horizontalAdvance('›') + 6
+        overflow_icon_size = max(16, min(24, metrics.height()))
+        overflow_button_width = overflow_icon_size + 18
+        overflow_width = overflow_button_width + separator_width
+
+        def label_width(path):
+            label = 'Home' if path == home else path.name or '/'
+            font_metrics = current_metrics if path == self.folder else metrics
+            return font_metrics.horizontalAdvance(label) + 14
+
+        # Keep the current folder before making room for nearby ancestors.
+        # Anything that doesn't fit remains reachable through the overflow menu.
+        reserve = overflow_width if len(paths) > 1 else 0
+        current_width = min(label_width(paths[0]), max(28, budget - reserve))
+        used = current_width
+        count = 1
+        for path in paths[1:4]:
+            required = used + separator_width + label_width(path)
+            reserve = overflow_width if count + 1 < len(paths) else 0
+            if required + reserve > budget:
+                break
+            used = required
+            count += 1
+        visible = list(reversed(paths[:count]))
+        if len(paths) > count:
+            more = QPushButton(phosphor_icon('regular', 'dots-three', self.theme_watch.tokens['text']), '')
             more.setObjectName('crumb')
+            more.setAccessibleName('Show parent folders')
+            more.setToolTip('Show parent folders')
+            more.setIconSize(QSize(overflow_icon_size, overflow_icon_size))
+            more.setFixedWidth(overflow_button_width)
             menu = QMenu(more)
-            for path in reversed(paths[4:]):
+            for path in reversed(paths[count:]):
                 action = menu.addAction('Home' if path == home else path.name or '/')
                 action.triggered.connect(lambda checked=False, target=path: self.navigate(target))
             more.setMenu(menu)
@@ -560,51 +706,58 @@ class Files(QMainWindow):
                 separator.setObjectName('crumbSeparator')
                 self.crumb_layout.addWidget(separator)
             title = 'Home' if path == home else path.name or '/'
-            if len(title) > 22:
-                title = title[:20] + '…'
-            button = self.button(title, lambda checked=False, target=path: self.navigate(target))
+            is_current = path == self.folder
+            width = current_width if is_current else label_width(path)
+            display = title
+            if is_current and label_width(path) > width:
+                display = current_metrics.elidedText(title, Qt.TextElideMode.ElideRight, max(12, width - 14))
+            button = self.button(display.replace('&', '&&'), lambda checked=False, target=path: self.navigate(target))
+            button.setAccessibleName(title)
+            button.setFixedWidth(width)
             button.setObjectName('currentCrumb' if path == self.folder else 'crumb')
             button.setToolTip(str(path))
             self.crumb_layout.addWidget(button)
         self.crumb_layout.addStretch()
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.KeyPress and watched is getattr(self, 'search', None):
-            if event.key() == Qt.Key_Escape:
+        if watched is getattr(self, 'address', None) and event.type() == QEvent.Type.Resize and hasattr(self, 'folder'):
+            self.breadcrumb_timer.start(0)
+        if event.type() == QEvent.Type.KeyPress and watched is getattr(self, 'search', None):
+            if event.key() == Qt.Key.Key_Escape:
                 self.search.clear()
                 self.search.hide()
                 self.view.setFocus()
                 return True
-            if event.key() == Qt.Key_Down:
+            if event.key() == Qt.Key.Key_Down:
                 self.focus_results()
                 return True
-        if watched is self.location and event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
+        if watched is self.location and event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
             self.location.setText(str(self.folder))
             self.address.setCurrentWidget(self.breadcrumbs)
             self.view.setFocus()
             return True
-        if watched is self.centralWidget() and event.type() in (QEvent.MouseMove, QEvent.MouseButtonPress):
-            edges = Qt.Edges()
-            point = event.pos()
+        if watched is self.centralWidget() and event.type() in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress):
+            edges = Qt.Edge(0)
+            point = event.position().toPoint()
             if not self.isMaximized():
                 if point.x() < 6:
-                    edges |= Qt.LeftEdge
+                    edges |= Qt.Edge.LeftEdge
                 elif point.x() >= watched.width() - 6:
-                    edges |= Qt.RightEdge
+                    edges |= Qt.Edge.RightEdge
                 if point.y() < 6:
-                    edges |= Qt.TopEdge
+                    edges |= Qt.Edge.TopEdge
                 elif point.y() >= watched.height() - 6:
-                    edges |= Qt.BottomEdge
-            if event.type() == QEvent.MouseButtonPress and edges and event.button() == Qt.LeftButton:
+                    edges |= Qt.Edge.BottomEdge
+            if event.type() == QEvent.Type.MouseButtonPress and edges and event.button() == Qt.MouseButton.LeftButton:
                 return self.windowHandle().startSystemResize(edges)
-            if event.type() == QEvent.MouseMove:
-                horizontal = bool(edges & (Qt.LeftEdge | Qt.RightEdge))
-                vertical = bool(edges & (Qt.TopEdge | Qt.BottomEdge))
+            if event.type() == QEvent.Type.MouseMove:
+                horizontal = bool(edges & (Qt.Edge.LeftEdge | Qt.Edge.RightEdge))
+                vertical = bool(edges & (Qt.Edge.TopEdge | Qt.Edge.BottomEdge))
                 if horizontal and vertical:
-                    diagonal = bool(edges & Qt.LeftEdge) == bool(edges & Qt.TopEdge)
-                    watched.setCursor(Qt.SizeFDiagCursor if diagonal else Qt.SizeBDiagCursor)
+                    diagonal = bool(edges & Qt.Edge.LeftEdge) == bool(edges & Qt.Edge.TopEdge)
+                    watched.setCursor(Qt.CursorShape.SizeFDiagCursor if diagonal else Qt.CursorShape.SizeBDiagCursor)
                 elif horizontal or vertical:
-                    watched.setCursor(Qt.SizeHorCursor if horizontal else Qt.SizeVerCursor)
+                    watched.setCursor(Qt.CursorShape.SizeHorCursor if horizontal else Qt.CursorShape.SizeVerCursor)
                 else:
                     watched.unsetCursor()
         return super().eventFilter(watched, event)
@@ -668,6 +821,8 @@ class Files(QMainWindow):
             self.statusBar().showMessage(self.device_error, 8000)
         if self.device_menu.isVisible() and ('devices' in result or result.get('error')):
             self.render_devices()
+        if own_request and (result.get('operationDone') or result.get('error')):
+            self.finish_deferred_close(result.get('error'))
 
     def render_devices(self):
         submenus = [action.menu() for action in self.device_menu.actions() if action.menu()]
@@ -721,65 +876,39 @@ class Files(QMainWindow):
         button.clicked.connect(callback)
         return button
 
-    @staticmethod
-    def symbolic_icon(name):
-        base = Path('/usr/share/icons/Adwaita/symbolic')
-        for category in ('actions', 'places', 'status', 'devices'):
-            asset = base / category / f'{name}-symbolic.svg'
-            if asset.is_file():
-                return QIcon(str(asset))
-        return QIcon.fromTheme(name + '-symbolic', QIcon.fromTheme(name))
-
     def apply_theme(self):
-        # Preferences saves by replacing the file. Watch its directory as well.
-        if self.settings.is_file() and str(self.settings) not in self.watcher.files():
-            self.watcher.addPath(str(self.settings))
-        preferences = Preferences(self.settings)
-        palette = colors(preferences)
-        appearance = (palette, preferences.values['density'], preferences.values['corners'],
-                      preferences.values['textScale'])
-        if appearance == self.last_appearance:
-            return
-        self.last_appearance = appearance
+        palette = self.theme_watch.tokens
+        preferences = self.theme_watch.preferences
         app = QApplication.instance()
-        qt_palette = QPalette()
-        for role, key in ((QPalette.Window, 'background'), (QPalette.Base, 'surface'),
-                          (QPalette.AlternateBase, 'raised'), (QPalette.Button, 'raised'),
-                          (QPalette.WindowText, 'text'), (QPalette.Text, 'text'),
-                          (QPalette.ButtonText, 'text'), (QPalette.Highlight, 'accent'),
-                          (QPalette.HighlightedText, 'accent_text'), (QPalette.Link, 'accent')):
-            qt_palette.setColor(role, QColor(palette[key]))
-        app.setPalette(qt_palette)
-        focus = palette['text'] if preferences.values['highContrast'] else palette['accent']
-        ink = QColor(focus)
-        for control in [*self.actions, *self.findChildren(QPushButton)]:
+        app.setPalette(widget_palette(palette))
+        ink = palette['text']
+        self.identity_badge.theme('Mellipi Files', palette)
+        for control in [*self.findChildren(QAction), *self.findChildren(QPushButton)]:
             name = control.property('symbolicIcon')
             if not name:
                 continue
-            icon = self.symbolic_icon(name)
-            if icon.isNull() and control.objectName() == 'place':
-                icon = self.symbolic_icon('folder')
+            if (control.objectName() == 'place' or name == 'drive-harddisk') and name in PLACES:
+                glyph, tint = PLACES[name]
+                icon = phosphor_icon('duotone', glyph, ink, tint)
+            else:
+                icon = phosphor_icon('regular', ACTIONS.get(name, ''), ink)
+            if icon.isNull():
+                icon = original_icon(name, ink)
             if icon.isNull():
                 continue
-            pixmap = icon.pixmap(32, 32)
-            if pixmap.isNull():
-                continue
-            painter = QPainter(pixmap)
-            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-            painter.fillRect(pixmap.rect(), ink)
-            painter.end()
-            control.setIcon(QIcon(pixmap))
+            control.setIcon(icon)
             if isinstance(control, QPushButton) and control.objectName() == 'navigation':
                 control.setText('')
-        self.titlebar.update_controls(focus)
-        self.model.set_folder_color(palette['accent'])
+        apply_titlebar(self.titlebar, palette)
+        self.model.file_inks = palette['text'], palette['text']
         self.view.viewport().update()
         density = preferences.values['density']
-        self.titlebar.setMinimumHeight(HEADER_HEIGHTS[density])
         for button in self.titlebar.findChildren(QPushButton):
             button.setIconSize(QSize(16, 16))
-            button.setMinimumHeight(28)
-        padding = {'comfortable': 7, 'compact': 5, 'extra': 3}[density]
+            button.setMinimumHeight(30)
+            if button.objectName() == 'navigation':
+                button.setFixedWidth(32 if button.menu() is None else 36)
+        padding = palette['padding']
         sidebar_width = {'comfortable': 148, 'compact': 132, 'extra': 116}[density]
         text_scale = preferences.values['textScale']
         self.sidebar.setContentsMargins(padding, padding, padding, padding)
@@ -788,7 +917,8 @@ class Files(QMainWindow):
         radius = {'square': 0, 'soft': 4, 'rounded': 8}[preferences.values['corners']]
         self.setStyleSheet('''
             QMainWindow, QStatusBar { background: %(background)s; color: %(text)s; }
-            QTreeView, QLineEdit, QMenu { background: %(surface)s; color: %(text)s; }
+            QTreeView, QMenu { background: %(surface)s; color: %(text)s; }
+            QLineEdit { background: %(surface)s; }
             QPushButton, QHeaderView::section { background: %(surface)s; color: %(text)s; }
             QFrame#divider { background: %(separator)s; }
             QWidget#places { background: %(raised)s; border-radius: %(radius)spx; }
@@ -799,10 +929,10 @@ class Files(QMainWindow):
             QWidget#breadcrumbs { background: %(surface)s;
                 border-radius: %(radius)spx; }
             QPushButton#navigation, QPushButton#crumb, QPushButton#currentCrumb {
-                border: 0; padding: 3px 5px; background: transparent; }
+                border: 0; border-bottom: 2px solid transparent; padding: 3px 5px; background: transparent; }
             QPushButton#crumb { color: %(muted)s; }
             QPushButton#currentCrumb { font-weight: 600; }
-            QPushButton#navigation:hover, QPushButton#crumb:hover { background: %(hover)s; }
+            QPushButton#navigation:hover:enabled, QPushButton#crumb:hover, QPushButton#currentCrumb:hover { background: %(hover)s; }
             QPushButton#navigation:focus, QPushButton#crumb:focus, QPushButton#currentCrumb:focus, QPushButton#windowControl:focus { border-bottom: 2px solid %(focus)s; }
             QPushButton#windowControl { background: transparent; border: 0; padding: 2px; }
             QPushButton#windowControl:hover { background: %(hover)s; }
@@ -810,21 +940,27 @@ class Files(QMainWindow):
                 border-left: 2px solid transparent; background: transparent; color: %(muted)s; }
             QPushButton#place:hover { background: %(hover)s; color: %(text)s; }
             QPushButton#place:checked { background: %(selected_surface)s; color: %(text)s;
-                border-left: 2px solid %(accent)s; }
-            QPushButton#place:focus { border-bottom: 1px solid %(accent)s; }
-            QTreeView { border: 0; border-radius: %(radius)spx; }
+                border-left: 2px solid %(focus)s; }
+            QPushButton#place:focus { border-bottom: 1px solid %(focus)s; }
+            QTreeView { border: %(outline_width)dpx solid %(control_border)s; border-radius: %(radius)spx; }
             QHeaderView::section { padding: 5px; border: 0; border-bottom: 1px solid %(separator)s; }
             QPushButton { border: 0; border-radius: %(radius)spx; padding: %(padding)spx; }
-            QLineEdit { border: 1px solid %(border)s; border-radius: %(radius)spx; padding: %(padding)spx; }
+            QLineEdit { border: 1px solid %(control_border)s; border-radius: %(radius)spx; padding: %(padding)spx; }
             QPushButton:hover { background: %(hover)s; }
             QPushButton:disabled { color: %(muted)s; }
-            QPushButton:focus, QLineEdit:focus, QTreeView:focus { border: 1px solid %(accent)s; }
+            QPushButton:focus, QLineEdit:focus, QTreeView:focus { border: 1px solid %(focus)s; }
             QTreeView::item { padding: %(padding)spx 4px; }
-            QTreeView::item:selected, QMenu::item:selected { background: %(accent)s; color: %(accent_text)s; }
-        ''' % dict(palette, padding=padding, radius=radius, focus=focus))
+            QTreeView::item:selected, QMenu::item:selected { background: %(selected_surface)s; color: %(text)s; }
+        ''' % dict(palette, padding=padding, radius=radius))
         font = app.font()
-        font.setPixelSize(max(8, round((11 if density == 'extra' else 12) * preferences.values['textScale'])))
+        font.setPixelSize(palette['font_size'])
         app.setFont(font)
+        self.view.setIconSize(QSize(20, 20))
+        for button in self.places_panel.findChildren(QPushButton):
+            button.setIconSize(QSize(20, 20))
+            button.setMinimumHeight(max(28, palette['font_size'] + 8))
+        if hasattr(self, 'folder'):
+            self.breadcrumb_timer.start(0)
         self.places_panel.setFixedWidth(max(round(sidebar_width * max(1, text_scale)), self.sidebar.minimumSize().width()))
 
     def navigate(self, folder, record=True):
@@ -875,6 +1011,28 @@ class Files(QMainWindow):
         return [Path(self.model.filePath(self.proxy.mapToSource(index)))
                 for index in self.view.selectionModel().selectedRows()]
 
+    def storage_action(self, label, callback, parent=None):
+        action = QAction(label, parent or self)
+        if hasattr(self, 'theme_watch'):
+            glyph, tint = PLACES['drive-harddisk']
+            action.setIcon(phosphor_icon('duotone', glyph, self.theme_watch.tokens['text'], tint))
+        action.setProperty('symbolicIcon', 'drive-harddisk')
+        action.setIconVisibleInMenu(True)
+        action.triggered.connect(callback)
+        return action
+
+    def analyze_current_folder(self):
+        self.show_storage(self.folder)
+
+    def show_storage(self, folder):
+        if self.storage_dialog is not None:
+            self.storage_dialog.raise_()
+            self.storage_dialog.activateWindow()
+            return
+        self.storage_dialog = StorageDialog(self, folder)
+        self.storage_dialog.destroyed.connect(lambda: setattr(self, 'storage_dialog', None))
+        self.storage_dialog.show()
+
     def context_menu(self, point):
         index = self.view.indexAt(point)
         if index.isValid() and not self.view.selectionModel().isRowSelected(index.row(), index.parent()):
@@ -882,15 +1040,87 @@ class Files(QMainWindow):
         menu = QMenu(self)
         if index.isValid():
             menu.addActions(self.actions)
+            self.archive_selection_changed()
+            menu.addSeparator()
+            menu.addActions(self.archive_actions)
+            paths = self.selected()
+            if len(paths) == 1 and not paths[0].is_symlink() and paths[0].is_dir():
+                path = paths[0]
+                menu.addAction(self.storage_action('Analyze Folder Storage…',
+                                                  lambda: self.show_storage(path), menu))
         else:
             for action in self.actions:
                 if action.text() in ('New folder', 'Paste', 'Show or hide hidden files'):
                     menu.addAction(action)
-        menu.exec_(self.view.viewport().mapToGlobal(point))
+            menu.addAction(self.storage_action('Analyze Storage…', self.analyze_current_folder, menu))
+        menu.exec(self.view.viewport().mapToGlobal(point))
         menu.deleteLater()
 
+    def archive_selection_changed(self):
+        paths = self.selected()
+        archive = len(paths) == 1 and paths[0].is_file() and not paths[0].is_symlink() and bool(archive_suffix(paths[0]))
+        for action in self.archive_actions[:2]:
+            action.setVisible(archive)
+        self.archive_actions[-1].setEnabled(bool(paths))
+
+    def preview_selection(self):
+        paths = self.selected()
+        if len(paths) != 1:
+            return
+        path = paths[0]
+        self.run_job(lambda: preview_archive(path), lambda preview: self.show_archive_preview(path.name, preview))
+
+    def show_archive_preview(self, title, preview):
+        rows, partial = preview
+        dialog = style_dialog(QDialog(self), self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.setWindowTitle('Archive contents')
+        dialog.resize(560, 390)
+        layout = QVBoxLayout(dialog)
+        title_label = QLabel(title)
+        title_label.setTextFormat(Qt.TextFormat.PlainText)
+        title_label.setWordWrap(True)
+        layout.addWidget(title_label)
+        table = QTreeWidget()
+        table.setAccessibleName('Archive entries')
+        table.setHeaderLabels(['Path', 'Type', 'Size'])
+        table.setRootIsDecorated(False)
+        table.setUniformRowHeights(True)
+        table.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in (1, 2):
+            table.header().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        locale = QLocale()
+        for path, folder, size in rows:
+            size_text = '' if folder else locale.formattedDataSize(size) if size < 2**63 else 'Too large'
+            table.addTopLevelItem(QTreeWidgetItem([path, 'Folder' if folder else 'File', size_text]))
+        layout.addWidget(table)
+        summary = ('The archive is empty.' if not rows else f'{len(rows)} entries shown.')
+        if partial:
+            summary = f'{len(rows)} entries shown. The archive exceeds the preview limit.'
+        label = QLabel(summary)
+        label.setObjectName('muted')
+        layout.addWidget(label)
+        close = QPushButton('Close')
+        close.clicked.connect(dialog.reject)
+        layout.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
+        dialog.show()
+
+    def extract_selection(self):
+        paths = self.selected()
+        if len(paths) == 1:
+            self.run_job(lambda: extract_here(paths[0], rename_no_replace), self.reveal_path)
+
+    def compress_selection(self):
+        paths = self.selected()
+        if not paths:
+            return
+        name = self.ask_name('Compress to ZIP', (paths[0].name if len(paths) == 1 else 'Archive') + '.zip')
+        if name:
+            target = self.folder / (name if name.lower().endswith('.zip') else name + '.zip')
+            self.run_job(lambda: compress(paths, target, rename_no_replace), self.reveal_path)
+
     def toggle_hidden(self):
-        self.model.setFilter(self.model.filter() ^ QDir.Hidden)
+        self.model.setFilter(self.model.filter() ^ QDir.Filter.Hidden)
 
     def run_job(self, operation, completed=None):
         if self.job is not None:
@@ -911,13 +1141,29 @@ class Files(QMainWindow):
         job.deleteLater()
         if not job.error and completed:
             completed(job.value)
+        self.finish_deferred_close(job.error)
+
+    def finish_deferred_close(self, error=None):
+        if not self.close_when_idle:
+            return
+        if error:
+            self.close_when_idle = False
+            return
+        QTimer.singleShot(0, self.close)
 
     def closeEvent(self, event):
         monitor = self.device_monitor
-        if self.job is not None or (monitor is not None and monitor.files_active_request == id(self)):
+        if self.storage_dialog is not None and self.storage_dialog.job is not None:
+            self.close_when_idle = True
+            self.storage_dialog.stop_or_close()
             event.ignore()
-            self.statusBar().showMessage('Wait for the file operation to finish', 5000)
+            self.statusBar().showMessage('Stopping the storage scan…', 5000)
+        elif self.job is not None or (monitor is not None and monitor.files_active_request == id(self)):
+            self.close_when_idle = True
+            event.ignore()
+            self.statusBar().showMessage('Files will close when the operation finishes.')
         else:
+            self.close_when_idle = False
             super().closeEvent(event)
 
     @staticmethod
@@ -953,7 +1199,7 @@ class Files(QMainWindow):
                 label = f'{base} ({duplicate})'
                 duplicate += 1
             labels.append(label)
-        choice, accepted = QInputDialog.getItem(self, 'Trash', 'Restore an item', labels, 0, False)
+        choice, accepted = ThemedInput.getItem(self, 'Trash', 'Restore an item', labels, 0, False)
         if accepted:
             _, uri, original = items[labels.index(choice)]
             source = Gio.File.new_for_uri(uri)
@@ -980,7 +1226,7 @@ class Files(QMainWindow):
             self.model.directoryLoaded.connect(select)
 
     def ask_name(self, title, initial=''):
-        name, accepted = QInputDialog.getText(self, title, 'Name', text=initial)
+        name, accepted = ThemedInput.getText(self, title, 'Name', text=initial)
         if accepted:
             try:
                 return safe_name(name)
@@ -1006,7 +1252,7 @@ class Files(QMainWindow):
 
     def trash(self):
         selected = self.selected()
-        if not selected or QMessageBox.question(self, 'Move to Trash', f'Move {len(selected)} item(s) to Trash?') != QMessageBox.Yes:
+        if not selected or not themed_prompt(self, 'Move to Trash', f'Move {len(selected)} item(s) to Trash?', 'Move to Trash', 'Cancel'):
             return
 
         def operation():
@@ -1029,12 +1275,12 @@ class Files(QMainWindow):
         mime = QApplication.clipboard().mimeData()
         if mime is None:
             return
-        urls = mime.urls()
-        payload = bytes(mime.data('x-special/gnome-copied-files')).splitlines()
-        cut = bool(payload and payload[0] == b'cut')
-        if not urls and payload:
-            urls = [QUrl.fromEncoded(line) for line in payload[1:]]
-        self.transfer_paths(local_paths(urls), self.folder, cut)
+        try:
+            paths, cut = clipboard_transfer(mime)
+        except ValueError as error:
+            self.statusBar().showMessage(str(error), 5000)
+            return
+        self.transfer_paths(paths, self.folder, cut)
 
     def transfer_paths(self, paths, folder, move=False):
         if paths:
@@ -1046,7 +1292,7 @@ def main():
     app.setStyle('Fusion')
     app.setApplicationName('Mellipi Files')
     app.setDesktopFileName('mellipi-files')
-    app.setWindowIcon(QIcon.fromTheme('system-file-manager'))
+    app.setWindowIcon(QIcon.fromTheme('mellipi-files', QIcon.fromTheme('system-file-manager')))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--select', type=Path)
     parser.add_argument('locations', nargs='*')
@@ -1056,7 +1302,7 @@ def main():
         window = Files(path.parent)
         window.reveal_path(path)
         window.show()
-        return app.exec_()
+        return app.exec()
     requested = args.locations or [str(Path.home())]
     windows = []
     for argument in requested:
@@ -1073,7 +1319,7 @@ def main():
         window = Files(path)
         window.show()
         windows.append(window)
-    return app.exec_() if windows else 1
+    return app.exec() if windows else 1
 
 
 if __name__ == '__main__':

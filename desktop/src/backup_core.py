@@ -94,6 +94,9 @@ def create_backup(parent,environment,personal=(),cancelled=lambda:False):
                 out.flush();os.fsync(out.fileno())
             mode=0o600|(metadata.st_mode&stat.S_IXUSR if kind=='personal' else 0)
             total+=written;rows.append({'path':name,'kind':kind,'type':'file','bytes':written,'sha256':h.hexdigest(),'mode':mode,'mtime_ns':metadata.st_mtime_ns})
+    def traversal_failed(error):
+        raise error
+
     try:
         for name,source in settings_paths(environment).items():
             if source.exists() or source.is_symlink():add(source,'settings/'+name,'settings')
@@ -101,7 +104,7 @@ def create_backup(parent,environment,personal=(),cancelled=lambda:False):
             prefix=f'personal/{index:04d}/'+source.name
             if source.is_file():add(source,prefix,'personal')
             elif source.is_dir():
-                for current,dirs,files in os.walk(source,followlinks=False):
+                for current,dirs,files in os.walk(source,followlinks=False,onerror=traversal_failed):
                     current=Path(current);relative=current.relative_to(source);add_directory(current,prefix+('/'+str(relative) if relative.parts else ''))
                     for name in dirs:
                         if (Path(current)/name).is_symlink():raise ValueError('Selected folder contains a symlink; choose files explicitly')
@@ -125,7 +128,7 @@ def inspect_backup(directory,cancelled=lambda:False):
         if cancelled():raise InterruptedError('Backup verification cancelled')
         if not isinstance(row,dict):raise ValueError('Invalid backup file record')
         name=row.get('path');kind=row.get('kind');size=row.get('bytes');checksum=row.get('sha256');entry_type=row.get('type','file')
-        if not isinstance(name,str) or not name or '\\' in name or '\x00' in name or Path(name).is_absolute() or any(part in ('..','.') for part in name.split('/')) or '' in name.split('/') or name in seen:raise ValueError('Unsafe or duplicate backup path')
+        if not isinstance(name,str) or not name or '\x00' in name or Path(name).is_absolute() or any(part in ('..','.') for part in name.split('/')) or '' in name.split('/') or name in seen:raise ValueError('Unsafe or duplicate backup path')
         if kind not in ('personal','settings') or not name.startswith(kind+'/') or type(size) is not int or size<0 or entry_type not in ('file','directory') or (data['version']==1 and entry_type!='file'):raise ValueError('Invalid backup metadata')
         if data['version']==2:
             mode=row.get('mode');mtime=row.get('mtime_ns')
@@ -193,9 +196,11 @@ def queue_settings_restore(directory,environment,cancelled=lambda:False):
         desired[row['path'].removeprefix('settings/')]=raw.decode('utf-8')
     for value in desired.values():json.loads(value)
     value={'version':1,'expected':{key:digest(_safe_chain(paths[key])) for key in desired},'desired':desired}
+    payload=json.dumps(value,ensure_ascii=False).encode('utf-8')
+    if len(payload)>MAX_JSON:raise ValueError('Desktop settings restore is too large')
     fd,temporary=tempfile.mkstemp(prefix='.mellipi-settings-request-',dir=data)
     try:
-        with os.fdopen(fd,'w') as target:json.dump(value,target);target.flush();os.fsync(target.fileno())
+        with os.fdopen(fd,'wb') as target:target.write(payload);target.flush();os.fsync(target.fileno())
         os.link(temporary,marker)
     finally:Path(temporary).unlink(missing_ok=True)
     return {'queued':len(desired),'message':'Settings will restore at your next login. Changes made since scheduling are kept.'}
@@ -209,7 +214,7 @@ def consume_settings_restore(environment):
         if info.st_uid!=os.getuid() or info.st_mode&0o077 or info.st_size>MAX_JSON:raise ValueError('Unsafe settings restore request')
         request=json.load(f)
     paths=settings_paths(environment)
-    if request.get('version')!=1 or not isinstance(request.get('desired'),dict) or not isinstance(request.get('expected'),dict) or set(request['desired'])!=set(request['expected']) or not set(request['desired'])<=set(paths):raise ValueError('Invalid settings restore request')
+    if not isinstance(request,dict) or request.get('version')!=1 or not isinstance(request.get('desired'),dict) or not isinstance(request.get('expected'),dict) or set(request['desired'])!=set(request['expected']) or not set(request['desired'])<=set(paths):raise ValueError('Invalid settings restore request')
     for key,value in request['desired'].items():
         if not isinstance(value,str):raise ValueError('Invalid restored settings')
         json.loads(value)

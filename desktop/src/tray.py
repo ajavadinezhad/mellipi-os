@@ -1,6 +1,6 @@
 """Event-driven StatusNotifier host; all application D-Bus work stays off the UI thread."""
 import os,sys,threading,time
-from qt_compat import QObject,Property,Signal,Slot,QQuickImageProvider,QImage,QColor,QIcon,QSize,QPainter,Qt
+from qt_compat import QObject,Property,Signal,Slot,QQuickImageProvider,QImage,QColor,QIcon,QSize,QPainter,Qt,QT5,LAYER_SHELL
 WATCH='org.kde.StatusNotifierWatcher'; PATH='/StatusNotifierWatcher'; ITEM='org.kde.StatusNotifierItem'
 XML='''<node><interface name="org.kde.StatusNotifierWatcher">
 <method name="RegisterStatusNotifierItem"><arg type="s" direction="in"/></method>
@@ -30,23 +30,23 @@ def menu_rows(node,parents=(),depth=0):
     return rows[:64]
 
 class TrayImages(QQuickImageProvider):
-    def __init__(self,owner):super().__init__(QQuickImageProvider.Image);self.owner=owner
+    def __init__(self,owner):super().__init__(QQuickImageProvider.Image if QT5 else QQuickImageProvider.ImageType.Image);self.owner=owner
     def requestImage(self,ident,*sizes):
         from qt_compat import QT5
         image=self.owner.images.get(ident.split('?')[0],QImage())
-        if image.isNull():image=QImage(20,20,QImage.Format_ARGB32);image.fill(QColor('#86b9a2'))
+        if image.isNull():image=QImage(20,20,QImage.Format.Format_ARGB32);image.fill(QColor('#86b9a2'))
         # Recolor symbolic/monochrome artwork only; preserve multicolor application logos.
         sample=image.scaled(24,24)
         neutral=[sample.pixelColor(x,y) for x in range(sample.width()) for y in range(sample.height()) if sample.pixelColor(x,y).alpha()>40 and max(sample.pixelColor(x,y).red(),sample.pixelColor(x,y).green(),sample.pixelColor(x,y).blue())-min(sample.pixelColor(x,y).red(),sample.pixelColor(x,y).green(),sample.pixelColor(x,y).blue())<24]
         # Keep two-tone logos intact; tint neutral symbolic strokes, preserving colored badges.
         if neutral and max(c.red() for c in neutral)-min(c.red() for c in neutral)<100:
-            image=image.scaled(32,32,Qt.KeepAspectRatio,Qt.SmoothTransformation);ink=QColor('#24372f' if self.owner.bridge.themeMode=='light' else '#deeee7')
+            image=image.scaled(32,32,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation);ink=QColor('#24372f' if self.owner.bridge.themeMode=='light' else '#deeee7')
             for x in range(image.width()):
                 for y in range(image.height()):
                     c=image.pixelColor(x,y)
                     if max(c.red(),c.green(),c.blue())-min(c.red(),c.green(),c.blue())<24:
                         color=QColor(ink);color.setAlpha(c.alpha());image.setPixelColor(x,y,color)
-        if QT5:return image,image.size()
+        if LAYER_SHELL:return image,image.size()
         sizes[0].setWidth(image.width());sizes[0].setHeight(image.height());return image
 
 class TrayHost(QObject):
@@ -89,7 +89,7 @@ class TrayHost(QObject):
                 w,h,raw=min([p for p in valid if int(p[0])>=32] or valid,key=lambda p:abs(int(p[0])-32));raw=bytes(raw)
                 # SNI pixels are network-order ARGB, QImage RGBA is byte-order independent.
                 rgba=bytearray(len(raw));rgba[0::4]=raw[1::4];rgba[1::4]=raw[2::4];rgba[2::4]=raw[3::4];rgba[3::4]=raw[0::4]
-                image=QImage(bytes(rgba),w,h,w*4,QImage.Format_RGBA8888).copy()
+                image=QImage(bytes(rgba),w,h,w*4,QImage.Format.Format_RGBA8888).copy()
             if image.isNull():
                 icon=QIcon(data.get('icon','')) if data.get('icon','').startswith('/') else QIcon.fromTheme(data.get('icon',''))
                 if icon.isNull():icon=QIcon.fromTheme('application-x-executable')

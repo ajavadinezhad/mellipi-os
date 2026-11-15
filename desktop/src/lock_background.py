@@ -6,7 +6,7 @@ watcher or resident process. Rendering failure must never stop secure locking.
 import ctypes,ctypes.util,hashlib,json,math,os,re,stat,tempfile
 from pathlib import Path
 from project_paths import PROJECT_ROOT as ROOT, SOURCE_ROOT
-VERSION=4
+VERSION=5
 MAX_PIXELS=9_000_000
 MAX_CACHE_FILES=12
 
@@ -23,12 +23,15 @@ def lock_style(values):
                                        darkLevel=values.get('darkLevel','normal'),
                                        accent=defaults['accent']),chosen)
         defaults.update({key:contrast[key] for key in ('background','surface','border','text','muted')})
+    from app_palette import adjust_contrast, luminance
+    endpoint='#000000' if luminance(defaults['surface'])>=.18 else '#ffffff'
+    defaults['focus']=adjust_contrast(defaults['accent'],[defaults['surface']],3,endpoint)
     source=wallpaper_source(values.get('wallpaper','auto'))
     if not source:
         style=values.get('wallpaper','auto');suffix='light' if light else 'black' if values.get('darkLevel')=='black' else 'dark'
         if style=='fold' or style=='auto' and values.get('shellLayout')=='fold':source='wallpaper-spine-'+suffix+'.svg'
         elif style=='orbit' or style=='auto' and values.get('profile')!='economy':source='wallpaper-light.svg' if light else 'wallpaper-black.svg' if values.get('darkLevel')=='black' else 'wallpaper.svg'
-    if values.get('wallpaper')=='solid' and not hc:defaults['background']=values.get('backgroundColor',defaults['background'])
+    if values.get('wallpaper')=='solid':defaults['background']=values.get('backgroundColor',defaults['background'])
     defaults['wallpaper']=source
     return defaults
 
@@ -56,13 +59,21 @@ def _svg_to_png(source,destination,width,height):
     cairo.cairo_destroy.argtypes=[ctypes.c_void_p];cairo.cairo_surface_destroy.argtypes=[ctypes.c_void_p]
     cairo.cairo_surface_write_to_png.argtypes=[ctypes.c_void_p,ctypes.c_char_p];cairo.cairo_surface_write_to_png.restype=ctypes.c_int
     rsvg.rsvg_handle_new_from_file.argtypes=[ctypes.c_char_p,ctypes.c_void_p];rsvg.rsvg_handle_new_from_file.restype=ctypes.c_void_p
+    dimensions=ctypes.POINTER(ctypes.c_double)
+    rsvg.rsvg_handle_get_intrinsic_size_in_pixels.argtypes=[ctypes.c_void_p,dimensions,dimensions];rsvg.rsvg_handle_get_intrinsic_size_in_pixels.restype=ctypes.c_int
     rsvg.rsvg_handle_render_document.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.POINTER(Viewport),ctypes.c_void_p];rsvg.rsvg_handle_render_document.restype=ctypes.c_int
     objects.g_object_unref.argtypes=[ctypes.c_void_p]
     handle=rsvg.rsvg_handle_new_from_file(os.fsencode(source),None)
     if not handle:raise ValueError('Could not load bundled lock wallpaper')
     surface=cairo.cairo_image_surface_create(0,width,height);context=cairo.cairo_create(surface)
     try:
-        if not rsvg.rsvg_handle_render_document(handle,context,ctypes.byref(Viewport(0,0,width,height)),None):raise ValueError('Could not render bundled lock wallpaper')
+        art_width=ctypes.c_double();art_height=ctypes.c_double()
+        viewport=Viewport(0,0,width,height)
+        if rsvg.rsvg_handle_get_intrinsic_size_in_pixels(handle,ctypes.byref(art_width),ctypes.byref(art_height)) and min(art_width.value,art_height.value)>0:
+            scale=max(width/art_width.value,height/art_height.value)
+            cover_width=art_width.value*scale;cover_height=art_height.value*scale
+            viewport=Viewport((width-cover_width)/2,(height-cover_height)/2,cover_width,cover_height)
+        if not rsvg.rsvg_handle_render_document(handle,context,ctypes.byref(viewport),None):raise ValueError('Could not render bundled lock wallpaper')
         if cairo.cairo_surface_write_to_png(surface,os.fsencode(destination)):raise OSError('Could not write lock wallpaper')
     finally:cairo.cairo_destroy(context);cairo.cairo_surface_destroy(surface);objects.g_object_unref(handle)
 

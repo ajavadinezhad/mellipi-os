@@ -18,7 +18,7 @@ impl Default for NativeSystem {
     fn default() -> Self {
         Self {
             output: None,
-            values: json!({"layout":"us","repeatRate":25,"repeatDelay":600,"pointerSpeed":0.,"naturalScroll":false,"tapToClick":false}),
+            values: json!({"layout":"us","repeatRate":25,"repeatDelay":600,"pointerSpeed":0.,"naturalScroll":false,"tapToClick":false,"touchpadScrollSpeed":1.0}),
             configured: vec![],
             overrides: json!({}),
             pending_output: None,
@@ -31,14 +31,17 @@ impl Default for NativeSystem {
 }
 fn keys(value: &Value) -> Result<Vec<String>, String> {
     let keys = value.as_array().ok_or("Expected input field list")?;
-    if keys.len() > 6 {
+    if keys.len() > 7 {
         return Err("Too many input fields".into());
+    }
+    if keys.iter().enumerate().any(|(index, key)| keys[..index].contains(key)) {
+        return Err("Duplicate input field".into());
     }
     keys.iter()
         .map(|key| match key.as_str() {
             Some(
                 k @ ("layout" | "repeatRate" | "repeatDelay" | "pointerSpeed" | "naturalScroll"
-                | "tapToClick"),
+                | "tapToClick" | "touchpadScrollSpeed"),
             ) => Ok(k.to_string()),
             _ => Err("Unsupported input field".into()),
         })
@@ -77,6 +80,11 @@ fn validate(values: &Value) -> Result<(), String> {
     if !speed.is_finite() || !(-1.0..=1.0).contains(&speed) {
         return Err("Invalid pointer speed range".into());
     }
+    if let Some(scroll) = values.get("touchpadScrollSpeed") {
+        if !scroll.as_f64().is_some_and(|speed| (0.25..=3.0).contains(&speed)) {
+            return Err("Invalid touchpad scroll speed".into());
+        }
+    }
     for key in ["naturalScroll", "tapToClick"] {
         values[key].as_bool().ok_or("Invalid input toggle")?;
     }
@@ -103,6 +111,9 @@ impl OrbitCompositor {
                         .all(|b| b.is_ascii_alphanumeric() || b"_.:+-".contains(&b))
                 {
                     return Err("Invalid input device".into());
+                }
+                if !device.is_empty() && fields.iter().any(|key| key == "touchpadScrollSpeed") {
+                    return Err("Touchpad scroll speed applies to all touchpads".into());
                 }
                 self.apply_native_input(&value["values"], &fields, device)?;
                 if device.is_empty() {
@@ -410,6 +421,18 @@ mod tests {
         let output = Output::new("test-output".into(),PhysicalProperties {size:(0,0).into(),subpixel:Subpixel::Unknown,make:"test".into(),model:"test".into()});
         output.change_current_state(Some(Mode{size:(1280,720).into(),refresh:60_000}),Some(Transform::Normal),None,Some((10,20).into()));
         state.space.map_output(&output,(10,20));
+        let second = Output::new("second-output".into(),PhysicalProperties {size:(0,0).into(),subpixel:Subpixel::Unknown,make:"test".into(),model:"test".into()});
+        second.change_current_state(Some(Mode{size:(1280,720).into(),refresh:60_000}),Some(Transform::Normal),None,Some((1290,20).into()));
+        state.space.map_output(&second,(1290,20));
+        state.set_independent_workspaces(true);
+        assert!(state.switch_output_workspace("test-output",2));
+        assert!(state.switch_output_workspace("second-output",1));
+        assert_eq!(state.workspace_at((30,40).into()),2);
+        assert_eq!(state.workspace_at((1310,40).into()),1);
+        assert!(!state.switch_output_workspace("missing-output",3));
+        state.set_independent_workspaces(false);
+        assert_eq!(state.workspace_at((30,40).into()),0);
+        assert_eq!(state.workspace_at((1310,40).into()),0);
         let calls = Rc::new(RefCell::new(Vec::new()));let observed = calls.clone();
         state.native_system.output = Some(Box::new(move |_,value|{observed.borrow_mut().push(value.clone());Ok(json!({"ok":true}))}));
         let checkpoint = state.native_system_control(&json!({"command":"output_checkpoint","name":"test-output","seconds":1}));

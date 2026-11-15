@@ -61,6 +61,7 @@ ScrollView {
         }
         Text {objectName: "networkError";visible: text.length>0;text: Network.state.error || "";Layout.fillWidth: true;wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11);textFormat: Text.PlainText}
         OrbitButton {objectName: "networkAdvanced";text: "Advanced connection settings…";Layout.fillWidth: true;implicitHeight: Theme.fontSize(30);quiet: true;enabled: Network.state.advancedAvailable && !Network.state.busy;onClicked: {Orbit.dismiss();Network.openAdvanced();}}
-        Text {text: "Create or edit VPN, Ethernet and enterprise Wi-Fi connections in the system connection editor. New Wi-Fi networks are available in Quick settings.";Layout.fillWidth: true;wrapMode: Text.Wrap;color: Theme.faint;font.pixelSize: Theme.fontSize(10)}
+        OrbitButton {text:"Open Wi-Fi controls";onClicked:Orbit.activateSystemAction("wifi-quick")}
+        Text {text: "Create or edit VPN, Ethernet and enterprise Wi-Fi connections in the system connection editor. ";Layout.fillWidth: true;wrapMode: Text.Wrap;color: Theme.faint;font.pixelSize: Theme.fontSize(10)}
     }
 }

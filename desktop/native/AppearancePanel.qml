@@ -57,7 +57,10 @@ ScrollView {
                     Repeater { model: Orbit.accentPresets
                         Rectangle {
                             required property var modelData;width: 22;height: 22;radius: Theme.corner(6);color: modelData.color
-                            border.width: Orbit.accentColor===modelData.color ? 2 : 0;border.color: Theme.text
+                            activeFocusOnTab: true
+                            border.width: activeFocus || Orbit.accentColor===modelData.color ? 2 : 0;border.color: Theme.text
+                            Keys.onSpacePressed: Orbit.setPreference("accent",modelData.color)
+                            Keys.onReturnPressed: Orbit.setPreference("accent",modelData.color)
                             Text { anchors.centerIn: parent;text: Orbit.accentColor===modelData.color ? "✓" : "";color: "#15212a";font.pixelSize: Theme.fontSize(12) }
                             MouseArea { anchors.fill: parent;onClicked: Orbit.setPreference("accent",modelData.color) }
                             Accessible.name: modelData.name;Accessible.role: Accessible.Button;Accessible.onPressAction: Orbit.setPreference("accent",modelData.color)
@@ -68,7 +71,7 @@ ScrollView {
                 RowLayout {
                     visible: view.customAccent;Layout.fillWidth: true;Layout.margins: 4
                     OrbitField { id: accentInput;Layout.fillWidth: true;text: Orbit.accentColor;maximumLength: 7;implicitHeight: 28;onAccepted: Orbit.setPreference("accent",text) }
-                    OrbitButton { text: "Apply";implicitHeight: 28;onClicked: Orbit.setPreference("accent",accentInput.text) }
+                    IconButton { iconName: "check";hint: "Apply custom accent color";onClicked: Orbit.setPreference("accent",accentInput.text) }
                 }
                 SettingRow {label:"Pointer";SettingToggle {objectName:"cursorAccentToggle";label:"Use theme accent for arrow pointer";checked:Orbit.appearance.cursorAccent!==false;onToggled:Orbit.setPreference("cursorAccent",checked)}Text {text:"Use theme accent";color:Theme.muted;font.pixelSize:Theme.fontSize(11)}}
             }
@@ -106,7 +109,7 @@ ScrollView {
                     visible: Orbit.appearance.wallpaper==="solid";label: "Color"
                     Rectangle { width: 20;height: 20;radius: Theme.corner(5);color: Orbit.appearance.backgroundColor;border.color: Theme.border }
                     OrbitField { id: backgroundInput;text: Orbit.appearance.backgroundColor;maximumLength: 7;implicitWidth: 92;implicitHeight: 28;onAccepted: Orbit.setPreference("backgroundColor",text) }
-                    OrbitButton { text: "Apply";implicitHeight: 26;onClicked: Orbit.setPreference("backgroundColor",backgroundInput.text) }
+                    IconButton { iconName: "check";hint: "Apply solid wallpaper color";onClicked: Orbit.setPreference("backgroundColor",backgroundInput.text) }
                 }
             }
             SettingsGroup {
@@ -123,6 +126,15 @@ ScrollView {
             }
             SettingsGroup {
                 title: "Animation"
+                SettingRow {
+                    visible: Orbit.nativeCompositor
+                    label: "Independent workspaces per display"
+                    SettingToggle {
+                        label: "Independent workspaces per display"
+                        checked: Orbit.appearance.independentWorkspaces
+                        onToggled: Orbit.setPreference("independentWorkspaces",checked)
+                    }
+                }
                 SettingRow { label: "Workspace transitions";enabled: !Orbit.appearance.reducedMotion;SettingToggle { label: "Workspace transitions";checked: Orbit.workspaceMotion;onToggled: Orbit.setPreference("workspaceMotion",checked) } }
                 SettingRow {label:"Reduce motion";Text {text:Orbit.appearance.reducedMotion ? "On" : "Off";color:Theme.muted;font.pixelSize:Theme.fontSize(11)}OrbitButton {objectName:"motionAccessibilityLink";text:"Accessibility…";quiet:true;implicitHeight:28;onClicked:Orbit.openSettingsSection(4)}}
             }
@@ -133,6 +145,16 @@ ScrollView {
             SettingRow { label: "Match app theme";SettingToggle { label: "Match application light and dark preference";checked: Orbit.appearance.matchApps;onToggled: Orbit.setPreference("matchApps",checked) } }
             SettingRow { visible: !Orbit.isWayland;label: "Match frame theme";SettingToggle { label: "Match application frame theme";checked: Orbit.appearance.matchWindows;onToggled: Orbit.setPreference("matchWindows",checked) } }
             SettingRow {visible:view.nativeFrames;label:"Theme window borders";SettingToggle {label:"Theme application window borders";checked:Orbit.appearance.matchWindows;onToggled:Orbit.setPreference("matchWindows",checked)}}
+            SettingRow {
+                visible: view.nativeFrames && Orbit.nativeSnapSupported === true
+                label: "Snap windows at screen edges"
+                SettingToggle {
+                    objectName: "windowSnapToggle"
+                    label: "Snap windows when dragged to screen edges"
+                    checked: Orbit.appearance.windowSnap === true
+                    onToggled: Orbit.setPreference("windowSnap",checked)
+                }
+            }
             SettingRow { visible: Orbit.isWayland && !view.nativeFrames;label: "Frame";SettingsSegments { value: Orbit.appearance.frameStyle;segmentWidth: 68;options: [{label:"Native",value:"auto"},{label:"Title bar",value:"normal"},{label:"Outline",value:"pixel"}];onSelected: value => Orbit.setPreference("frameStyle",value) } }
             SettingRow { visible: Orbit.isWayland && !view.nativeFrames && Orbit.appearance.frameStyle!=="auto";label: "Border";SettingsSegments { value: Orbit.appearance.frameWidth;segmentWidth: 34;options: [{label:"0",value:0},{label:"1",value:1},{label:"2",value:2},{label:"3",value:3}];onSelected: value => Orbit.setPreference("frameWidth",value) } }
             Text {visible:view.nativeFrames;Layout.fillWidth:true;Layout.margins:6;text:"Mellipi adds a thin matching border while keeping each app’s own titlebar. Older apps also receive integrated window controls.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}

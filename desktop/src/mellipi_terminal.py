@@ -2,6 +2,7 @@
 import argparse
 import os
 import pwd
+import re
 import sys
 from pathlib import Path
 
@@ -16,9 +17,15 @@ gi.require_version('GdkPixbuf', '2.0')
 gi.require_version('Vte', '2.91')
 from gi.repository import Gdk, GdkPixbuf, Gio, Gtk, Pango, Vte
 
-from app_palette import HEADER_HEIGHTS, colors
+from app_palette import HEADER_HEIGHTS, colors, identity_appearance
 from window_controls import glyph_svg
 from preferences import Preferences
+
+
+# Flags from pcre2.h used by Vte.Regex (VTE expects multiline search).
+_PCRE2_CASELESS = 0x00000008
+_PCRE2_MULTILINE = 0x00000400
+_PCRE2_UTF = 0x00080000
 
 
 def arguments(argv):
@@ -54,11 +61,20 @@ class TerminalWindow(Gtk.Window):
         self.header = Gtk.HeaderBar(show_close_button=False, spacing=4)
         self.set_titlebar(self.header)
         new_tab = Gtk.Button.new_from_icon_name('tab-new-symbolic', Gtk.IconSize.MENU)
+        self.new_tab_button = new_tab
         new_tab.set_relief(Gtk.ReliefStyle.NONE)
         new_tab.set_tooltip_text('New tab (Ctrl+Shift+T)')
         new_tab.get_accessible().set_name('New tab')
         new_tab.connect('clicked', lambda *_: self.new_tab())
+        self.identity_badge = Gtk.Box()
+        self.identity_badge.set_size_request(22, 22)
+        self.identity_badge.set_valign(Gtk.Align.CENTER)
+        self.identity_badge.get_style_context().add_class('app-identity')
+        self.identity_image = None
+        self.header.pack_start(self.identity_badge)
         title = Gtk.Label(label='Mellipi Terminal')
+        title.get_style_context().add_class('title')
+        title.set_ellipsize(Pango.EllipsizeMode.END)
         title.set_margin_start(2)
         self.header.pack_start(title)
         self.controls = {}
@@ -72,11 +88,54 @@ class TerminalWindow(Gtk.Window):
             self.controls[glyph] = button
             self.header.pack_end(button)
         self.header.pack_end(new_tab)
+        self.find_button = Gtk.Button()
+        self.find_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.find_button.set_tooltip_text('Find in this tab (Ctrl+Shift+F)')
+        self.find_button.get_accessible().set_name('Find in this tab')
+        self.find_button.connect('clicked', lambda *_: self.show_search())
+        self.header.pack_end(self.find_button)
         self.connect('window-state-event', self.window_state_changed)
         self.notebook = Gtk.Notebook()
         self.notebook.set_scrollable(True)
         self.notebook.set_show_tabs(False)
-        self.add(self.notebook)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.add(content)
+        self._search_terminal = None
+        self._search_matched = False
+        self.search_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE)
+        self.search_bar = Gtk.Box(spacing=6)
+        self.search_bar.get_style_context().add_class('terminal-search')
+        self.search_revealer.add(self.search_bar)
+        self.search_entry = Gtk.SearchEntry(placeholder_text='Find in this tab', max_length=256)
+        self.search_entry.set_width_chars(9)
+        self.search_entry.set_max_width_chars(22)
+        self.search_entry.get_accessible().set_name('Find in this terminal tab')
+        self.search_entry.connect('changed', self.update_search)
+        self.search_entry.connect('key-press-event', self.search_key_pressed)
+        self.search_bar.pack_start(self.search_entry, True, True, 0)
+        self.search_case = Gtk.CheckButton(label='Match case')
+        self.search_case.connect('toggled', self.update_search)
+        self.search_bar.pack_start(self.search_case, False, False, 0)
+        self.search_status = Gtk.Label(xalign=0)
+        self.search_status.get_style_context().add_class('terminal-search-status')
+        self.search_status.get_accessible().set_name('Search status')
+        self.search_status.set_width_chars(8)
+        self.search_bar.pack_start(self.search_status, False, False, 0)
+        self.search_buttons = {}
+        for icon, title, callback in (
+            ('go-up', 'Previous match', lambda: self.find_match(False)),
+            ('go-down', 'Next match', lambda: self.find_match(True)),
+            ('close', 'Close find', self.hide_search),
+        ):
+            button = Gtk.Button()
+            button.set_tooltip_text(title)
+            button.get_accessible().set_name(title)
+            button.connect('clicked', lambda _button, action=callback: action())
+            self.search_bar.pack_start(button, False, False, 0)
+            self.search_buttons[icon] = button
+        content.pack_start(self.search_revealer, False, False, 0)
+        content.pack_start(self.notebook, True, True, 0)
+        self.notebook.connect('switch-page', self.search_switched_tab)
         self.settings_path = Path(os.environ.get('ORBIT_SETTINGS_FILE') or
                                   Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'abstract/settings.json')
         self.preferences = Preferences(self.settings_path)
@@ -89,7 +148,9 @@ class TerminalWindow(Gtk.Window):
             directory = Gio.File.new_for_path(str(self.settings_path.parent))
             self.monitor = directory.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, None)
             self.monitor.connect('changed', self.settings_changed)
+        self.connect('notify::scale-factor', lambda *_: self.apply_theme())
         self.apply_theme()
+        self.update_search()
         self.add_tab(args.working_directory, args.execute or [shell()])
 
     def toggle_maximized(self):
@@ -107,10 +168,8 @@ class TerminalWindow(Gtk.Window):
         self.control_ink = ink
         for name, button in self.controls.items():
             glyph = 'restore' if name == 'maximize' and maximized else name
-            loader = GdkPixbuf.PixbufLoader.new_with_type('svg')
-            loader.write(glyph_svg(glyph, ink))
-            loader.close()
-            button.set_image(Gtk.Image.new_from_pixbuf(loader.get_pixbuf()))
+            button.set_image(self.svg_image(glyph_svg(
+                glyph, ink, self.preferences.values["themePreset"] == "cyberpunk")))
             button.set_tooltip_text(glyph.capitalize())
             button.get_accessible().set_name(glyph.capitalize())
 
@@ -122,24 +181,40 @@ class TerminalWindow(Gtk.Window):
     def apply_theme(self):
         palette = colors(self.preferences)
         prefs = self.preferences.values
-        appearance = (palette, prefs['density'], prefs['corners'], prefs['textScale'], prefs['mode'])
+        appearance = (palette, prefs['density'], prefs['corners'], prefs['textScale'], prefs['mode'], prefs['themePreset'], self.get_scale_factor())
         if appearance == self.last_appearance:
             return
         self.last_appearance = appearance
         Gtk.Settings.get_default().set_property('gtk-application-prefer-dark-theme', prefs['mode'] == 'dark')
-        pad = {'comfortable': 8, 'compact': 5, 'extra': 3}[prefs['density']]
+        pad = {'comfortable': 8, 'compact': 6, 'extra': 4}[prefs['density']]
         radius = {'square': 0, 'soft': 4, 'rounded': 8}[prefs['corners']]
         header_height = HEADER_HEIGHTS[prefs['density']] - 1
-        focus = palette['text'] if prefs['highContrast'] else palette['accent']
-        self.update_controls(focus, self.is_maximized())
+        self.update_controls(palette['accent_ink'], self.is_maximized())
+        from mellipi_icons import svg
+        glyph, ink, identity_bg = identity_appearance('Mellipi Terminal', palette['background'])
+        if self.identity_image:
+            self.identity_badge.remove(self.identity_image)
+        self.identity_image = self.svg_image(svg(glyph, ink, size=16))
+        self.identity_badge.pack_start(self.identity_image, True, True, 0)
+        self.identity_image.show()
+        self.new_tab_button.set_image(self.action_image('tab-new'))
+        self.find_button.set_image(self.action_image('search'))
+        for icon, button in self.search_buttons.items():
+            button.set_image(self.action_image(icon))
+        for index in range(self.notebook.get_n_pages()):
+            page = self.notebook.get_nth_page(index)
+            close = getattr(page, 'mellipi_close_button', None)
+            if close is not None:
+                close.set_image(self.action_image('close'))
         self.css.load_from_data(('''
             window, notebook, notebook stack { background: %(background)s; color: %(text)s; }
             headerbar { min-height: %(header_height)dpx; padding: 0 8px; background: %(background)s;
                         color: %(text)s; border: 0; border-bottom: 1px solid %(separator)s;
                         box-shadow: none; text-shadow: none; }
-            headerbar .title { font-weight: normal; }
+            headerbar .app-identity { background: %(identity_bg)s; border-radius: %(radius)dpx; }
+            headerbar .title { font-weight: 600; font-size: %(label_size)dpx; }
             headerbar button, notebook tab button { min-width: 20px; min-height: 20px;
-                        padding: 2px; background: transparent; color: %(focus)s;
+                        padding: 2px; background: transparent; color: %(accent_ink)s;
                         border: 0; box-shadow: none; text-shadow: none; }
             headerbar button.mellipi-window-control { padding: 0; }
             headerbar button:hover, notebook tab button:hover { background: %(hover)s; }
@@ -147,19 +222,43 @@ class TerminalWindow(Gtk.Window):
                 border: 0; box-shadow: none; border-radius: %(radius)dpx;
             }
             menu, messagedialog { background: %(surface)s; color: %(text)s; }
-            menuitem:hover { background: %(selected_surface)s; color: %(text)s; }
+            messagedialog .title { color: %(accent_ink)s; }
+            messagedialog button {
+                background: %(selected_surface)s; color: %(accent_ink)s;
+                border-color: transparent; box-shadow: none; text-shadow: none;
+            }
+            messagedialog button.suggested-action {
+                background: %(accent)s; color: %(accent_text)s;
+            }
+            messagedialog button:hover,
+            messagedialog button:focus { border-color: %(focus)s; }
+            menuitem:hover, menuitem:focus, menuitem:selected { background: %(selected_surface)s; color: %(text)s; }
             headerbar button:focus, notebook tab button:focus {
                 box-shadow: inset 0 -2px %(focus)s;
             }
             notebook tab:focus { outline-color: %(focus)s; }
             notebook header { background: %(surface)s; color: %(text)s;
                               border-bottom: 1px solid %(separator)s; }
-            notebook tab { background: %(surface)s; color: %(muted)s; padding: %(padding)dpx; }
-            notebook tab:checked { background: %(selected_surface)s; color: %(text)s; box-shadow: inset 0 -2px %(accent)s; }
-            notebook tab button, .terminal-action-icon { color: %(focus)s; }
+            notebook tab { background: %(surface)s; color: %(muted)s; padding: %(padding)dpx;
+                           font-size: %(label_size)dpx; }
+            notebook tab:checked { background: %(selected_surface)s; color: %(text)s; box-shadow: inset 0 -2px %(focus)s; }
+            notebook tab button, .terminal-action-icon { color: %(accent_ink)s; }
             .terminal-shortcut { opacity: .7; }
             .terminal-panel { border: 0; background: %(surface)s; }
-        ''' % dict(palette, padding=pad, radius=radius, header_height=header_height, focus=focus)).encode())
+            .terminal-search { background: %(background)s; color: %(text)s; padding: %(padding)dpx 8px;
+                               font-size: %(label_size)dpx;
+                               border-bottom: 1px solid %(separator)s; }
+            .terminal-search-status, .terminal-shortcut { color: %(muted)s; }
+            .terminal-search entry, .terminal-search button {
+                min-height: 28px;
+                background: %(surface)s; color: %(text)s; border: 1px solid %(search_border)s;
+                border-radius: %(radius)dpx; box-shadow: none;
+            }
+            .terminal-search entry:focus, .terminal-search button:focus { border-color: %(focus)s; }
+            .terminal-search button:hover { background: %(hover)s; }
+            .terminal-search entry selection { background: %(accent)s; color: %(accent_text)s; }
+        ''' % dict(palette, padding=pad, radius=radius, identity_bg=identity_bg, header_height=header_height, label_size=round(14*prefs['textScale']),
+                   search_border=palette['control_border'])).encode())
         for i in range(self.notebook.get_n_pages()):
             self.style_terminal(self.notebook.get_nth_page(i).get_child())
 
@@ -179,14 +278,14 @@ class TerminalWindow(Gtk.Window):
         )
         terminal.set_colors(rgba(palette['text']), rgba(palette['surface']),
                             [rgba(value) for value in (*normal, *bright)])
-        terminal.set_color_cursor(rgba(palette['accent']))
-        terminal.set_color_cursor_foreground(rgba(palette['accent_text']))
+        terminal.set_color_cursor(rgba(palette['focus']))
+        terminal.set_color_cursor_foreground(rgba(palette['focus_text']))
         terminal.set_color_highlight(rgba(palette['accent']))
         terminal.set_color_highlight_foreground(rgba(palette['accent_text']))
         font = Pango.FontDescription('Monospace')
         font.set_size(round(11 * prefs['textScale'] * Pango.SCALE))
         terminal.set_font(font)
-        pad = {'comfortable': 8, 'compact': 5, 'extra': 3}[prefs['density']]
+        pad = {'comfortable': 8, 'compact': 6, 'extra': 4}[prefs['density']]
         terminal.set_margin_start(pad)
         terminal.set_margin_end(pad)
         terminal.set_margin_top(pad)
@@ -207,10 +306,12 @@ class TerminalWindow(Gtk.Window):
         page.add(terminal)
         terminal.connect('button-press-event', self.context_menu, page)
         tab = Gtk.Box(spacing=6)
-        label = Gtk.Label()
+        label = Gtk.Label(xalign=0)
         label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
         label.set_max_width_chars(24)
         close = Gtk.Button.new_from_icon_name('window-close-symbolic', Gtk.IconSize.MENU)
+        page.mellipi_close_button = close
+        close.set_image(self.action_image('close'))
         close.set_relief(Gtk.ReliefStyle.NONE)
         close.set_tooltip_text('Close tab (Ctrl+Shift+W)')
         close.connect('clicked', lambda *_: self.confirm_close(page))
@@ -231,7 +332,8 @@ class TerminalWindow(Gtk.Window):
         page.show_all()
         self.notebook.set_show_tabs(self.notebook.get_n_pages() > 1)
         self.notebook.set_current_page(index)
-        terminal.grab_focus()
+        if not self.search_revealer.get_reveal_child():
+            terminal.grab_focus()
         terminal.spawn_async(Vte.PtyFlags.DEFAULT, str(directory), argv, None,
                              GLib.SpawnFlags.SEARCH_PATH, None, None, -1, None,
                              self.spawned, page)
@@ -245,17 +347,28 @@ class TerminalWindow(Gtk.Window):
         index = self.notebook.page_num(page)
         if index == -1:
             return
+        if page.get_child() is self._search_terminal:
+            self._search_terminal.search_set_regex(None, 0)
+            self._search_terminal = None
         self.notebook.remove_page(index)
         page.destroy()
         count = self.notebook.get_n_pages()
         self.notebook.set_show_tabs(count > 1)
         if not count:
             self.destroy()
-        else:
+        elif not self.search_revealer.get_reveal_child():
             self.current_terminal().grab_focus()
 
     def alert(self, title, message, buttons=Gtk.ButtonsType.CLOSE):
-        dialog = Gtk.MessageDialog(transient_for=self, modal=True, buttons=buttons, text=title)
+        dialog = Gtk.MessageDialog(transient_for=self, modal=True, buttons=buttons,
+                                   text=title, use_header_bar=False)
+        dialog.set_titlebar(Gtk.HeaderBar(title='Mellipi Terminal', show_close_button=False))
+        primary = dialog.get_widget_for_response(
+            Gtk.ResponseType.OK if buttons == Gtk.ButtonsType.OK_CANCEL else Gtk.ResponseType.CLOSE)
+        if primary is not None:
+            primary.get_style_context().add_class('suggested-action')
+        dialog.set_default_response(
+            Gtk.ResponseType.CANCEL if buttons == Gtk.ButtonsType.OK_CANCEL else Gtk.ResponseType.CLOSE)
         dialog.format_secondary_text(message)
         response = dialog.run()
         dialog.destroy()
@@ -291,6 +404,73 @@ class TerminalWindow(Gtk.Window):
     def new_tab(self):
         self.add_tab(self.tab_directory(self.current_terminal()), [shell()])
 
+    def show_search(self):
+        self.search_revealer.set_reveal_child(True)
+        self.update_search()
+        self.search_entry.grab_focus()
+        self.search_entry.select_region(0, -1)
+
+    def hide_search(self):
+        self.search_revealer.set_reveal_child(False)
+        self.update_search()
+        terminal = self.current_terminal()
+        if terminal is not None:
+            terminal.grab_focus()
+
+    def search_switched_tab(self, _notebook, page, _index):
+        # Gtk.Notebook may emit before its current index has changed.
+        self.update_search(terminal=page.get_child())
+
+    def update_search(self, *_signal, terminal=None):
+        if self._search_terminal is not None:
+            self._search_terminal.search_set_regex(None, 0)
+        self._search_terminal = None
+        self._search_matched = False
+        query = self.search_entry.get_text()
+        terminal = terminal if terminal is not None else self.current_terminal()
+        ready = terminal is not None and bool(query) and self.search_revealer.get_reveal_child()
+        self.search_status.set_text('')
+        if ready:
+            flags = _PCRE2_UTF | _PCRE2_MULTILINE
+            if not self.search_case.get_active():
+                flags |= _PCRE2_CASELESS
+            # Quote metacharacters. Pasting a regex never executes it as one.
+            try:
+                regex = Vte.Regex.new_for_search(re.escape(query), -1, flags)
+            except GLib.Error:
+                self.search_status.set_text('Invalid text')
+                ready = False
+            else:
+                self._search_terminal = terminal
+                terminal.search_set_regex(regex, 0)
+                terminal.search_set_wrap_around(True)
+                self.find_match(False)
+        for icon in ('go-up', 'go-down'):
+            self.search_buttons[icon].set_sensitive(ready)
+
+    def find_match(self, forward):
+        terminal = self._search_terminal
+        if terminal is None:
+            return False
+        search = terminal.search_find_next if forward else terminal.search_find_previous
+        found = search()
+        if not found and self._search_matched:
+            # VTE skips the current selection even when it is the only match.
+            # A failed step clears it; retry once to wrap back onto that match.
+            found = search()
+        self._search_matched = found
+        self.search_status.set_text('' if found else 'No match')
+        return found
+
+    def search_key_pressed(self, _entry, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self.hide_search()
+        elif event.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            self.find_match(not bool(event.state & Gdk.ModifierType.SHIFT_MASK))
+        else:
+            return False
+        return True
+
     def key_pressed(self, _window, event):
         modifiers = event.state & Gtk.accelerator_get_default_mod_mask()
         if modifiers != Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK:
@@ -303,6 +483,8 @@ class TerminalWindow(Gtk.Window):
             terminal.copy_clipboard_format(Vte.Format.TEXT)
         elif key == Gdk.KEY_v:
             terminal.paste_clipboard()
+        elif key == Gdk.KEY_f:
+            self.show_search()
         elif key == Gdk.KEY_t:
             self.new_tab()
         elif key == Gdk.KEY_w:
@@ -311,6 +493,26 @@ class TerminalWindow(Gtk.Window):
             return False
         return True
 
+    def action_image(self, name):
+        from mellipi_icons import svg
+        ink = colors(self.preferences)['accent_ink']
+        data = svg(name, ink)
+        if not data:
+            return Gtk.Image.new_from_icon_name(name, Gtk.IconSize.MENU)
+        return self.svg_image(data)
+
+    def svg_image(self, data):
+        self_scale = self.get_scale_factor()
+        loader = GdkPixbuf.PixbufLoader.new_with_type('svg')
+        loader.set_size(16 * self_scale, 16 * self_scale)
+        loader.write(data)
+        loader.close()
+        pixbuf = loader.get_pixbuf()
+        if self_scale > 1:
+            surface = Gdk.cairo_surface_create_from_pixbuf(pixbuf, self_scale, self.get_window())
+            return Gtk.Image.new_from_surface(surface)
+        return Gtk.Image.new_from_pixbuf(pixbuf)
+
     def context_menu(self, terminal, event, page):
         if event.button != 3 or event.state & Gdk.ModifierType.SHIFT_MASK:
             return False
@@ -318,13 +520,14 @@ class TerminalWindow(Gtk.Window):
         actions = (
             ('Copy', 'edit-copy-symbolic', 'Ctrl+Shift+C', lambda: terminal.copy_clipboard_format(Vte.Format.TEXT), terminal.get_has_selection()),
             ('Paste', 'edit-paste-symbolic', 'Ctrl+Shift+V', terminal.paste_clipboard, True),
+            ('Find in tab', 'edit-find-symbolic', 'Ctrl+Shift+F', self.show_search, True),
             ('New tab', 'tab-new-symbolic', 'Ctrl+Shift+T', self.new_tab, True),
             ('Close tab', 'window-close-symbolic', 'Ctrl+Shift+W', lambda: self.confirm_close(page), True),
         )
         for label, icon, shortcut, callback, enabled in actions:
             item = Gtk.MenuItem()
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            image = Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.MENU)
+            image = self.action_image(icon)
             image.get_style_context().add_class('terminal-action-icon')
             row.pack_start(image, False, False, 0)
             row.pack_start(Gtk.Label(label=label, xalign=0), True, True, 0)

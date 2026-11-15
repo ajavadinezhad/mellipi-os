@@ -23,7 +23,7 @@ ScrollView {
         }
         SettingRow {
             label: Bluetooth.state.discovering ? "Searching nearby…" : "Nearby devices"
-            OrbitButton { text: Bluetooth.state.discovering ? "Stop" : "Search";quiet: true;implicitHeight: 28;enabled: Bluetooth.state.available && Bluetooth.state.powered;onClicked: {if(Bluetooth.state.discovering)Bluetooth.stopDiscovery();else Bluetooth.startDiscovery();} }
+            IconButton { iconName: Bluetooth.state.discovering ? "stop" : "search";hint: Bluetooth.state.discovering ? "Stop searching for Bluetooth devices" : "Search for Bluetooth devices";implicitHeight: 30;enabled: Bluetooth.state.available && Bluetooth.state.powered;onClicked: {if(Bluetooth.state.discovering)Bluetooth.stopDiscovery();else Bluetooth.startDiscovery();} }
         }
     }
     Text { visible: !Bluetooth.state.available || !Bluetooth.state.powered;text: Bluetooth.state.status || (Bluetooth.state.available ? "Turn Bluetooth on to connect devices" : "No Bluetooth adapter available");color: Theme.muted;font.pixelSize: Theme.fontSize(11);wrapMode: Text.Wrap;Layout.fillWidth: true;textFormat: Text.PlainText }

@@ -19,7 +19,148 @@ impl OrbitCompositor {
             }
         }
     }
+    pub(crate) fn workspace_output(
+        &self,
+        location: smithay::utils::Point<i32, smithay::utils::Logical>,
+    ) -> Option<String> {
+        self.space
+            .outputs()
+            .find(|output| {
+                self.space
+                    .output_geometry(output)
+                    .is_some_and(|rect| rect.contains(location))
+            })
+            .or_else(|| self.space.outputs().next())
+            .map(|output| output.name())
+    }
+    pub(crate) fn output_workspace(&self, output: &str) -> usize {
+        self.output_workspaces
+            .get(output)
+            .copied()
+            .unwrap_or(self.current_workspace)
+    }
+    pub(crate) fn active_workspace(&self) -> usize {
+        if self.independent_workspaces {
+            return self.pointer_workspace_output().map_or(self.current_workspace, |output| self.output_workspace(&output));
+        }
+        self.current_workspace
+    }
+    pub(crate) fn workspace_at(
+        &self,
+        location: smithay::utils::Point<i32, smithay::utils::Logical>,
+    ) -> usize {
+        self.workspace_output(location)
+            .map_or(self.current_workspace, |output| {
+                self.output_workspace(&output)
+            })
+    }
+    pub(crate) fn set_independent_workspaces(&mut self, enabled: bool) {
+        if enabled == self.independent_workspaces {
+            return;
+        }
+        if !enabled {
+            let outputs: Vec<_> = self.space.outputs().map(|output| output.name()).collect();
+            for output in outputs {
+                self.switch_output_workspace(&output, self.current_workspace);
+            }
+            self.output_workspaces.clear();
+        }
+        self.independent_workspaces = enabled;
+        self.request_redraw();
+    }
+    pub(crate) fn switch_output_workspace(&mut self, output: &str, target: usize) -> bool {
+        if target >= self.workspaces.len()
+            || self
+                .seat
+                .get_pointer()
+                .is_some_and(|pointer| pointer.is_grabbed())
+        {
+            return false;
+        }
+        if !self.space.outputs().any(|item| item.name() == output) {
+            return false;
+        }
+        let from = self.output_workspace(output);
+        if from == target {
+            return true;
+        }
+        let outgoing: Vec<_> = self
+            .space
+            .elements()
+            .filter_map(|window| {
+                let location = self.space.element_location(window)?;
+                (self.workspace_output(location).as_deref() == Some(output))
+                    .then(|| (window.clone(), location))
+            })
+            .collect();
+        let incoming: Vec<_> = self.workspaces[target]
+            .elements()
+            .filter_map(|window| {
+                let location = self.workspaces[target].element_location(window)?;
+                (self.workspace_output(location).as_deref() == Some(output))
+                    .then(|| (window.clone(), location))
+            })
+            .collect();
+        self.clear_window_motions();
+        self.transition = None;
+        self.pending_workspace = None;
+        self.output_workspaces.insert(output.to_owned(), target);
+        let keyboard = self.seat.get_keyboard().unwrap();
+        let existing_focus = keyboard.current_focus().filter(|surface| {
+            self.space.elements().any(|window| {
+                window.wl_surface().is_some_and(|candidate| candidate.as_ref() == surface)
+                    && !outgoing.iter().any(|(leaving, _)| leaving == window)
+            })
+        });
+        for (window, location) in outgoing {
+            self.space.unmap_elem(&window);
+            self.workspaces[from].map_element(window, location, false);
+        }
+        let focus = incoming
+            .last()
+            .and_then(|(window, _)| window.wl_surface().map(|surface| surface.into_owned()));
+        for (window, location) in incoming {
+            self.workspaces[target].unmap_elem(&window);
+            self.space.map_element(window, location, true);
+        }
+        self.seat
+            .get_keyboard()
+            .unwrap()
+            .set_focus(self, existing_focus.or(focus), SERIAL_COUNTER.next_serial());
+        self.send_window_activation_configures();
+        self.request_redraw();
+        true
+    }
+    pub(crate) fn reconcile_window_workspace(
+        &mut self,
+        window: &smithay::desktop::Window,
+        workspace: usize,
+        location: smithay::utils::Point<i32, smithay::utils::Logical>,
+    ) {
+        if !self.independent_workspaces {
+            return;
+        }
+        let visible = workspace == self.workspace_at(location);
+        if visible && self.space.element_location(window).is_none() {
+            self.workspaces[workspace].unmap_elem(window);
+            self.space.map_element(window.clone(), location, false);
+        } else if !visible && self.space.element_location(window).is_some() {
+            self.space.unmap_elem(window);
+            self.workspaces[workspace].map_element(window.clone(), location, false);
+            self.refocus_after_unmap(window);
+        }
+    }
+    pub(crate) fn pointer_workspace_output(&self) -> Option<String> {
+        let location = self.seat.get_pointer()?.current_location().to_i32_round();
+        self.workspace_output(location)
+    }
     pub fn switch_workspace(&mut self, target: usize, direction: i32) {
+        if self.independent_workspaces {
+            if let Some(output) = self.pointer_workspace_output() {
+                self.switch_output_workspace(&output, target);
+            }
+            return;
+        }
         if self
             .seat
             .get_pointer()
@@ -69,7 +210,16 @@ impl OrbitCompositor {
         let base = self
             .pending_workspace
             .map(|(target, _)| target)
-            .unwrap_or(self.current_workspace);
+            .unwrap_or_else(|| {
+                if self.independent_workspaces {
+                    self.pointer_workspace_output()
+                        .map_or(self.current_workspace, |output| {
+                            self.output_workspace(&output)
+                        })
+                } else {
+                    self.current_workspace
+                }
+            });
         let target = (base as i32 + direction).rem_euclid(self.workspaces.len() as i32) as usize;
         self.switch_workspace(target, direction);
     }
@@ -106,6 +256,12 @@ impl OrbitCompositor {
             self.request_redraw();
             return true;
         }
+        if self
+            .window_location(id, &window)
+            .is_some_and(|(workspace, _, _)| workspace == target)
+        {
+            return true;
+        }
         self.window_motions.active.remove(&id);
         self.window_motions.pending_open.remove(&id);
         let location = self
@@ -121,13 +277,15 @@ impl OrbitCompositor {
         for space in &mut self.workspaces {
             space.unmap_elem(&window);
         }
-        let space = if target == self.current_workspace {
+        let visible = target == self.workspace_at(location);
+        let space = if visible {
             &mut self.space
         } else {
             &mut self.workspaces[target]
         };
         space.map_element(window.clone(), location, true);
-        if target != self.current_workspace {
+        self.place_restored_window(id, &window);
+        if !visible {
             self.refocus_after_unmap(&window);
         }
         self.request_redraw();

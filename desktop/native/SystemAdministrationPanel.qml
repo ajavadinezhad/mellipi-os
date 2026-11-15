@@ -34,7 +34,7 @@ ColumnLayout {
         Text {Layout.fillWidth:true;text:administration.section==="users" ? "Users and passwords" : "Date and time";color:Theme.text;font.pixelSize:Theme.fontSize(14)}
         OrbitButton {text:"Refresh";quiet:true;enabled:!administration.state.busy;implicitHeight:28;onClicked:DesktopTools.refreshSystem(administration.section)}
     }
-    Text {visible:!!administration.state.error;Layout.fillWidth:true;text:administration.state.error || "";color:Theme.accent;font.pixelSize:Theme.fontSize(11);wrapMode:Text.Wrap;textFormat:Text.PlainText}
+    Text {visible:!!administration.state.error;Layout.fillWidth:true;text:administration.state.error || "";color:Theme.accentInk;font.pixelSize:Theme.fontSize(11);wrapMode:Text.Wrap;textFormat:Text.PlainText}
     Text {visible:administration.state.busy;Layout.fillWidth:true;text:"Waiting for the system…";color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
     ColumnLayout {
         visible:administration.section==="users";Layout.fillWidth:true;spacing:8

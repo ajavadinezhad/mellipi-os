@@ -2,7 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "."
-ComboBox {
+SettingsChoice {
     id: picker;objectName:"themePicker"
     model: typeof Orbit.themePresets!=="undefined" ? Orbit.themePresets : []
     textRole:"name"
@@ -11,7 +11,7 @@ ComboBox {
     displayText: selectedTheme ? selectedTheme.name : "Custom style"
     Accessible.name:"Theme"
     Accessible.description: selectedTheme ? selectedTheme.description : "Choose a theme"
-    implicitHeight:40;implicitWidth:220;leftPadding:10;rightPadding:32
+    popupLimit:306;popupObjectName:"themePickerPopup";implicitHeight:Math.max(40,Theme.fontSize(12)+18);implicitWidth:220;leftPadding:10;rightPadding:32
     onActivated:index=>{if(index>=0 && index<model.length)Orbit.applyTheme(model[index].id);}
     contentItem:RowLayout {
         spacing:10
@@ -20,12 +20,10 @@ ComboBox {
         }
         Text {Layout.fillWidth:true;text:picker.displayText;color:Theme.text;font.pixelSize:Theme.fontSize(12);elide:Text.ElideRight}
     }
-    indicator:Text {x:picker.width-width-12;y:(picker.height-height)/2;text:"⌄";color:Theme.muted;font.pixelSize:16}
-    background:Rectangle {color:picker.down ? Theme.hover : Theme.raised;radius:Theme.corner(8);border.width:picker.activeFocus ? (Theme.highContrast ? 2 : 1) : Theme.surfaceOutline;border.color:picker.activeFocus ? Theme.focusColor : Theme.border}
     delegate:ItemDelegate {
         required property var modelData
         required property int index
-        width:picker.width-2;implicitHeight:38
+        width:picker.width-2;implicitHeight:Math.max(38,Theme.fontSize(12)+18)
         highlighted:picker.highlightedIndex===index
         text:modelData.name
         contentItem:RowLayout {
@@ -34,20 +32,8 @@ ComboBox {
                 Rectangle {anchors.centerIn:parent;width:10;height:4;color:modelData.accent}
             }
             Text {Layout.fillWidth:true;text:modelData.name;color:Theme.text;font.pixelSize:Theme.fontSize(12);elide:Text.ElideRight}
-            Text {text:Orbit.appearance.themePreset===modelData.id ? "✓" : "";color:Theme.accent;font.pixelSize:12}
+            Text {text:Orbit.appearance.themePreset===modelData.id ? "✓" : "";color:Theme.accentInk;font.pixelSize:12}
         }
-        background:Rectangle {color:parent.highlighted ? Theme.hover : Theme.raised}
-    }
-    popup:Popup {
-        objectName:"themePickerPopup"
-        y:picker.height+2;width:picker.width;padding:1
-        implicitHeight:Math.min(306,themeList.contentHeight+2)
-        contentItem:ListView {
-            id:themeList;clip:true;implicitHeight:contentHeight
-            model:picker.popup.visible ? picker.delegateModel : null
-            currentIndex:picker.highlightedIndex;boundsBehavior:Flickable.StopAtBounds
-            ScrollBar.vertical:ScrollBar {}
-        }
-        background:Rectangle {color:Theme.raised;border.color:Theme.border;border.width:Theme.surfaceOutline;radius:Theme.corner(8)}
+        background:Rectangle {color:parent.highlighted ? Theme.hover : picker.currentIndex===index ? Theme.selectedSurface : Theme.raised}
     }
 }

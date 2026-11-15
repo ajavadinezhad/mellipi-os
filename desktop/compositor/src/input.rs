@@ -296,6 +296,12 @@ impl OrbitCompositor {
             InputEvent::PointerAxis { event, .. } => {
                 let source = event.source();
 
+                // Scale finger scrolling only. Keep wheel detents and gesture stops intact.
+                let scroll_speed = if source == AxisSource::Finger {
+                    self.native_system.values["touchpadScrollSpeed"].as_f64().unwrap_or(1.0)
+                } else {
+                    1.0
+                };
                 let horizontal_amount = event.amount(Axis::Horizontal).unwrap_or_else(|| {
                     event.amount_v120(Axis::Horizontal).unwrap_or(0.0) * 15.0 / 120.
                 });
@@ -307,13 +313,13 @@ impl OrbitCompositor {
 
                 let mut frame = AxisFrame::new(event.time_msec()).source(source);
                 if horizontal_amount != 0.0 {
-                    frame = frame.value(Axis::Horizontal, horizontal_amount);
+                    frame = frame.value(Axis::Horizontal, horizontal_amount * scroll_speed);
                     if let Some(discrete) = horizontal_amount_discrete {
                         frame = frame.v120(Axis::Horizontal, discrete as i32);
                     }
                 }
                 if vertical_amount != 0.0 {
-                    frame = frame.value(Axis::Vertical, vertical_amount);
+                    frame = frame.value(Axis::Vertical, vertical_amount * scroll_speed);
                     if let Some(discrete) = vertical_amount_discrete {
                         frame = frame.v120(Axis::Vertical, discrete as i32);
                     }

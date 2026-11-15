@@ -212,11 +212,13 @@ def application_launch_path(app,environment):
 def application_environment():
     """Never turn a launched Qt app into a shell panel or force Orbit's private renderer."""
     env={k:v for k,v in os.environ.items() if not k.startswith('ORBIT_') or k=='ORBIT_NATIVE_CONTROL'};root=PROJECT_ROOT
-    for key in ('QT_WAYLAND_SHELL_INTEGRATION','ORBIT_QT','QT_QUICK_BACKEND','QT_QPA_PLATFORM'):
+    for key in ('QT_WAYLAND_SHELL_INTEGRATION','MELLIPI_QT6_LAYER_LIBRARY','MELLIPI_QT6_RUNTIME','ORBIT_QT','QT_QUICK_BACKEND','QT_QPA_PLATFORM'):
         env.pop(key,None)
     if env.get('QT_QUICK_CONTROLS_STYLE','').startswith(str(root/'.wayland-runtime')):env.pop('QT_QUICK_CONTROLS_STYLE',None)
+    qt6_runtime=Path(os.environ.get('MELLIPI_QT6_RUNTIME') or (root/'.qt6-layer-shell')).resolve()
+    plugin_paths={str(qt6_runtime),str(qt6_runtime/'plugins')}
     for key in ('QT_PLUGIN_PATH','QML2_IMPORT_PATH','PYTHONPATH','LD_LIBRARY_PATH'):
-        parts=[p for p in env.get(key,'').split(':') if p and p!=str(SOURCE_ROOT) and not p.startswith(str(root/'.wayland-runtime')) and not p.startswith(str(root/'.runtime')) and p!=str(root/'.qt5-a11y-runtime') and not p.startswith(str(root/'.qt5-a11y-runtime')+os.sep)]
+        parts=[p for p in env.get(key,'').split(':') if p and p not in plugin_paths and p!=str(SOURCE_ROOT) and not p.startswith(str(root/'.wayland-runtime')) and not p.startswith(str(root/'.runtime')) and p!=str(root/'.qt5-a11y-runtime') and not p.startswith(str(root/'.qt5-a11y-runtime')+os.sep)]
         if parts:env[key]=':'.join(parts)
         else:env.pop(key,None)
     return env

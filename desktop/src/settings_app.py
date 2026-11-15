@@ -3,17 +3,25 @@
 import argparse,json,sys
 from pathlib import Path
 from project_paths import PROJECT_ROOT
+import os
 from qt_compat import QObject,Property,Signal,Slot,QTimer,QApplication,QQmlApplicationEngine,QUrl,QIcon,QQuickWindow,QT5
 if QT5:
     from PyQt5.QtNetwork import QLocalSocket
 else:
-    from PySide6.QtNetwork import QLocalSocket
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtNetwork import QLocalSocket
+    else:
+        from PySide6.QtNetwork import QLocalSocket
 class Connection(QObject):
     def __init__(self):
         super().__init__();self.socket=QLocalSocket(self);self.buffer=bytearray();self.proxies={};self.window=None;self.retries=0;self.endpoint="";self.reconnecting=False
     def send(self,value):self.socket.write((json.dumps(value,separators=(',',':'))+'\n').encode());self.socket.flush()
     @Slot(bool)
     def setVisible(self,visible):self.send({'visible':visible})
+    @Slot()
+    def closing(self):
+        self.send({'closing':True})
+        QTimer.singleShot(0,QApplication.instance().quit)
     def call(self,obj,method,args):self.send({'object':obj,'method':method,'args':list(args)})
     def read(self):
         self.buffer.extend(bytes(self.socket.readAll()))
@@ -45,7 +53,7 @@ class Connection(QObject):
                         proxy.data=values
                         for signal in proxy.signal_names:getattr(proxy,signal).emit()
                 if self.window:
-                    visible=self.window.isVisible() and self.window.visibility()!=2
+                    visible=self.window.isVisible() and self.window.visibility()!=QQuickWindow.Visibility.Minimized
                     self.setVisible(visible)
                     page=self.window.findChild(QObject,'systemSettingsPanel')
                     if visible and page:self.call('Orbit','settingsPageOpened',[page.property('pageName')])
@@ -53,7 +61,10 @@ class Connection(QObject):
                 proxy=self.proxies[message['object']];proxy.data.update(message['values'])
                 for signal in proxy.signal_names:getattr(proxy,signal).emit()
             elif message.get('show') and self.window:
-                (self.window.showMaximized() if self.window.property('wasMaximized') else self.window.showNormal()) if self.window.visibility()==2 else self.window.show()
+                if self.window.visibility()==QQuickWindow.Visibility.Minimized:
+                    self.window.showMaximized() if self.window.property('wasMaximized') else self.window.showNormal()
+                elif not self.window.isVisible():
+                    self.window.show()
                 self.window.requestActivate()
             elif 'error' in message:
                 proxy=self.proxies['Orbit'];proxy.data['notice']=message['error'];proxy.settingsChanged.emit()
@@ -85,7 +96,7 @@ def main():
     QQuickWindow.setDefaultAlphaBuffer(True)
     app=QApplication(sys.argv[:1]);app.setApplicationName('orbit-settings');app.setDesktopFileName('orbit-settings');app.setQuitOnLastWindowClosed(True)
     from icon_theme import configure as configure_icons
-    configure_icons();app.setWindowIcon(QIcon.fromTheme('preferences-system'))
+    configure_icons();app.setWindowIcon(QIcon.fromTheme('mellipi-settings', QIcon.fromTheme('preferences-system')))
     connection=Connection();connection.endpoint=args.endpoint;connection.socket.connectToServer(args.endpoint)
     if not connection.socket.waitForConnected(4000) or not connection.socket.waitForReadyRead(4000):return 1
     messages=connection.read()

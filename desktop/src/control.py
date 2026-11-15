@@ -13,7 +13,7 @@ def socket_path():
 
 def serve(bridge):
     from qt_compat import QLocalServer,QObject
-    server=QLocalServer(bridge);server.setSocketOptions(QLocalServer.UserAccessOption)
+    server=QLocalServer(bridge);server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
     # PyQt's native signal connection is not a Python GC root. Without an
     # explicit owner, the socket/read closure cycle can be collected while Qt
     # still holds a callable pointer (including from a different worker thread).
@@ -82,6 +82,7 @@ def serve(bridge):
                     'panel':bridge.panel,
                     'session_exit':bridge.sessionExit.state,
                     'settings_window':{'ready':getattr(getattr(bridge,'settingsHost',None),'ready',False),'errors':getattr(getattr(bridge,'settingsHost',None),'errors',[])},
+                    'settings_page':bridge._settingsPage,
                     'notice':bridge.notice,
                     'mode':bridge.themeMode,
                     'switching':bridge._switchActive,
@@ -105,7 +106,10 @@ def serve(bridge):
                 elif action=='save':model.save('QA layout')
                 elif action=='preview' and model.layouts:model.openPreview(model.layouts[0]['id'])
                 elif action=='apply':model.apply()
+                elif action=='resume':model.resume()
                 elif action=='undo':model.undo()
+                elif action.startswith('remember:') and action[9:].isdigit():
+                    bridge.rememberPlacement(action[9:])
                 elif action.startswith('snap:'):
                     parts=action.split(':')
                     if len(parts)==3 and parts[1].isdigit() and parts[2] in ('left','right'):bridge.arrangeWindow(parts[1],parts[2])
@@ -133,7 +137,7 @@ def serve(bridge):
                 if found:
                     item=found[0];point=bridge.itemScreenPoint(item,0,0)
                     point.update(width=item.width(),height=item.height(),visible=item.isVisible(),enabled=item.isEnabled())
-                    for key in ('text','section','contentHeight','availableHeight','implicitHeight','value'):
+                    for key in ('text','section','contentHeight','availableHeight','implicitHeight','value','activeFocus'):
                         value=item.property(key)
                         if isinstance(value,(str,int,float,bool)):point[key]=value
                     connection.write(json.dumps(point).encode());connection.flush()
@@ -150,7 +154,7 @@ def serve(bridge):
                     connection.write(json.dumps(point).encode());connection.flush()
             elif data.startswith('qa-system-action:') and os.environ.get('ORBIT_QA')=='1' and os.environ.get('ORBIT_NESTED')=='1':
                 action=data.removeprefix('qa-system-action:')
-                if action in ('density','pointer','microphone','brightness','battery-health','wallpaper','reduced-motion','screenshot','do-not-disturb','settings'):bridge.activateSystemAction(action)
+                if action in ('density','pointer','microphone','brightness','battery-health','wallpaper','reduced-motion','screenshot','do-not-disturb','settings','focus-taskbar'):bridge.activateSystemAction(action)
             elif data.startswith('qa-density:') and os.environ.get('ORBIT_QA')=='1' and os.environ.get('ORBIT_NESTED')=='1':
                 value=data.removeprefix('qa-density:')
                 if value in ('comfortable','compact','extra'):bridge.setPreference('density',value)

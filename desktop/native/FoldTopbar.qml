@@ -57,7 +57,7 @@ Item {
                         Accessible.name: hint
                         background: Item {
                             Rectangle {anchors.fill: parent;color: parent.parent.hovered ? Theme.hover : "transparent"}
-                            Rectangle {anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined;anchors.bottom: parent ? parent.bottom : undefined;width: 13;height: 1;color: Theme.accent;visible: perimeter.outputName ? (modelData.output===perimeter.outputName && modelData.visible) : modelData.active}
+                            Rectangle {anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined;anchors.bottom: parent ? parent.bottom : undefined;width: 13;height: 1;color: Theme.accent;visible: Orbit.outputWorkspaces[perimeter.outputName] !== undefined ? Orbit.outputWorkspaces[perimeter.outputName] === modelData.id : perimeter.outputName && modelData.output ? (modelData.output===perimeter.outputName && modelData.visible) : modelData.active}
                         }
                         onClicked: perimeter.switchSpace(modelData.id)
                     }
@@ -88,18 +88,18 @@ Item {
         width: rightRow.width+12;height: parent ? parent.height-4 : 0;color: perimeter.connected ? "transparent" : Theme.background;border.color: Theme.border;border.width: perimeter.connected ? 0 : Theme.surfaceOutline;radius: 0
         Row {
             id: rightRow;anchors.centerIn: parent;spacing: perimeter.screenWidth<700 ? 2 : 4
-            IconButton {padding: 4;objectName: "foldTopCamera";iconName: "camera";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Screenshot · Print Screen";onClicked: perimeter.openPanel("screenshot")}
-            IconButton {padding: 4;objectName: "foldTopMusic";iconName: System.values.muted ? "mute" : "volume";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Music and sound"+(System.values.audioAvailable ? " · "+System.values.volume+"%" : "");onClicked: perimeter.openPanel("music")}
+            IconButton {padding: 4;objectName: "foldTopCamera";phosphor: true;glyphColor: Orbit.panel==="screenshot" ? Theme.accentInk : Theme.text;iconName: "camera";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Screenshot · Print Screen";onClicked: perimeter.openPanel("screenshot")}
+            IconButton {padding: 4;objectName: "foldTopMusic";phosphor: true;glyphColor: Orbit.panel==="music" ? Theme.accentInk : Theme.text;iconName: System.values.muted ? "mute" : "volume";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Music and sound"+(System.values.audioAvailable ? " · "+System.values.volume+"%" : "");onClicked: perimeter.openPanel("music")}
             Rectangle {width: 1;height: 12;anchors.verticalCenter: parent ? parent.verticalCenter : undefined;color: Theme.separator}
-            IconButton {padding: 4;objectName: "foldTopNotifications";iconName: "bell";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Notifications"+(System.notifications.length ? " · "+System.notifications.length : "");onClicked: perimeter.openPanel("notifications")
+            IconButton {padding: 4;objectName: "foldTopNotifications";phosphor: true;glyphColor: Orbit.panel==="notifications" ? Theme.accentInk : Theme.text;iconName: "bell";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Notifications"+(System.notifications.length ? " · "+System.notifications.length : "");onClicked: perimeter.openPanel("notifications")
                 Rectangle {anchors.right: parent ? parent.right : undefined;anchors.top: parent ? parent.top : undefined;anchors.margins: 2;width: 3;height: 3;color: Theme.accent;visible: System.notifications.length>0}
             }
-            IconButton {padding: 4;objectName: "foldTopBackground";iconName: Orbit.panel==="tray" ? "chevron-up" : "chevron-down";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;visible: perimeter.backgroundCount>0;hint: "Background apps · "+perimeter.backgroundCount;onClicked: perimeter.openPanel("tray")}
+            IconButton {padding: 4;objectName: "foldTopBackground";phosphor: true;glyphColor: Orbit.panel==="tray" ? Theme.accentInk : Theme.text;iconName: Orbit.panel==="tray" ? "chevron-up" : "chevron-down";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;visible: perimeter.backgroundCount>0;hint: "Background apps · "+perimeter.backgroundCount;onClicked: perimeter.openPanel("tray")}
             Rectangle {width: 1;height: 12;anchors.verticalCenter: parent ? parent.verticalCenter : undefined;color: Theme.separator}
             OrbitButton {objectName: "foldTopBattery";text: perimeter.batteryText;quiet: true;visible: perimeter.batteryPresent;implicitHeight: perimeter.controlHeight;implicitWidth: Math.max(38,contentItem.implicitWidth+8);padding: 3;font.pixelSize: Theme.fontSize(10);hint: "Battery and charging limit";Accessible.name: hint+" · "+text;onClicked: perimeter.openPanel("battery")}
-            IconButton {padding: 4;objectName: "foldTopUsage";iconName: "usage";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "System usage · Signed in as "+Usage.username;onClicked: perimeter.openPanel("usage")}
+            IconButton {padding: 4;objectName: "foldTopUsage";phosphor: true;glyphColor: Theme.text;iconName: "usage";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "System Monitor";onClicked: Orbit.openSystemMonitor()}
             OrbitButton {text: Usage.username;quiet: true;visible: perimeter.screenWidth>=1000;implicitWidth: Math.min(70,contentItem.implicitWidth+8);implicitHeight: perimeter.controlHeight;padding: 3;font.pixelSize: Theme.fontSize(10);hint: "Signed in as "+Usage.username;onClicked: perimeter.openPanel("usage")}
-            IconButton {padding: 4;objectName: "foldTopSettings";iconName: "settings";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Quick settings";onClicked: perimeter.openPanel("quick")}
+            IconButton {padding: 4;objectName: "foldTopSettings";phosphor: true;glyphColor: Orbit.panel==="quick" ? Theme.accentInk : Theme.text;iconName: "settings";implicitWidth: perimeter.iconWidth;implicitHeight: perimeter.controlHeight;hint: "Quick settings";onClicked: perimeter.openPanel("quick")}
         }
         Rectangle {anchors.right: parent ? parent.right : undefined;anchors.bottom: parent ? parent.bottom : undefined;width: 15;height: 1;color: Theme.accent}
     }

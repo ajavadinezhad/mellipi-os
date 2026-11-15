@@ -22,19 +22,37 @@ class DesktopPackageTest(unittest.TestCase):
    for name in builder.RUNTIME_FILES:
     path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'fixture-binary')
    for folder in ('native','themes','src/session/configs/xdg-desktop-portal','tools'): (root/folder).mkdir(parents=True,exist_ok=True)
+   for name in ('libLayerShellQtInterface.so.5','plugins/wayland-shell-integration/liblayer-shell.so'):
+    path=root/'.qt6-layer-shell'/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'fixture-plugin')
+   shutil.copy2(ROOT/'src/mellipi_icons.py',root/'src/mellipi_icons.py')
    (root/'native/Test.qml').write_text('import QtQuick 2.15\nItem{}')
    for name in ('run-native-session.sh','run-native-shell.sh','README.md','src/installed_launcher.py','src/mellipi_software.py','src/software_sources.py','tools/wayland-env.sh','tools/qt5-env.sh','tools/native-output-power.py','tools/display-watchdog.py','tools/migrate-user-state.py','src/session/configs/xdg-desktop-portal/orbit-portals.conf'):
     (root/name).write_text('fixture')
    with patch.object(builder,'elf_dependencies',return_value=['libfixture-runtime (>= 1.0)']):stage=builder.stage_package(base/'stage','0.1.0','amd64',root)
    self.assertTrue((stage/'usr/lib/abstract/.native-runtime/bin/orbit-compositor').is_file())
    self.assertTrue((stage/'usr/lib/abstract/installed_launcher.py').is_file())
+   self.assertTrue((stage/'usr/share/icons/hicolor/scalable/apps/mellipi-files.svg').is_file())
    self.assertTrue((stage/'usr/lib/abstract/session/configs/xdg-desktop-portal/orbit-portals.conf').is_file())
    self.assertFalse((stage/'usr/lib/abstract/src').exists())
    for name in ('mellipi_software.py','software_sources.py'):
     self.assertTrue((stage/'usr/lib/abstract'/name).is_file())
-   for name in ('usr/bin/abstract-session','usr/bin/abstractctl','usr/share/wayland-sessions/abstract.desktop','usr/share/applications/orbit-settings.desktop','usr/bin/mellipi-software','usr/share/applications/mellipi-software.desktop'):
+   for name in ('usr/bin/abstract-session','usr/bin/abstractctl','usr/share/wayland-sessions/mellipi-qt6.desktop','usr/share/applications/orbit-settings.desktop','usr/bin/mellipi-software','usr/share/applications/mellipi-software.desktop'):
     content=(stage/name).read_text();self.assertNotIn(str(root),content);self.assertIn('/usr/',content)
    self.assertFalse((stage/'etc/pam.d/swaylock').exists())
+   defaults=(stage/'etc/xdg/orbit-mimeapps.list').read_text()
+   for app,mime in (('photos','image/png'),('pdf','application/pdf'),('media','video/mp4'),('disks','application/x-iso9660-image')):
+    self.assertIn(f'{mime}=mellipi-{app}.desktop;',defaults)
+    entry=(stage/f'usr/share/applications/mellipi-{app}.desktop').read_text()
+    self.assertIn(f'Exec=/usr/bin/mellipi-{app} %u',entry)
+    self.assertIn(f'MimeType=',entry)
+   for app in ('monitor','recorder'):
+    name=f'mellipi-{app}'
+    entry=(stage/f'usr/share/applications/{name}.desktop').read_text()
+    self.assertIn(f'Exec=/usr/bin/{name}\n',entry)
+    self.assertIn(f'StartupWMClass={name}\n',entry)
+    self.assertNotIn('MimeType=',entry)
+    self.assertIn(f'/usr/lib/abstract/mellipi_{app}.py',(stage/f'usr/bin/{name}').read_text())
+    self.assertTrue((stage/f'usr/share/icons/hicolor/scalable/apps/{name}.svg').is_file())
    # Exercise maintainer cleanup against fake commands, never host services.
    commands=base/'commands';commands.mkdir();calls=base/'calls'
    for command in ('deb-systemd-helper','systemctl','udevadm','update-alternatives'):
@@ -47,7 +65,7 @@ class DesktopPackageTest(unittest.TestCase):
    self.assertIn('update-alternatives:--remove x-terminal-emulator /usr/bin/mellipi-terminal',calls.read_text())
    for path in stage.rglob('*'):
     if not path.is_symlink():self.assertEqual(path.stat().st_mode & 0o022,0,str(path))
-   control=(stage/'DEBIAN/control').read_text();self.assertIn('python3-pyqt5.qtquick',control);self.assertNotIn('mintupdate',control);self.assertIn('qtwayland5',control);self.assertIn('pipewire-pulse | pulseaudio',control);self.assertIn('pkexec',control)
+   control=(stage/'DEBIAN/control').read_text();self.assertIn('python3-pyqt6.qtquick',control);self.assertNotIn('mintupdate',control);self.assertIn('qt6-wayland',control);self.assertIn('pipewire-pulse | pulseaudio',control);self.assertIn('pkexec',control)
 
  def test_elf_architecture_rejects_mislabeled_foreign_and_truncated_binaries(self):
   with tempfile.TemporaryDirectory() as directory:
@@ -60,12 +78,12 @@ class DesktopPackageTest(unittest.TestCase):
    path.write_bytes(b'\x7fELF')
    with self.assertRaisesRegex(ValueError,'does not match'):builder.packaged_elfs(root,'amd64')
  def test_explicit_render_and_tray_dependencies_and_opt_in_desktop_profile(self):
-  for name in ('gir1.2-rsvg-2.0','librsvg2-common','libqt5svg5','libxcb-damage0','libxcb-composite0'):self.assertIn(name,builder.DEPENDENCIES)
+  for name in ('gir1.2-rsvg-2.0','librsvg2-common','libqt6svg6','libxcb-damage0','libxcb-composite0'):self.assertIn(name,builder.DEPENDENCIES)
   self.assertNotIn('lightdm',builder.DEPENDENCIES)
   with tempfile.TemporaryDirectory() as directory:
    stage=builder.stage_desktop_package(Path(directory)/'desktop','0.1.5');control=(stage/'DEBIAN/control').read_text()
-   for name in ('mellipi-shell (= 0.1.5)','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','xterm','mousepad','epiphany-browser','synaptic','wvkbd','orca','fcitx5','fcitx5-config-qt','ddcutil','accountsservice'):self.assertIn(name,control)
-   for name in ('thunar', 'foot'):self.assertNotIn(name,builder.DESKTOP_DEPENDENCIES)
+   for name in ('mellipi-shell (= 0.1.5)','lightdm','lightdm-gtk-greeter','xserver-xorg','network-manager','synaptic','wvkbd','orca','fcitx5','fcitx5-config-qt','ddcutil','accountsservice'):self.assertIn(name,control)
+   for name in ('thunar', 'foot', 'xterm', 'mousepad', 'epiphany-browser', 'firefox-esr'):self.assertNotIn(name,builder.DESKTOP_DEPENDENCIES)
    self.assertFalse((stage/'DEBIAN/postinst').exists());self.assertFalse((stage/'etc/pam.d').exists());self.assertFalse((stage/'etc/lightdm/lightdm.conf').exists());self.assertFalse((stage/'etc/lightdm/lightdm-gtk-greeter.conf').exists())
    for path in stage.rglob('*'):self.assertEqual(path.stat().st_mode & 0o022,0,str(path))
  def test_shlibdeps_includes_all_elfs_and_private_search_paths_without_suppressing_missing_info(self):

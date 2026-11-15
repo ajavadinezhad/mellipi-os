@@ -58,12 +58,12 @@ def command(environment=None,binary=None):
     args=[flock,'--nonblock','--no-fork','--conflict-exit-code','75',str(lock),binary,'--daemonize','--ignore-empty-password','--show-failed-attempts','--show-keyboard-layout','--indicator-caps-lock','--color',color('background'),
         '--indicator-idle-visible','--indicator-radius',str(round(58*min(1.2,style['textScale']))),'--indicator-thickness','3','--font','Sans','--font-size',str(round(16*style['textScale'])),
         '--inside-color',color('surface'),'--inside-clear-color',color('surface'),'--inside-ver-color',color('surface'),'--inside-wrong-color',color('surface'),'--inside-caps-lock-color',color('surface'),
-        '--ring-color',color('accent'),'--ring-clear-color',color('accent'),'--ring-ver-color',color('warning'),'--ring-wrong-color',color('error'),'--ring-caps-lock-color',color('warning'),
+        '--ring-color',color('focus'),'--ring-clear-color',color('focus'),'--ring-ver-color',color('warning'),'--ring-wrong-color',color('error'),'--ring-caps-lock-color',color('warning'),
         '--text-color',color('text'),'--text-clear-color',color('text'),'--text-ver-color',color('text'),'--text-wrong-color',color('text'),'--text-caps-lock-color',color('text'),
         '--key-hl-color',color('text'),'--bs-hl-color',color('warning'),'--line-color',color('border'),
         '--layout-bg-color',color('surface'),'--layout-border-color',color('border'),'--layout-text-color',color('text')]
     for name,image in images:args.extend(['--image',(name+':' if name else '')+str(image)])
-    if images:args.extend(['--scaling','fit'])
+    if images:args.extend(['--scaling','fill'])
     return args
 
 def launch_and_wait(environment=None,timeout=8):
@@ -123,7 +123,10 @@ def main():
         environment=application_environment()
         environment['ORBIT_LOCK_TEXTBOX']='1'
         from preferences import Preferences
-        environment['ORBIT_LOCK_CLOCK_24']='1' if Preferences(os.environ.get('ORBIT_SETTINGS_FILE')).values['clock24'] else '0'
+        preferences=Preferences(os.environ.get('ORBIT_SETTINGS_FILE')).values
+        environment['ORBIT_LOCK_CLOCK_24']='1' if preferences['clock24'] else '0'
+        environment['ORBIT_LOCK_DENSITY']=preferences['density']
+        environment['ORBIT_LOCK_CORNERS']=preferences['corners']
         if os.environ.get('ORBIT_NATIVE_CONTROL'):environment['ORBIT_NATIVE_CONTROL']=os.environ['ORBIT_NATIVE_CONTROL']
         if os.environ.get('ORBIT_NESTED'):environment['ORBIT_LOCK_QA']='1'
         os.execvpe(args[0],args,environment)

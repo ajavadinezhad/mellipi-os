@@ -80,7 +80,7 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true;spacing: 8
         OrbitButton {objectName: "sessionExitCancel";text: "Return to work";Layout.fillWidth: true;onClicked: {SessionExit.cancel();Orbit.dismiss();}}
-        OrbitButton {objectName: "sessionExitCheck";text: "Check again";visible: !!SessionExit.state.error || SessionExit.inhibitors.length>0;enabled: !SessionExit.state.checking;onClicked: SessionExit.recheck()}
+        OrbitButton {objectName: "sessionExitCheck";text: "Check again";visible: SessionExit.state.action!=="logout" && (!!SessionExit.state.error || SessionExit.inhibitors.length>0);enabled: !SessionExit.state.checking;onClicked: SessionExit.recheck()}
     }
-    OrbitButton {objectName: "sessionExitConfirm";text: SessionExit.state.armed ? "Waiting for apps to close…" : panel.hasWindows ? "Close apps and "+panel.actionName : panel.actionLabel;Layout.fillWidth: true;accent: true;enabled: !SessionExit.state.armed && !SessionExit.state.checking;onClicked: SessionExit.closeAndWait()}
+    OrbitButton {objectName: "sessionExitConfirm";text: SessionExit.state.retry ? "Retry closing apps" : SessionExit.state.armed ? "Waiting for apps to close…" : panel.hasWindows ? "Close apps and "+panel.actionName : panel.actionLabel;Layout.fillWidth: true;accent: true;enabled: (!SessionExit.state.armed || SessionExit.state.retry) && !SessionExit.state.checking;onClicked: SessionExit.closeAndWait()}
 }

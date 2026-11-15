@@ -126,16 +126,19 @@ impl OrbitCompositor {
             }
             InputEvent::PointerAxis { event, .. } => {
                 let mut frame = AxisFrame::new(event.time_msec()).source(event.source());
+                let speed = if event.source() == AxisSource::Finger {
+                    self.native_system.values["touchpadScrollSpeed"].as_f64().unwrap_or(1.0)
+                } else { 1.0 };
                 for axis in [Axis::Horizontal, Axis::Vertical] {
                     let amount = event
                         .amount(axis)
                         .unwrap_or_else(|| event.amount_v120(axis).unwrap_or(0.0) * 15.0 / 120.0);
                     if amount != 0.0 {
-                        frame = frame.value(axis, amount);
+                        frame = frame.value(axis, amount * speed);
                     }
                     if let Some(amount) = event.amount_v120(axis) {
                         frame = frame.v120(axis, amount as i32);
-                    } else if event.source() == AxisSource::Finger {
+                    } else if event.source() == AxisSource::Finger && event.amount(axis) == Some(0.0) {
                         frame = frame.stop(axis);
                     }
                 }

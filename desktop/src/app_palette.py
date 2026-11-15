@@ -4,7 +4,20 @@ from functools import lru_cache
 
 
 def colors(preferences):
-    return colors_from_appearance(preferences.appearance())
+    appearance = preferences.appearance()
+    palette = colors_from_appearance(appearance)
+    backgrounds = [palette[key] for key in (
+        'background', 'surface', 'raised', 'hover', 'selected_surface',
+    )]
+    endpoint = '#000000' if appearance['mode'] == 'light' else '#ffffff'
+    accent = palette['accent']
+    palette['accent_ink'] = adjust_contrast(accent, backgrounds, 4.5, endpoint)
+    palette['focus'] = adjust_contrast(palette.get('focus', accent), backgrounds, 3, endpoint)
+    palette['focus_text'] = foreground_on(palette['focus'])
+    palette['control_border'] = adjust_contrast(palette['border'], backgrounds[:4], 3, endpoint)
+    palette['muted'] = adjust_contrast(palette['muted'], backgrounds, 4.5, endpoint)
+    palette['faint'] = adjust_contrast(palette['faint'], [palette['surface']], 4.5, endpoint)
+    return palette
 
 
 def colors_from_appearance(appearance):
@@ -35,11 +48,12 @@ def colors_from_appearance(appearance):
             f'{round(int(base[i:i+2],16)*(1-opacity)+int(overlay[i:i+2],16)*opacity):02x}'
             for i in (1, 3, 5)
         )
+    # Match the shell's divider treatment on both flat and raised surfaces.
     palette['separator'] = palette['border'] if appearance['highContrast'] else mix(
-        palette['background'], palette['border'], .35)
-    palette['selected_surface'] = palette['raised'] if appearance['highContrast'] else mix(
+        palette['surface'], palette['border'], .75)
+    palette['selected_surface'] = mix(
         palette['surface'], accent, .16)
-    return dict(palette, accent=accent, accent_text='#000000' if luminance(accent) > .179 else '#ffffff')
+    return dict(palette, accent=accent, accent_text=foreground_on(accent))
 
 
 
@@ -54,6 +68,35 @@ def contrast_ratio(a, b):
     return (hi + .05) / (lo + .05)
 
 
+def foreground_on(color):
+    return '#000000' if luminance(color) > .179 else '#ffffff'
+
+
+def adjust_contrast(color, backgrounds, target, endpoint):
+    def meets(candidate):
+        return all(contrast_ratio(candidate, background) >= target for background in backgrounds)
+
+    if meets(color):
+        return color
+    channels = [int(color[i:i+2], 16) for i in (1, 3, 5)]
+    extreme = int(endpoint[1:3], 16)
+
+    def blend(amount):
+        return '#' + ''.join(
+            f'{round((channel * (256 - amount) + extreme * amount) / 256):02x}'
+            for channel in channels
+        )
+
+    low, high = 0, 256
+    while high - low > 1:
+        amount = (low + high) // 2
+        if meets(blend(amount)):
+            high = amount
+        else:
+            low = amount
+    return endpoint if high == 256 else blend(high)
+
+
 def contrast_palette(appearance, palette):
     return dict(_contrast_palette(appearance['mode'], appearance['darkLevel'],
                                   appearance['accent'], tuple(sorted(palette.items()))))
@@ -66,33 +109,9 @@ def _contrast_palette(mode, dark_level, accent, entries):
     backgrounds = [palette[key] for key in ('background', 'surface', 'raised', 'hover')]
     endpoint = '#000000' if mode == 'light' else '#ffffff'
 
-    def adjust(color, target):
-        def meets(candidate):
-            return all(contrast_ratio(candidate, background) >= target for background in backgrounds)
-
-        if meets(color):
-            return color
-        channels = [int(color[i:i+2], 16) for i in (1, 3, 5)]
-        extreme = 0 if mode == 'light' else 255
-        def blend(amount):
-            return '#' + ''.join(
-                f'{round((channel * (256 - amount) + extreme * amount) / 256):02x}'
-                for channel in channels
-            )
-        low, high = 0, 256
-        while high - low > 1:
-            amount = (low + high) // 2
-            if meets(blend(amount)):
-                high = amount
-            else:
-                low = amount
-        if high == 256:
-            return endpoint
-        return blend(high)
-
     for key, target in (('text', 9), ('muted', 7), ('faint', 5.5), ('border', 3)):
-        palette[key] = adjust(palette[key], target)
-    palette['focus'] = adjust(accent, 3)
+        palette[key] = adjust_contrast(palette[key], backgrounds, target, endpoint)
+    palette['focus'] = adjust_contrast(accent, backgrounds, 3, endpoint)
     return tuple((key, palette[key]) for key in (
         'background', 'surface', 'raised', 'hover', 'text', 'muted', 'faint', 'border', 'focus',
     ))
@@ -100,3 +119,34 @@ def _contrast_palette(mode, dark_level, accent, entries):
 
 # Match the native Settings window at each density.
 HEADER_HEIGHTS = {'extra': 30, 'compact': 36, 'comfortable': 42}
+
+
+# App color gives the title glyph an identity; selection keeps the desktop accent.
+APP_IDENTITIES = {
+    'Mellipi Files': ('folder', '#c37a27'),
+    'Mellipi Terminal': ('terminal', '#27866c'),
+    'Mellipi Browser': ('browser', '#477add'),
+    'Private Browser': ('browser', '#9864cf'),
+    'Calendar': ('calendar', '#9864cf'),
+    'Calculator': ('calculator', '#5e75cb'),
+    'Text Editor': ('editor', '#477add'),
+    'Photos': ('photos', '#c1648c'),
+    'PDF Viewer': ('pdf', '#c76057'),
+    'Media': ('media', '#9864cf'),
+    'Disks': ('disks', '#278a94'),
+    'Mellipi Software': ('software', '#27866c'),
+    'System Monitor': ('usage', '#278a94'),
+    'Sound Recorder': ('microphone', '#c76057'),
+}
+
+
+@lru_cache(maxsize=96)
+def identity_appearance(title, surface):
+    glyph, color = APP_IDENTITIES.get(title, ('fold', '#6e80bb'))
+    mix = lambda weight: '#' + ''.join(
+        f'{round((1-weight)*int(surface[i:i+2],16)+weight*int(color[i:i+2],16)):02x}'
+        for i in (1, 3, 5))
+    badge = mix(.18)
+    endpoint = '#000000' if luminance(badge) >= .18 else '#ffffff'
+    ink = adjust_contrast(color, [badge], 4.5, endpoint)
+    return glyph, ink, badge

@@ -67,7 +67,8 @@ sudo mellipi-recover --restore mellipi-shell=0.1.8 abstract-shell=0.1.8
 
 The helper accepts only the four known desktop package names with validated exact
 versions. It invokes APT with normal signature verification, shows its proposed
-changes, and asks for confirmation. It never installs an arbitrary local `.deb`,
+changes, and asks for confirmation. If the requested versions would require
+removing any package, it aborts. It never installs an arbitrary local `.deb`,
 executes a saved command, forces a downgrade without review, or restarts a session.
 The trusted configured repository must retain the requested versions and be
 reachable. This is not an offline rescue partition, boot-time rollback menu,

@@ -1,6 +1,8 @@
 """Qt 6 for the existing X11 runtime; distro-matched Qt 5 for KDE layer-shell."""
 import os
 QT5=os.environ.get('ORBIT_QT')=='5'
+QT6_WAYLAND=os.environ.get('ORBIT_QT')=='6'
+LAYER_SHELL=QT5 or QT6_WAYLAND
 if QT5:
     from PyQt5.QtCore import QObject, pyqtProperty as Property, pyqtSignal as Signal, pyqtSlot as Slot, QTimer, QUrl, Qt, QSize, QLockFile, QEvent, QSocketNotifier,QPointF,QCoreApplication
     from PyQt5.QtGui import QIcon,QColor,QImage,QPainter,QFont,QDesktopServices,QRegion
@@ -8,6 +10,13 @@ if QT5:
     from PyQt5.QtQml import QQmlApplicationEngine
     from PyQt5.QtQuick import QQuickImageProvider,QQuickWindow,QQuickItem
     from PyQt5.QtNetwork import QLocalServer
+elif QT6_WAYLAND:
+    from PyQt6.QtCore import QObject, pyqtProperty as Property, pyqtSignal as Signal, pyqtSlot as Slot, QTimer, QUrl, Qt, QSize, QLockFile, QEvent, QSocketNotifier,QPointF,QCoreApplication
+    from PyQt6.QtGui import QIcon,QColor,QImage,QPainter,QFont,QDesktopServices,QRegion
+    from PyQt6.QtWidgets import QApplication,QSystemTrayIcon,QMenu
+    from PyQt6.QtQml import QQmlApplicationEngine
+    from PyQt6.QtQuick import QQuickImageProvider,QQuickWindow,QQuickItem
+    from PyQt6.QtNetwork import QLocalServer
 else:
     from PySide6.QtCore import QObject,Property,Signal,Slot,QTimer,QUrl,Qt,QSize,QLockFile,QEvent,QSocketNotifier,QPointF,QCoreApplication
     from PySide6.QtGui import QIcon,QColor,QImage,QPainter,QFont,QDesktopServices,QRegion

@@ -1,4 +1,4 @@
-use crate::OrbitCompositor;
+use crate::{window_snap::DragSnap, OrbitCompositor};
 use smithay::{
     desktop::Window,
     input::pointer::{
@@ -14,7 +14,7 @@ use smithay::{
 pub struct MoveSurfaceGrab {
     pub start_data: PointerGrabStartData<OrbitCompositor>,
     pub window: Window,
-    pub initial_window_location: Point<i32, Logical>,
+    pub drag: DragSnap,
 }
 
 impl PointerGrab<OrbitCompositor> for MoveSurfaceGrab {
@@ -28,10 +28,10 @@ impl PointerGrab<OrbitCompositor> for MoveSurfaceGrab {
         // While the grab is active, no client has pointer focus
         handle.motion(data, None, event);
 
-        let delta = event.location - self.start_data.location;
-        let new_location = self.initial_window_location.to_f64() + delta;
-        data.space
-            .map_element(self.window.clone(), new_location.to_i32_round(), true);
+        if let Some(rect) = self.drag.motion(data, &self.window, event.location) {
+            data.space.map_element(self.window.clone(), rect.loc, true);
+            data.request_redraw();
+        }
     }
 
     fn relative_motion(
@@ -52,12 +52,9 @@ impl PointerGrab<OrbitCompositor> for MoveSurfaceGrab {
     ) {
         handle.button(data, event);
 
-        // The button is a button code as defined in the
-        // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
-        const BTN_LEFT: u32 = 0x110;
-
-        if !handle.current_pressed().contains(&BTN_LEFT) {
-            // No more buttons are pressed, release the grab.
+        if !handle.current_pressed().contains(&self.start_data.button) {
+            self.drag
+                .finish(data, &self.window, handle.current_location());
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
@@ -155,5 +152,7 @@ impl PointerGrab<OrbitCompositor> for MoveSurfaceGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut OrbitCompositor) {}
+    fn unset(&mut self, data: &mut OrbitCompositor) {
+        data.clear_snap_preview();
+    }
 }

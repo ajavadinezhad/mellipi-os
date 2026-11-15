@@ -13,7 +13,7 @@ Window {
         padding: 6
         Accessible.name: glyph.charAt(0).toUpperCase() + glyph.slice(1) + " Settings"
         contentItem: Image {
-            source: "image://icons/window-control/" + String(Theme.focusColor).slice(1) + "/" + glyph
+            source: "image://icons/window-control/" + (Orbit.appearance.themePreset === "cyberpunk" ? "cyberpunk" : String(Theme.focusColor).slice(1)) + "/" + glyph
             fillMode: Image.PreserveAspectFit
         }
     }
@@ -24,6 +24,7 @@ Window {
     flags: Qt.Window | Qt.FramelessWindowHint
     color: "transparent"
     property bool wasMaximized: false
+    onClosing: SettingsConnection.closing()
     onVisibilityChanged: {
         if(settingsWindow.visibility!==Window.Minimized)
             wasMaximized=settingsWindow.visibility===Window.Maximized;
@@ -50,7 +51,7 @@ Window {
             }
             Text {
                 anchors.left:parent.left;anchors.leftMargin:2;anchors.verticalCenter:parent.verticalCenter
-                text:"Settings";color:Theme.text;font.pixelSize:Theme.fontSize(13);font.weight:Font.Medium
+                text:"Settings";color:Theme.text;font.pixelSize:Theme.labelSize;font.weight:Font.Medium
             }
             Row {
                 anchors.right:parent.right;anchors.verticalCenter:parent.verticalCenter;spacing:4
@@ -75,7 +76,7 @@ Window {
         SystemPanel {Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins: Theme.extraCompact ? 3 : Theme.compact ? 5 : 6}
         Text {
             visible:!!Orbit.notice;Layout.fillWidth:true;Layout.leftMargin:8;Layout.rightMargin:8
-            text:Orbit.notice;color:Theme.muted;font.pixelSize:Theme.fontSize(10);wrapMode:Text.Wrap;textFormat:Text.PlainText
+            text:Orbit.notice;color:Theme.muted;font.pixelSize:Theme.detailSize;wrapMode:Text.Wrap;textFormat:Text.PlainText
         }
     }
     Repeater {

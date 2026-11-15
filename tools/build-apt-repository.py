@@ -43,6 +43,29 @@ def package_fields(path):
     return fields
 
 
+def validate_desktop_pairs(rows):
+    """Every published desktop version must be installable as an exact pair."""
+    shells, desktops = set(), set()
+    for row in rows:
+        package = row['Package']
+        version = row['Version']
+        if package == 'mellipi-shell':
+            if row['Architecture'] != 'amd64':
+                raise ValueError('The desktop shell must be amd64')
+            shells.add(version)
+        elif package == 'mellipi-desktop':
+            if row['Architecture'] != 'all' or not any(
+                re.fullmatch(r'mellipi-shell\s*\(\s*=\s*' + re.escape(version) + r'\s*\)', dependency.strip())
+                for dependency in row.get('Depends', '').split(',')
+            ):
+                raise ValueError('The desktop profile must depend on its exact shell version: ' + version)
+            desktops.add(version)
+    if shells != desktops:
+        raise ValueError('Archive needs matching shell and desktop versions; shell only: '
+                         + ', '.join(sorted(shells - desktops)) + '; desktop only: '
+                         + ', '.join(sorted(desktops - shells)))
+
+
 def fingerprint(home, key):
     if not re.fullmatch(r'[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64}', key):
         raise ValueError('Use the complete signing-key fingerprint')
@@ -95,11 +118,10 @@ def build(output, packages, home, key, suite='noble', valid_days=90, now=None, o
                 raise ValueError('Published package versions are immutable: ' + filename)
             if not destination.exists():
                 shutil.copyfile(source, destination)
+        validate_desktop_pairs(package_fields(path) for path in (stage / 'pool').rglob('*.deb'))
         # dpkg's multiversion scanner supplies canonical control paragraphs and
         # SHA256 for every retained release, including Architecture: all.
         scan = run(['dpkg-scanpackages', '--multiversion', 'pool', '/dev/null'], cwd=stage, capture_output=True, text=True).stdout
-        for path in (stage / 'pool').rglob('*.deb'):
-            package_fields(path)
         directory = stage / 'dists' / suite / 'main/binary-amd64'
         directory.mkdir(parents=True)
         (directory / 'Packages').write_text(scan)

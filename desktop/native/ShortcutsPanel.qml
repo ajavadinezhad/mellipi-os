@@ -17,7 +17,7 @@ ScrollView {
                     Layout.fillWidth: true;spacing: 4
                     OrbitField {id: field;objectName: "shortcut_"+modelData.action;Accessible.name: modelData.label+" shortcut";Layout.fillWidth: true;implicitHeight: 30;text: modelData.chord;maximumLength: 64;font.pixelSize: Theme.fontSize(11);onAccepted: Shortcuts.setBinding(modelData.action,text)}
                     IconButton {objectName: "shortcutSet_"+modelData.action;iconName:"check";hint:"Apply "+modelData.label+" shortcut";implicitHeight:30;enabled: Shortcuts.state.available && !Shortcuts.state.busy;onClicked: Shortcuts.setBinding(modelData.action,field.text)}
-                    OrbitButton {objectName: "shortcutReset_"+modelData.action;text: "Reset";Accessible.name: "Reset "+modelData.label+" shortcut";quiet: true;implicitHeight: 28;enabled: Shortcuts.state.available && !Shortcuts.state.busy;onClicked: Shortcuts.resetBinding(modelData.action)}
+                    IconButton {objectName: "shortcutReset_"+modelData.action;iconName: "undo";hint: "Reset "+modelData.label+" shortcut";implicitHeight: 30;enabled: Shortcuts.state.available && !Shortcuts.state.busy;onClicked: Shortcuts.resetBinding(modelData.action)}
                 }
             }
         }

@@ -5,7 +5,7 @@ uses live client identity; saved layouts require explicit matching before apply.
 """
 import copy,json,math,os,stat,tempfile,threading,uuid,time,sys
 from pathlib import Path
-from qt_compat import QObject,Property,Signal,Slot
+from qt_compat import QObject,Property,Signal,Slot,QTimer
 from window_actions import find_window,valid_rect
 
 def client_key(node):
@@ -14,6 +14,27 @@ def client_key(node):
 def bounded_rect(rect,area):
     w=min(rect['width'],area['width']);h=min(rect['height'],area['height'])
     return dict(x=max(area['x'],min(rect['x'],area['x']+area['width']-w)),y=max(area['y'],min(rect['y'],area['y']+area['height']-h)),width=w,height=h)
+
+def layout_cards(layouts, apps):
+    """Small geometry-only previews. No window thumbnails or private titles."""
+    icons = {app['id']: app.get('icon') or 'application-x-executable' for app in apps}
+    cards = []
+    for layout in layouts:
+        windows = layout['windows']
+        first = windows[0]
+        tiles = []
+        for row in windows:
+            if (row['desktop'], row['output']) != (first['desktop'], first['output']):
+                continue
+            area = row['area']
+            rect = bounded_rect(row['rect'], area)
+            tiles.append(dict(x=(rect['x']-area['x'])/area['width'],
+                              y=(rect['y']-area['y'])/area['height'],
+                              w=rect['width']/area['width'], h=rect['height']/area['height'],
+                              icon=icons.get(row['app'], 'application-x-executable')))
+        cards.append(dict(id=layout['id'], name=layout['name'], count=len(windows), tiles=tiles))
+    return cards
+
 
 class ArrangementEngine:
     def __init__(self,actions,path):
@@ -28,7 +49,7 @@ class ArrangementEngine:
                 if found and (ids is None or ident in ids):
                     target,_=found;rect=target['_outer_rect'];area=space.get('rect',{})
                     if valid_rect(rect) and valid_rect(area):
-                        rows.append(dict(id=ident,key=client_key(node),rect=dict(rect),area=dict(area),desktop=space['num'],output=output,floating=bool(target['_floating']),fullscreen=bool(node.get('fullscreen_mode')),focused=bool(node.get('focused')),saved=copy.deepcopy(self.actions.saved.get(ident)),snapped=copy.deepcopy(self.actions.snapped.get(ident))))
+                        rows.append(dict(id=ident,key=client_key(node),rect=dict(rect),area=dict(area),desktop=space['num'],output=output,floating=bool(target['_floating']),snap=node.get('snap'),fullscreen=bool(node.get('fullscreen_mode')),focused=bool(node.get('focused')),saved=copy.deepcopy(self.actions.saved.get(ident)),snapped=copy.deepcopy(self.actions.snapped.get(ident))))
             for child in node.get('nodes',[])+node.get('floating_nodes',[]):walk(child,space,output)
         walk(tree);return rows[:48]
     def record_action(self,label,fn,ids=None):
@@ -67,16 +88,26 @@ class ArrangementEngine:
             if desktop not in areas:
                 desktop=min(areas);self.actions.command(f'[con_id={ident}] move container to workspace number {desktop}')
             area=areas[desktop]
+            native=getattr(self.actions,'client',None)
+            output=None
+            if native and row.get('output'):
+                output=next((item for item in native.snapshot().get('outputs',[]) if item['name']==row['output']),None)
+                if output:area=output['workarea']
             if undo and row['area']==area:rect=bounded_rect(row['rect'],area)
             else:
                 prior=row['area'];r=row['rect']
                 rect=bounded_rect(dict(x=area['x']+round((r['x']-prior['x'])/prior['width']*area['width']),y=area['y']+round((r['y']-prior['y'])/prior['height']*area['height']),width=max(1,round(r['width']/prior['width']*area['width'])),height=max(1,round(r['height']/prior['height']*area['height']))),area)
-            self.actions._resize(ident,rect)
+            if output:
+                native.request('resize',id=ident,rect=rect,output=output['name'])
+            else:
+                self.actions._resize(ident,rect)
+            if native and row.get('snap') and row['snap']!='maximize':
+                native.request('snap',id=ident,side=row['snap'],**({'output':output['name']} if output else {}))
             # Sway versions differ on whether floating resize includes the CSD
             # frame. Measure one configure reply rather than accumulating borders.
             time.sleep(.04)
             measured=find_window(self.actions.request(4),ident)
-            if measured:
+            if measured and not row.get('snap'):
                 actual=measured[0]['_outer_rect'];dw=actual['width']-rect['width'];dh=actual['height']-rect['height']
                 if (dw or dh) and 0<=dw<=64 and 0<=dh<=128 and rect['width']>dw and rect['height']>dh:
                     self.actions.command(f'[con_id={ident}] resize set width {rect["width"]-dw} px height {rect["height"]-dh} px; [con_id={ident}] move absolute position {rect["x"]} px {rect["y"]} px')
@@ -97,19 +128,26 @@ class ArrangementEngine:
             if not self.history:raise ValueError('There is no arrangement to undo')
             label,rows=self.history[-1]
             result=self.restore_rows(rows,True);self.history.pop();return result
-    def save(self,name,identities):
+    def save(self,name,identities,folder=""):
         name=name.strip()
+        folder=folder.strip()
+        if folder and (len(folder)>4096 or any(ord(c)<32 for c in folder)
+                       or not Path(folder).expanduser().is_absolute()
+                       or not Path(folder).expanduser().is_dir()):
+            raise ValueError('Enter an existing folder with an absolute path')
+        folder=str(Path(folder).expanduser()) if folder else ''
+
         if not name or len(name)>48 or any(ord(c)<32 for c in name):raise ValueError('Use a layout name of 1–48 characters')
         with self.lock,self.actions.lock:
             rows=self.capture();saved=[]
             for row in rows:
                 app=identities.get(str(row['id']))
                 if not app:continue
-                saved.append(dict(app=app,klass=str(row['key'][1])[:256],rect=row['rect'],area=row['area'],desktop=row['desktop'],floating=row['floating'],fullscreen=row['fullscreen']))
+                saved.append(dict(app=app,klass=str(row['key'][1])[:256],rect=row['rect'],area=row['area'],desktop=row['desktop'],output=row['output'],snap=row['snap'],floating=row['floating'],fullscreen=row['fullscreen']))
             if not saved:raise ValueError('No recognized application windows to save')
             if len(saved)>24:raise ValueError('Save layouts with at most 24 application windows')
             if len(self.layouts)>=12:raise ValueError('Remove a saved layout first (limit 12)')
-            self.layouts.append(dict(id=uuid.uuid4().hex,name=name,windows=saved))
+            self.layouts.append(dict(id=uuid.uuid4().hex,name=name,windows=saved,folder=folder))
             try:self.persist()
             except Exception:self.layouts.pop();raise
             return len(saved)
@@ -127,8 +165,8 @@ class ArrangementEngine:
             candidates=[dict(id=str(w['id']),name=w.get('title') or row['app'],pid=w.get('pid',0)) for w in windows if not w.get('minimized') and w.get('appId')==row['app'] and str(w['id']) not in used]
             selected=candidates[0]['id'] if len(candidates)==1 else ''
             if selected:used.add(selected)
-            rows.append(dict(index=index,app=row['app'],workspace=row['desktop'],name=app['name'] if app else row['app'],candidates=candidates,selected=selected,installed=bool(app),status='Reuse open window' if selected else 'Choose a window' if candidates else 'Open application first' if app else 'Application is not installed'))
-        return dict(id=ident,name=saved['name'],rows=rows)
+            rows.append(dict(index=index,app=row['app'],workspace=row['desktop'],name=app['name'] if app else row['app'],candidates=candidates,selected=selected,installed=bool(app),status='Reuse open window' if selected else 'Choose a window' if candidates else 'Open another window' if any(w.get('appId')==row['app'] and not w.get('minimized') for w in windows) else 'Open application first' if app else 'Application is not installed'))
+        return dict(id=ident,name=saved['name'],rows=rows,folder=saved.get('folder',''))
     def apply(self,preview):
         saved=next((r for r in self.layouts if r['id']==preview['id']),None)
         if not saved:raise ValueError('Layout is no longer available')
@@ -142,7 +180,7 @@ class ArrangementEngine:
             if candidate is None or (candidate.get('pid') and candidate['pid']!=current['key'][0]):raise ValueError('A selected window changed; refresh the preview')
             # Verify class again: an ID must never silently select another client.
             if str(current['key'][1])!=layout['klass']:raise ValueError('A selected application changed; refresh the preview')
-            rows.append(dict(current,rect=layout['rect'],area=layout['area'],desktop=layout['desktop'],floating=True,fullscreen=layout['fullscreen'],focused=False))
+            rows.append(dict(current,rect=layout['rect'],area=layout['area'],desktop=layout['desktop'],output=layout.get('output',''),snap=layout.get('snap'),floating=True,fullscreen=layout['fullscreen'],focused=False))
         return self.record_action('Apply '+saved['name'],lambda:self.restore_rows(rows),ids)
     def load(self):
         try:
@@ -154,9 +192,14 @@ class ArrangementEngine:
             rows=data['layouts']
             for layout in rows:
                 if not isinstance(layout,dict) or not isinstance(layout.get('id'),str) or len(layout['id'])!=32 or not isinstance(layout.get('name'),str) or not 1<=len(layout['name'])<=48:raise ValueError('Invalid saved layout')
+                folder=layout.get('folder','')
+                if not isinstance(folder,str) or len(folder)>4096 or (folder and (not Path(folder).is_absolute() or any(ord(c)<32 for c in folder))):
+                    raise ValueError('Invalid project folder')
                 if not isinstance(layout.get('windows'),list) or not 1<=len(layout['windows'])<=24:raise ValueError('Invalid saved layout windows')
                 for row in layout['windows']:
                     if not isinstance(row,dict) or not valid_rect(row.get('rect')) or not valid_rect(row.get('area')) or type(row.get('desktop')) is not int or not 1<=row['desktop']<=99 or not all(isinstance(row.get(k),str) and 0<len(row[k])<=256 for k in ('app','klass')) or type(row.get('fullscreen')) is not bool or type(row.get('floating')) is not bool:raise ValueError('Invalid saved layout window')
+                    if not isinstance(row.get('output',''),str) or len(row.get('output',''))>128 or row.get('snap') not in (None,'left','right','top','bottom','top-left','top-right','bottom-left','bottom-right','maximize'):
+                        raise ValueError('Invalid saved output or tile')
             self.layouts=rows
         except (OSError,ValueError,TypeError,KeyError):pass
     def persist(self):
@@ -173,13 +216,13 @@ class ArrangementEngine:
 class Arrangements(QObject):
     changed=Signal();notice=Signal(str);saved=Signal(str)
     def __init__(self,bridge,parent=None):
-        super().__init__(parent);self.bridge=bridge;self.engine=ArrangementEngine(bridge.windowActions,bridge.preferences.path.with_name('layouts.json')) if bridge.windowActions else None;self._busy=False;self._preview={}
+        super().__init__(parent);self.bridge=bridge;self.engine=ArrangementEngine(bridge.windowActions,bridge.preferences.path.with_name('layouts.json')) if bridge.windowActions else None;self._busy=False;self._preview={};self._resume=None
         if self.engine:self.engine.sync=lambda ident:bridge.xwaylandControls.restore_state(ident) if getattr(bridge,'xwaylandControls',None) else None
         if hasattr(bridge,'windowsChanged'):bridge.windowsChanged.connect(self.reconcilePreview)
     available=Property(bool,lambda s:s.engine is not None,constant=True)
     busy=Property(bool,lambda s:s._busy,notify=changed)
     undoLabel=Property(str,lambda s:s.engine.history[-1][0] if s.engine and s.engine.history else '',notify=changed)
-    layouts=Property('QVariantList',lambda s:[dict(id=r['id'],name=r['name'],count=len(r['windows'])) for r in s.engine.layouts] if s.engine else [],notify=changed)
+    layouts=Property('QVariantList',lambda s:layout_cards(s.engine.layouts,s.bridge._apps) if s.engine else [],notify=changed)
     preview=Property('QVariantMap',lambda s:s._preview,notify=changed)
     def submit(self,work,done=None):
         if not self.engine or self._busy:return
@@ -191,25 +234,33 @@ class Arrangements(QObject):
     @Slot()
     def undo(self):self.submit(self.engine.undo if self.engine else lambda:None,lambda result:self.notice.emit(f"Restored {result['applied']} windows"+(f"; {result['skipped']} closed windows skipped" if result['skipped'] else '')))
     @Slot(str)
-    def save(self,name):
+    @Slot(str,str)
+    def save(self,name,folder=""):
         identities={str(w['id']):a['id'] for a in self.bridge._dockApps for w in a['windows'] if any(app['id']==a['id'] for app in self.bridge._apps)}
         def done(count):
             self.notice.emit(f'Saved {count} application positions');self.saved.emit(name)
-        self.submit(lambda:self.engine.save(name,identities),done)
+        self.submit(lambda:self.engine.save(name,identities,folder),done)
     @Slot(str)
     def remove(self,ident):self.submit(lambda:self.engine.remove(ident),lambda _:self.clearPreview())
     def live_windows(self):
         result=[]
         for w in self.bridge._windows:
             app=next((a for a in self.bridge._dockApps if any(str(item['id'])==str(w['id']) for item in a['windows'])),None)
+            if w.get('native') and (not valid_rect(w.get('rect')) or min(w['rect']['width'],w['rect']['height'])<=1):continue
             result.append(dict(w,appId=app['id'] if app else ''))
         return result
     @Slot(str)
     def openPreview(self,ident):
         if not self.engine or self._busy:return
+        if self._resume and self._resume!=ident:self._resume=None
         try:self._preview=self.engine.preview(ident,self.live_windows(),self.bridge._apps)
         except ValueError as error:self.notice.emit(str(error));return
         self.changed.emit()
+    @Slot(str)
+    def resumeSaved(self, ident):
+        self.openPreview(ident)
+        if self._preview.get('id') == ident:
+            self.resume()
     @Slot()
     def refreshPreview(self):
         if self._preview:self.openPreview(self._preview['id'])
@@ -222,19 +273,77 @@ class Arrangements(QObject):
         used=set()
         for row,old in zip(current['rows'],previous['rows']):
             selected=old['selected']
-            if selected and selected not in used and any(c['id']==selected for c in row['candidates']):row['selected']=selected
-            if row['selected'] in used:row['selected']=''
-            if row['selected']:used.add(row['selected'])
+            if selected and selected not in used and any(c['id']==selected for c in row['candidates']):
+                row['selected']=selected
+                used.add(selected)
+            else:
+                row['selected']=''
+        for row in current['rows']:
+            if row['selected']:continue
+            candidates=[candidate for candidate in row['candidates'] if candidate['id'] not in used]
+            if len(candidates)==1:
+                row['selected']=candidates[0]['id']
+                used.add(row['selected'])
         if current!=previous:self._preview=current;self.changed.emit()
+        self.finishResume()
+    @Slot()
+    def resume(self):
+        if self._busy or self._resume or not self._preview:return
+        rows=self._preview['rows']
+        if any(not row['selected'] and (row['candidates'] or not row['installed']) for row in rows):
+            return self.notice.emit('Choose open windows and install missing apps before resuming')
+        missing=[row['app'] for row in rows if not row['selected']]
+        if not missing:return self.apply(open_folder=True)
+        self._resume=self._preview['id']
+        pending=object()
+        self._resumeToken=pending
+        self._resumeApps=set(missing)
+        QTimer.singleShot(120000,lambda:self.resumeTimedOut(pending))
+        self._resumeQueue=missing
+        self.launchNextForResume(pending)
+    def launchNextForResume(self,pending):
+        if not self._resume or self._resumeToken is not pending:return
+        if self._resumeQueue:
+            app=self._resumeQueue.pop(0)
+            self.bridge.launchForLayout(app,lambda:QTimer.singleShot(0,lambda:self.launchNextForResume(pending)),allow_new=True)
+        else:
+            self.finishResume()
+            QTimer.singleShot(15000,lambda:self.resumeTimedOut(pending))
+    def overridesPlacement(self,window):
+        if not self._resume:return False
+        from desktop import match_application
+        app=match_application(window,self.bridge._apps)
+        return bool(app and app['id'] in self._resumeApps)
+    def finishResume(self):
+        if self._resume!=self._preview.get('id') or not self._resume:return
+        rows=self._preview['rows']
+        if not self._resumeQueue and all(row['selected'] for row in rows) and len({row['selected'] for row in rows})==len(rows):
+            self._resume=None
+            self.apply(open_folder=True)
+    def resumeTimedOut(self,pending):
+        if self._resume and self._resumeToken is pending:
+            self._resume=None
+            self.notice.emit('Some windows did not open. Open another window in the app, then select it in the layout.')
     @Slot(int,str)
     def choose(self,index,ident):
         if self._busy or not 0<=index<len(self._preview.get('rows',[])):return
         row=self._preview['rows'][index]
         if ident and not any(c['id']==ident for c in row['candidates']):return
-        row['selected']=ident;self.changed.emit()
+        row['selected']=ident;self.changed.emit();self.finishResume()
     @Slot()
-    def clearPreview(self):self._preview={};self.changed.emit()
+    def clearPreview(self):self._resume=None;self._preview={};self.changed.emit()
     @Slot()
-    def apply(self):
+    def apply(self, open_folder=False):
         preview=copy.deepcopy(self._preview)
-        if preview:self.submit(lambda:self.engine.apply(preview),lambda result:(self.notice.emit(f"Arranged {result['applied']} windows — Undo is available"),self.clearPreview()))
+        def done(result):
+            self.notice.emit(f"Arranged {result['applied']} windows — Undo is available")
+            self.clearPreview()
+            folder=preview.get('folder')
+            if open_folder and result['applied'] and preview['rows']:
+                self.bridge.switchDesktop(preview['rows'][0]['workspace']-1)
+            if open_folder and folder:
+                if Path(folder).is_dir():
+                    self.bridge.launchApplication('mellipi-files.desktop',keep_open=True,file_uri=Path(folder).as_uri())
+                else:
+                    self.notice.emit('The saved project folder is unavailable')
+        if preview:self.submit(lambda:self.engine.apply(preview),done)

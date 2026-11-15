@@ -31,7 +31,7 @@ Rectangle {
         x:2;y:2
         width:segments.segmentWidth;height:24;radius:Theme.corner(8)
         color:Theme.selectedSurface
-        Rectangle {visible:Theme.fold;anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.leftMargin:4;anchors.rightMargin:4;height:2;color:Theme.accent}
+        Rectangle {visible:Theme.fold;anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.leftMargin:4;anchors.rightMargin:4;height:2;color:Theme.accentInk}
     }
     NumberAnimation {id:segmentSlide;objectName:"segmentSlide";target:selection;property:"x";duration:Theme.motion;easing.type:Easing.OutCubic}
     readonly property bool motionDisabled:Theme.reducedMotion
@@ -46,7 +46,7 @@ Rectangle {
                 Keys.onSpacePressed: segments.selected(modelData.value)
                 Keys.onReturnPressed: segments.selected(modelData.value)
                 width: segments.segmentWidth;height: 24;radius: Theme.corner(8)
-                border.width: activeFocus ? 1 : 0;border.color: Theme.accent
+                border.width: activeFocus ? (Theme.highContrast ? 2 : 1) : 0;border.color: Theme.focusColor
                 color: segments.value === modelData.value ? "transparent" : hit.containsMouse ? Theme.hover : "transparent"
                 Canvas {
                     id: segmentGlyph;x: 6;anchors.verticalCenter: parent.verticalCenter;width: 12;height: 12;visible: !!modelData.glyph

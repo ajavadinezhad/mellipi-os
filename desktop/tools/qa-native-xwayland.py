@@ -48,7 +48,8 @@ def main():
                 if key in parent:os.environ[key]=parent[key]
             routed=True;qa.wait(lambda:qa.control('status'))
             from sway_events import request,command
-            native_env=dict(parent,WINIT_UNIX_BACKEND='wayland',ORBIT_NATIVE_PROFILE='balanced',LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe')
+            native_env=dict(parent,WINIT_UNIX_BACKEND='wayland',ORBIT_NATIVE_PROFILE='balanced',
+                            ORBIT_NATIVE_WINDOW_PLACEMENT='off',LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe')
             native_env.pop('DISPLAY',None);native_env.pop('MESA_LOADER_DRIVER_OVERRIDE',None)
             native_env.pop('ORBIT_NATIVE_REDUCED_MOTION',None)
             compositor=subprocess.Popen([str(binary)],cwd=ROOT,env=native_env,stdout=native_log,stderr=native_log,start_new_session=True)
@@ -143,8 +144,8 @@ def main():
                 client.request('close',id=red);wait(lambda:fixtures[0].poll() is not None,5);wait(lambda:not client.windows(),3);record('X11 close targets owned fixtures only')
             qa_pointer=VirtualPointer(parent);parent_output=request(3)[0]['rect']
             previous={row['id'] for row in client.windows()}
-            code='from PyQt5.QtWidgets import QApplication,QWidget;a=QApplication([]);w=QWidget();w.setWindowTitle("Orbit owned legacy header fixture");w.setStyleSheet("background:#ff5500");w.resize(300,180);w.show();a.exec()'
-            legacy=subprocess.Popen(['/usr/bin/python3','-c',code],env=child,stdout=parent_log,stderr=parent_log);fixtures.append(legacy)
+            legacy_code='from PyQt5.QtWidgets import QApplication,QWidget;a=QApplication([]);w=QWidget();w.setWindowTitle("Orbit owned legacy header fixture");w.setStyleSheet("background:#ff5500");w.resize(300,180);w.show();a.exec()'
+            legacy=subprocess.Popen(['/usr/bin/python3','-c',legacy_code],env=child,stdout=parent_log,stderr=parent_log);fixtures.append(legacy)
             row=wait(lambda:next((row for row in client.snapshot()['windows'] if row['id'] not in previous and row.get('frame')),None),8);legacy_id=row['id']
             def legacy_row():return next((row for row in client.snapshot()['windows'] if row['id']==legacy_id),None)
             # Winit may draw its own client-side host frame, which Sway's
@@ -172,8 +173,272 @@ def main():
             record('legacy header corner resize preserves the opposite corner')
             click_button(48);wait(lambda:legacy_row()['maximized'],3);record('legacy compositor header maximize button')
             click_button(48);wait(lambda:not legacy_row()['maximized'],3)
+            if client.status()['capabilities'].get('window_snap'):
+                output=client.snapshot()['outputs'][0]
+                viewport,area=output['rect'],output['workarea']
+                left=viewport['x']+2
+                right=viewport['x']+viewport['width']-3
+                top=viewport['y']+2
+                middle=(viewport['x']+viewport['width']//2,viewport['y']+viewport['height']//2)
+                original=dict(legacy_row()['rect'])
+                def drag(destination):
+                    frame=legacy_row()['frame']
+                    pointer(frame['x']+35,frame['y']+frame['height']//2,'press')
+                    pointer(*destination)
+                    pointer(*destination,'release')
+                def tile_bounds():
+                    row=legacy_row();frame=row['frame'];body=row['rect']
+                    return dict(x=frame['x'],y=frame['y'],width=frame['width'],
+                                height=body['y']+body['height']-frame['y'])
+                client.request('window-snap',enabled=False)
+                require(client.status()['window_snap_enabled'] is False,client.status())
+                drag((left,middle[1]))
+                require(legacy_row().get('snap') is None,legacy_row())
+                client.request('resize',id=legacy_id,rect=original)
+                wait(lambda:legacy_row()['rect']==original,3)
+                client.request('window-snap',enabled=True)
+                def preview_sample():
+                    view=native_view();host_rect=view['rect'];inner=view.get('window_rect',{})
+                    image_path=directory/'snap-preview.png'
+                    subprocess.run(['grim',str(image_path)],env=parent,check=True,timeout=5,
+                                   stdout=parent_log,stderr=parent_log)
+                    image=QImage(str(image_path))
+                    x=round(host_rect['x']+inner.get('x',0)+pointer_offset[0]+area['x']+area['width']//2-20)
+                    y=round(host_rect['y']+inner.get('y',0)+pointer_offset[1]+area['y']+40)
+                    require(0<=x<image.width() and 0<=y<image.height(),(x,y,image.size()))
+                    return image.pixelColor(x,y).rgb()
+                frame=legacy_row()['frame']
+                pointer(frame['x']+35,frame['y']+frame['height']//2,'press')
+                pointer(left+24,middle[1])
+                before_preview=preview_sample()
+                pointer(left,middle[1])
+                wait(lambda:client.status().get('window_snap_preview') is not None,3)
+                wait(lambda:preview_sample()!=before_preview,3)
+                pointer(left,middle[1],'release')
+                wait(lambda:legacy_row().get('snap')=='left',3)
+                require(client.status().get('window_snap_preview') is None,client.status())
+                half_width=area['width']//2
+                require(tile_bounds()==dict(area,width=half_width),tile_bounds())
+                drag((right,top))
+                wait(lambda:legacy_row().get('snap')=='top-right',3)
+                require(tile_bounds()==dict(area,x=area['x']+half_width,
+                                            width=area['width']-half_width,
+                                            height=area['height']//2),tile_bounds())
+                from native_backend import NativeWindowActions
+                NativeWindowActions(client=client).restore_size(int(legacy_id))
+                wait(lambda:legacy_row()['rect']==original and legacy_row().get('snap') is None,3)
+                drag((right,top))
+                wait(lambda:legacy_row().get('snap')=='top-right',3)
+                drag(middle)
+                wait(lambda:legacy_row().get('snap') is None,3)
+                require(all(legacy_row()['rect'][key]==original[key] for key in ('width','height')),legacy_row())
+                drag((middle[0],top))
+                wait(lambda:legacy_row()['maximized'],3)
+                drag(middle)
+                wait(lambda:not legacy_row()['maximized'],3)
+                require(all(legacy_row()['rect'][key]==original[key] for key in ('width','height')),legacy_row())
+                record('legacy drag snap toggle, half, quarter, maximize and restore')
+                record('compositor renders the drop preview during drag')
             click_button(80);wait(lambda:legacy_row()['minimized'],3);client.request('focus',id=legacy_id);wait(lambda:not legacy_row()['minimized'] and legacy_row()['active'],3);record('legacy header minimize and typed restore retain identity')
             click_button(16);wait(lambda:legacy.poll() is not None,3);wait(lambda:legacy_row() is None,3);record('legacy compositor header close button targets fixture')
+            if client.status()['capabilities'].get('window_snap'):
+                wayland_env=dict(parent,WAYLAND_DISPLAY=info['wayland_display'],
+                                 QT_QPA_PLATFORM='wayland',QT_WAYLAND_SHELL_INTEGRATION='xdg-shell')
+                wayland_env.pop('DISPLAY',None)
+                wayland_env.pop('SWAYSOCK',None)
+                code="""from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtCore import Qt
+class Fixture(QWidget):
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            print('Wayland fixture system move:', self.windowHandle().startSystemMove(), flush=True)
+app=QApplication([])
+window=Fixture()
+window.setWindowFlags(Qt.FramelessWindowHint)
+window.setWindowTitle('Owned Wayland snap fixture')
+window.resize(340,230)
+window.show()
+app.exec_()
+"""
+                fixture=subprocess.Popen(['/usr/bin/python3','-c',code],env=wayland_env,stdout=parent_log,stderr=parent_log)
+                fixtures.append(fixture)
+                def wayland_row():
+                    return next((row for row in client.windows() if row['title']=='Owned Wayland snap fixture'),None)
+                wait(wayland_row,8)
+                wait(lambda:wayland_row()['active'] and not client.status()['animating'],5)
+                original=wayland_row()['rect']
+                pointer(original['x']+35,original['y']+20,'press')
+                time.sleep(.25)
+                pointer(middle[0],middle[1])
+                pointer(right,middle[1])
+                before_release=client.status()
+                pointer(right,middle[1],'release')
+                try:
+                    snapped=wait(lambda:row if (row:=wayland_row()).get('snap')=='right' else None,3)
+                except AssertionError as error:
+                    raise AssertionError(dict(before_release=before_release['pointer'],window=wayland_row())) from error
+                require(snapped['rect']==dict(area,x=area['x']+half_width,width=area['width']-half_width),snapped)
+                pointer(snapped['rect']['x']+35,snapped['rect']['y']+20,'press')
+                time.sleep(.25)
+                pointer(middle[0]+20,middle[1]+20)
+                pointer(*middle)
+                pointer(*middle,'release')
+                restored=wait(lambda:row if (row:=wayland_row()).get('snap') is None else None,3)
+                require(all(restored['rect'][key]==original[key] for key in ('width','height')),restored)
+                client.request('close',id=restored['id'])
+                wait(lambda:fixture.poll() is not None,3)
+                record('Wayland client-initiated move snaps and restores floating size')
+            if client.status()['capabilities'].get('window_placement'):
+                area=client.snapshot()['outputs'][0]['workarea']
+                half_width=area['width']//2
+                half_height=area['height']//2
+                def open_fixture(source,env):
+                    before={row['id'] for row in client.windows()}
+                    process=subprocess.Popen(['/usr/bin/python3','-c',source],env=env,
+                                             stdin=subprocess.PIPE,stdout=parent_log,stderr=parent_log)
+                    fixtures.append(process)
+                    row=wait(lambda:next((row for row in client.windows() if row['id'] not in before),None),8)
+                    return process,row['id']
+                def window_row(ident):
+                    return next((row for row in client.windows() if row['id']==ident),None)
+                def close_fixture(process,ident):
+                    client.request('close',id=ident)
+                    wait(lambda:process.poll() is not None and window_row(ident) is None,5)
+                client.request('window-placement',layout='columns')
+                require(client.status()['window_placement']=='columns',client.status())
+                fixed_code=code.replace('window.resize(340,230)','window.setFixedSize(340,230)')
+                process,ident=open_fixture(fixed_code,wayland_env)
+                wait(lambda:(row:=window_row(ident)) and row['active'] and not client.status()['animating'],5)
+                require(window_row(ident).get('snap') is None,window_row(ident))
+                close_fixture(process,ident)
+                placed=[]
+                for zone,bounds in [
+                    ('left',dict(area,width=half_width)),
+                    ('right',dict(area,x=area['x']+half_width,width=area['width']-half_width)),
+                ]:
+                    process,ident=open_fixture(code,wayland_env)
+                    placed.append((process,ident))
+                    wait(lambda:(row:=window_row(ident)) and row.get('snap')==zone and row['rect']==bounds,5)
+                process,ident=open_fixture(code,wayland_env)
+                wait(lambda:(row:=window_row(ident)) and row['active'] and not client.status()['animating'],5)
+                require(window_row(ident).get('snap') is None,window_row(ident))
+                close_fixture(process,ident)
+                for process,ident in placed:
+                    close_fixture(process,ident)
+                record('new Wayland windows fill free columns and fixed-size or overflow windows float')
+                client.request('window-placement',layout='grid')
+                process,ident=open_fixture(legacy_code,child)
+                row=wait(lambda:row if (row:=window_row(ident)) and row.get('snap')=='top-left' and row.get('frame') else None,5)
+                frame,body=row['frame'],row['rect']
+                bounds=dict(x=frame['x'],y=frame['y'],width=frame['width'],
+                            height=body['y']+body['height']-frame['y'])
+                require(bounds==dict(area,width=half_width,height=half_height),row)
+                tall_code=code.replace('window.resize(340,230)',f'window.setMinimumHeight({half_height+40})\nwindow.resize(340,230)')
+                tall,tall_id=open_fixture(tall_code,wayland_env)
+                wait(lambda:(row:=window_row(tall_id)) and row.get('snap')=='right' and row['rect']['height']==area['height'],5)
+                client.request('window-placement',layout='main-stack')
+                wait(lambda:window_row(tall_id).get('snap')=='left' and window_row(ident).get('snap')=='top-right',5)
+                close_fixture(tall,tall_id)
+                client.request('window-placement',layout='rows')
+                wait(lambda:window_row(ident).get('snap')=='top',5)
+                client.request('minimize',id=ident)
+                wait(lambda:window_row(ident)['minimized'],5)
+                client.request('window-placement',layout='columns')
+                client.request('restore',id=ident)
+                wait(lambda:window_row(ident).get('snap')=='left' and not window_row(ident)['minimized'],5)
+                close_fixture(process,ident)
+                record('mixed Wayland and XWayland windows reflow live across all four layouts, including tall windows')
+                reopen_code=code.replace('app.exec_()', '''import sys
+from PyQt5.QtCore import QSocketNotifier
+commands=QSocketNotifier(sys.stdin.fileno(),QSocketNotifier.Read)
+commands.activated.connect(lambda _: window.setVisible(sys.stdin.readline().strip()=='show'))
+app.exec_()
+''')
+                for env in (wayland_env,child):
+                    client.request('window-placement',layout='columns')
+                    process,ident=open_fixture(reopen_code,env)
+                    wait(lambda:(row:=window_row(ident)) and row.get('snap')=='left',5)
+                    process.stdin.write(b'hide\n');process.stdin.flush()
+                    wait(lambda:not (row:=window_row(ident)) or row.get('snap') is None,5)
+                    client.request('window-placement',layout='rows')
+                    process.stdin.write(b'show\n');process.stdin.flush()
+                    row=wait(lambda:next((row for row in client.windows() if row.get('snap')=='top'),None),5)
+                    close_fixture(process,row['id'])
+                record('hidden Wayland and XWayland windows snap when shown again')
+                for env in (wayland_env,child):
+                    client.request('window-placement',layout='columns')
+                    first,first_id=open_fixture(code,env)
+                    wait(lambda:window_row(first_id).get('snap')=='left',5)
+                    client.request('minimize',id=first_id)
+                    second,second_id=open_fixture(code,env)
+                    wait(lambda:window_row(second_id).get('snap')=='left',5)
+                    client.switch_workspace(2)
+                    wait(lambda:client.status()['workspace']==2 and not client.status()['animating'],5)
+                    client.request('focus',id=first_id)
+                    wait(lambda:window_row(first_id).get('snap')=='right',5)
+                    require(window_row(second_id).get('snap')=='left',window_row(second_id))
+                    close_fixture(first,first_id)
+                    close_fixture(second,second_id)
+                record('restoring from another workspace respects occupied tiles in both window protocols')
+                client.request('window-placement',layout='columns')
+                first,first_id=open_fixture(code,wayland_env)
+                wait(lambda:window_row(first_id).get('snap')=='left',5)
+                client.request('snap',id=first_id,side='left')
+                second,second_id=open_fixture(legacy_code,child)
+                wait(lambda:window_row(second_id).get('snap')=='right',5)
+                require(window_row(first_id).get('snap')=='left',window_row(first_id))
+                client.move(first_id,2)
+                client.request('snap',id=second_id,side='left')
+                client.move(second_id,2)
+                wait(lambda:window_row(second_id).get('snap')=='right' and window_row(second_id)['workspace']==2,5)
+                close_fixture(first,first_id)
+                close_fixture(second,second_id)
+                record('manual snaps reserve tiles and moving a snapped window checks its destination')
+                client.request('window-placement',layout='off')
+                process,ident=open_fixture(code,wayland_env)
+                wait(lambda:(row:=window_row(ident)) and row['active'] and not client.status()['animating'],5)
+                require(window_row(ident).get('snap') is None,window_row(ident))
+                close_fixture(process,ident)
+                record('Off keeps newly opened windows floating')
+                if client.status()['capabilities'].get('independent_workspaces'):
+                    output=client.snapshot()['outputs'][0]['name']
+                    client.request('workspace-mode',independent=True)
+                    first,first_id=open_fixture(code,wayland_env)
+                    wait(lambda:window_row(first_id)['active'],5)
+                    client.request('workspace',workspace=2,output=output)
+                    wait(lambda:client.snapshot()['outputs'][0]['workspace']==1,5)
+                    require(client.status()['workspace']==2,client.status())
+                    require([d['id'] for d in client.snapshot()['desktops'] if d['active']]==[1],client.snapshot()['desktops'])
+                    second,second_id=open_fixture(legacy_code,child)
+                    wait(lambda:window_row(second_id)['workspace']==2,5)
+                    client.request('focus',id=first_id)
+                    wait(lambda:window_row(first_id)['active'],5)
+                    require(client.snapshot()['outputs'][0]['workspace']==0,client.snapshot()['outputs'])
+                    client.request('workspace-mode',independent=False)
+                    close_fixture(first,first_id)
+                    close_fixture(second,second_id)
+                    record('per-display workspace switching preserves application workspace ownership')
+                if '--telegram' in sys.argv:
+                    client.request('window-placement',layout='grid')
+                    profile=directory/'telegram'
+                    profile.mkdir(mode=0o700)
+                    telegram=subprocess.Popen(
+                        ['flatpak','run','--unshare=network','--nosocket=x11','--nosocket=fallback-x11',
+                         '--socket=wayland','--filesystem='+str(profile),'org.telegram.desktop',
+                         '-workdir',str(profile)],
+                        env=wayland_env,stdout=parent_log,stderr=parent_log)
+                    fixtures.append(telegram)
+                    def telegram_window():
+                        require(telegram.poll() is None,'Private Telegram exited before showing a window')
+                        return next((row for row in client.windows() if 'telegram' in row['klass'].lower()),None)
+                    row=wait(telegram_window,15)
+                    ident=row['id']
+                    wait(lambda:(row:=window_row(ident)) and row.get('snap') in ('top-left','left'),5)
+                    client.request('window-placement',layout='columns')
+                    wait(lambda:(row:=window_row(ident)) and row.get('snap')=='left',5)
+                    client.request('window-placement',layout='grid')
+                    wait(lambda:(row:=window_row(ident)) and row.get('snap') in ('top-left','left'),5)
+                    record('installed Telegram Flatpak tiles live with a disposable offline profile')
             require(not qa.control('status')['qml_errors'],qa.control('status')['qml_errors'])
             client.request('quit');compositor.wait(timeout=10);require(compositor.returncode==0,compositor.returncode);client=None
             qa.control('quit')

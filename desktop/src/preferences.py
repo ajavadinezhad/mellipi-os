@@ -5,11 +5,12 @@ from pathlib import Path
 from app_palette import contrast_palette
 from project_paths import PROJECT_ROOT as ROOT
 from theme_catalog import THEME_IDS,theme,palette,wallpaper_source
-DEFAULTS={'compact':True,'accent':'#a9d9c3','profile':'economy','mode':'dark','pins':['firefox.desktop','mellipi-files.desktop','mellipi-terminal.desktop'],'workspaceMotion':True,'wallpaper':'auto','backgroundColor':'#18242b','corners':'rounded','dockAlign':'center','clock24':False,'clockDate':True,'reducedMotion':False,'output':'','matchWindows':True,'matchApps':True,'frameStyle':'auto','frameWidth':2,'launcherSort':'frequent','aiEnabled':False,'darkLevel':'normal','desktopIcons':True,'shellLayout':'fold','panelPosition':'left','taskbarLength':'full','taskbarFloating':False,'topbarConnected':False}
+DEFAULTS={'compact':True,'accent':'#a9d9c3','profile':'economy','mode':'dark','pins':['firefox.desktop','mellipi-files.desktop','mellipi-terminal.desktop','mellipi-software.desktop','orbit-settings.desktop'],'workspaceMotion':True,'wallpaper':'auto','backgroundColor':'#18242b','corners':'rounded','dockAlign':'center','clock24':False,'clockDate':True,'reducedMotion':False,'output':'','matchWindows':True,'matchApps':True,'frameStyle':'auto','frameWidth':2,'launcherSort':'frequent','aiEnabled':False,'darkLevel':'normal','desktopIcons':True,'shellLayout':'fold','panelPosition':'left','taskbarLength':'full','taskbarFloating':False,'topbarConnected':False}
 PRESETS=[{'name':'Sage','color':'#a9d9c3'},{'name':'Blue','color':'#a8c9ff'},{'name':'Violet','color':'#c8b6ff'},{'name':'Rose','color':'#f3b6c6'},{'name':'Amber','color':'#edcd98'},{'name':'Coral','color':'#ffb59e'}]
 LOCK_KEYS=frozenset(('idleLockEnabled','idleLockMinutes','displayOffMinutes','lockBeforeSleep'))
 DEFAULTS.update(idleLockEnabled=True,idleLockMinutes=10,displayOffMinutes=0,lockBeforeSleep=True)
 DEFAULTS.update(cursorAccent=True,density='compact',textScale=1.0,highContrast=False,themeContrast={},themePreset='custom')
+DEFAULTS.update(windowSnap=True,windowPlacementEnabled=True,windowPlacement='grid-2',appPlacements={},independentWorkspaces=False)
 THEME_PREFERENCES=('custom',*THEME_IDS)
 THEME_COLOR_KEYS=frozenset(('mode','darkLevel','accent','backgroundColor'))
 
@@ -20,6 +21,10 @@ class Preferences:
         try:
             raw=json.loads(self.path.read_text())
             if isinstance(raw,dict):
+                if raw.get('themePreset')=='cyberpunk':
+                    replacement=theme('midnight')
+                    raw.update(themePreset='midnight',mode=replacement['mode'],darkLevel=replacement['darkLevel'],
+                               accent=replacement['accent'],backgroundColor=replacement['background'],wallpaper=replacement['wallpaper'])
                 for key,value in raw.items():
                     # Classic was a public layout, not a different session. Keep
                     # every other saved choice while moving it to the taskbar.
@@ -38,6 +43,19 @@ class Preferences:
         if key=='density' and value in ('comfortable','compact','extra'):return value
         if key=='themePreset' and value in THEME_PREFERENCES:return value
         if key=='highContrast' and type(value) is bool:return value
+        if key in ('windowSnap','windowPlacementEnabled','independentWorkspaces') and type(value) is bool:return value
+        if key=='appPlacements' and isinstance(value,dict) and len(value)<=64:
+            from window_actions import valid_rect
+            if all(isinstance(app,str) and 0<len(app)<=256 and isinstance(row,dict)
+                   and type(row.get('workspace')) is int and 1<=row['workspace']<=4
+                   and isinstance(row.get('output'),str) and len(row['output'])<=128
+                   and valid_rect(row.get('rect')) and valid_rect(row.get('area'))
+                   and row.get('snap') in (None,'left','right','top','bottom','top-left','top-right','bottom-left','bottom-right')
+                   for app,row in value.items()):
+                return deepcopy(value)
+        if key=='windowPlacement' and isinstance(value,str):
+            value={'columns':'grid-2','rows':'grid-2','main-stack':'grid-3','grid':'grid-4'}.get(value,value)
+            if value in tuple(f'grid-{count}' for count in range(2,10)):return value
         if key=='themeContrast' and isinstance(value,dict) and all(
             theme_id in THEME_PREFERENCES and type(enabled) is bool
             for theme_id,enabled in value.items()
@@ -74,7 +92,7 @@ class Preferences:
     def set(self,key,value):
         self.update({key:value})
     def reset_appearance(self):
-        self.update({k:v for k,v in DEFAULTS.items() if k not in ('pins','profile','output','launcherSort','textScale','highContrast','themeContrast') and k not in LOCK_KEYS})
+        self.update({k:v for k,v in DEFAULTS.items() if k not in ('pins','profile','output','launcherSort','textScale','highContrast','themeContrast','windowPlacement','windowPlacementEnabled','appPlacements') and k not in LOCK_KEYS})
     def update(self,changes):
         checked={key:self.validate(key,value) for key,value in changes.items()}
         if 'density' in checked:checked['compact']=checked['density']!='comfortable'

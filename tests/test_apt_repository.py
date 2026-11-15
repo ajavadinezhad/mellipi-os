@@ -33,15 +33,51 @@ class AptRepositoryTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(dir=self.base)
         self.addCleanup(self.temp.cleanup)
         self.work = Path(self.temp.name); self.output = self.work / 'archive'
-    def package(self, version='0.1.6', payload='fixture', arch='amd64'):
-        path = self.work / ('stage-' + version + '-' + arch); (path / 'DEBIAN').mkdir(parents=True, exist_ok=True)
-        (path / 'DEBIAN/control').write_text(f'Package: abstract-fixture\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Test <test@example.invalid>\nDescription: Mellipi APT fixture\n')
+    def package(self, version='0.1.6', payload='fixture', arch='amd64', name='abstract-fixture', depends=''):
+        path = self.work / ('stage-' + name + '-' + version + '-' + arch); (path / 'DEBIAN').mkdir(parents=True, exist_ok=True)
+        fields = f'Package: {name}\nVersion: {version}\nArchitecture: {arch}\nMaintainer: Test <test@example.invalid>\nDescription: Mellipi APT fixture\n'
+        (path / 'DEBIAN/control').write_text(fields + (f'Depends: {depends}\n' if depends else ''))
         (path / 'fixture').write_text(payload)
-        package = self.work / f'abstract-fixture_{version}_{arch}.deb'
+        package = self.work / f'{name}_{version}_{arch}.deb'
         subprocess.run(['dpkg-deb', '--build', '--root-owner-group', str(path), str(package)], check=True, capture_output=True)
         return package
     def build(self, packages, **kwargs):
         return builder.build(self.output, packages, self.home, self.key, **kwargs)
+    def test_desktop_release_pairs_are_checked_before_replacing_signed_archive(self):
+        initial_shell = self.package(name='mellipi-shell')
+        initial_desktop = self.package(name='mellipi-desktop',arch='all',depends='mellipi-shell (= 0.1.6)')
+        self.build([initial_shell, initial_desktop])
+        index = self.output / 'dists/noble/InRelease'
+        previous = index.read_bytes()
+        update_shell = self.package('0.1.7',name='mellipi-shell')
+        with self.assertRaisesRegex(ValueError, 'matching shell and desktop'):
+            self.build([update_shell])
+        self.assertEqual(index.read_bytes(),previous)
+        invalid = self.package('0.1.7',name='mellipi-desktop',arch='all',depends='mellipi-shell (>= 0.1.7)')
+        with self.assertRaisesRegex(ValueError, 'exact shell version'):
+            self.build([update_shell,invalid])
+        valid = self.package('0.1.7',name='mellipi-desktop',arch='all',depends='mellipi-shell (= 0.1.7), dbus')
+        self.build([update_shell,valid])
+        report = subprocess.check_output(['python3',str(ROOT/'tools/qa-update-repository.py'),'--url',self.output.as_uri(),'--fingerprint',self.key],text=True)
+        self.assertEqual({entry['candidate'] for entry in json.loads(report)['packages'].values()},{'0.1.7'})
+        self.assertEqual(len(list((self.output/'pool').rglob('*.deb'))),4)
+        def installed(package):
+            return subprocess.check_output(['dpkg-deb','-f',str(package)],text=True)+'Status: install ok installed\n\n'
+        baseline = self.work/'baseline.status'
+        prior = installed(initial_shell)+installed(initial_desktop)
+        command = ['python3',str(ROOT/'tools/qa-update-repository.py'),'--url',self.output.as_uri(),'--fingerprint',self.key,'--installed-status',str(baseline)]
+        baseline.write_text(prior)
+        missing_dependency = subprocess.run(command,capture_output=True,text=True)
+        self.assertNotEqual(missing_dependency.returncode,0)
+        self.assertEqual(baseline.read_text(),prior)
+        original = prior+installed(self.package(name='dbus'))
+        baseline.write_text(original)
+        transaction = json.loads(subprocess.check_output(command,text=True))['transaction']
+        self.assertEqual(transaction['upgrade'],{'version':'0.1.7','removed_packages':0})
+        self.assertEqual(transaction['downgrade']['version'],'0.1.6')
+        self.assertEqual(transaction['downgrade']['removed_packages'],0)
+        self.assertEqual(set(transaction['downgrade']['packages']),{'mellipi-shell','mellipi-desktop'})
+        self.assertEqual(baseline.read_text(),original)
     def apt_options(self, key=None):
         state = self.work / 'apt'; state.mkdir(exist_ok=True)
         for folder in ('lists/partial', 'cache/archives/partial', 'log'):

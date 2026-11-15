@@ -11,13 +11,14 @@ ColumnLayout {
     property string accessibleLabel: "Audio device"
     property bool expanded: false
     property int visibleChoices: 3
+    readonly property int rowHeight: Math.max(34,Theme.fontSize(12)+14)
     signal toggled()
     signal selected(string name)
     Layout.fillWidth: true;spacing: 2
     OrbitButton {
         id: toggle
         objectName: picker.objectName+"Toggle"
-        Layout.fillWidth: true;implicitHeight: 30;quiet: true
+        Layout.fillWidth: true;implicitHeight: picker.rowHeight;quiet: true
         text: {
             for(var i=0;i<picker.devices.length;i++)if(picker.devices[i].name===picker.selectedName)return picker.devices[i].description;
             return picker.devices.length ? picker.chooseLabel : picker.emptyLabel;
@@ -40,20 +41,30 @@ ColumnLayout {
                 onPaint: {var c=getContext("2d");c.clearRect(0,0,width,height);c.strokeStyle=ink;c.lineWidth=1.5;c.lineCap="round";c.lineJoin="round";c.beginPath();c.moveTo(2,up ? 8 : 4);c.lineTo(6,up ? 4 : 8);c.lineTo(10,up ? 8 : 4);c.stroke();}
             }
         }
+        background: Rectangle {
+            color: toggle.down ? Theme.hover : Theme.raised
+            radius: Theme.corner(8)
+            border.color: toggle.activeFocus ? Theme.focusColor : toggle.enabled ? Theme.controlBorder : Theme.border
+            border.width: toggle.activeFocus && Theme.highContrast ? 2 : 1
+        }
         enabled: picker.devices.length>0
         onClicked: picker.toggled()
     }
     ListView {
         id: choices
         objectName: picker.objectName+"List"
-        Layout.fillWidth: true;Layout.preferredHeight: visible ? Math.min(count,picker.visibleChoices)*30 : 0
+        Layout.fillWidth: true;Layout.preferredHeight: visible ? Math.min(count,picker.visibleChoices)*picker.rowHeight : 0
         visible: picker.expanded;clip: true;boundsBehavior: Flickable.StopAtBounds
         model: picker.devices;interactive: count>picker.visibleChoices
         ScrollBar.vertical: ScrollBar { policy: choices.interactive ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff }
         delegate: OrbitButton {
             id: choice
             objectName: picker.objectName+"Choice"+index
-            width: ListView.view.width;height: 30;implicitHeight: 30
+            onActiveFocusChanged: if(activeFocus) {
+                choices.currentIndex=index;
+                choices.positionViewAtIndex(index,ListView.Contain);
+            }
+            width: ListView.view.width;height: picker.rowHeight;implicitHeight: picker.rowHeight
             text: modelData.description;hint: modelData.available===false ? "Device unplugged" : modelData.description
             enabled: modelData.available!==false
             readonly property bool selectedDevice: modelData.name===picker.selectedName
@@ -67,7 +78,7 @@ ColumnLayout {
                 }
                 Canvas {
                     id: selection;anchors.right: parent.right;anchors.verticalCenter: parent.verticalCenter;width: 12;height: 12;visible: choice.selectedDevice
-                    property color ink: Theme.accent
+                    property color ink: Theme.accentInk
                     onInkChanged: requestPaint()
                     onPaint: {var c=getContext("2d");c.clearRect(0,0,width,height);c.strokeStyle=ink;c.lineWidth=1.5;c.lineCap="round";c.lineJoin="round";c.beginPath();c.moveTo(1,6);c.lineTo(4.5,9.5);c.lineTo(11,2.5);c.stroke();}
                 }

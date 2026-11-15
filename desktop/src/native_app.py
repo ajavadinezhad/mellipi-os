@@ -5,6 +5,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
+import os
 from qt_compat import *
 import core
 import desktop
@@ -24,15 +25,56 @@ class Icons(QQuickImageProvider):
     def requestImage(self,ident,*sizes):
         requested=sizes[-1]
         tint=None
+        if ident.startswith('phosphor/'):
+            from files_icons import asset
+            _, ink, name = ident.split('/', 2)
+            glyph = {
+                'camera':'camera','volume':'speaker-high','mute':'speaker-slash','bell':'bell',
+                'chevron-up':'caret-up','chevron-down':'caret-down','chevron-left':'caret-left',
+                'chevron-right':'caret-right','usage':'chart-bar','settings':'sliders-horizontal',
+                'layouts':'squares-four',
+            }.get(name)
+            color=QColor('#'+ink)
+            if glyph and color.isValid() and (svg:=asset('regular',glyph)):
+                side=max(16,min(96,requested.width() if requested.width()>0 else 24))
+                svg=svg.replace('currentColor',color.name()).replace(
+                    '<svg ',f'<svg width="{side}" height="{side}" ',1)
+                picture=QImage.fromData(svg.encode(),b'SVG')
+                if not picture.isNull():
+                    if LAYER_SHELL:return picture,picture.size()
+                    sizes[0].setWidth(picture.width());sizes[0].setHeight(picture.height())
+                    return picture
+            ident='menu/'+ink+'/'+name
+        if ident.startswith('fold-art/'):
+            from icon_theme import folded_icon
+            _, ink, ident=ident.split('/', 2)
+            side=max(16,min(64,requested.width() if requested.width()>0 else 40))
+            image=folded_icon(ident,'#'+ink,side)
+            if not image.isNull():
+                if LAYER_SHELL:return image,image.size()
+                sizes[0].setWidth(image.width());sizes[0].setHeight(image.height())
+                return image
         if ident.startswith('window-control/'):
             _, color, name = ident.split('/', 2)
+            cyberpunk = color == 'cyberpunk'
             color = QColor('#' + color)
-            if name in WINDOW_CONTROL_PATHS and color.isValid():
-                image = QImage.fromData(glyph_svg(name, color.name()), b'SVG')
-                if QT5:
+            if name in WINDOW_CONTROL_PATHS and (cyberpunk or color.isValid()):
+                side = max(16, min(96, max(requested.width(), requested.height())))
+                image = QImage.fromData(glyph_svg(name, color.name(), cyberpunk, size=side), b'SVG')
+                if LAYER_SHELL:
                     return image, image.size()
                 sizes[0].setWidth(image.width())
                 sizes[0].setHeight(image.height())
+                return image
+        if ident.startswith('menu/'):
+            from mellipi_icons import svg
+            _, ink, name=ident.split('/', 2)
+            side=max(16,min(96,max(requested.width(),requested.height()) if requested.isValid() else 24))
+            data=svg(name, '#'+ink, size=side)
+            if data:
+                image=QImage.fromData(data,b'SVG')
+                if LAYER_SHELL:return image,image.size()
+                sizes[0].setWidth(image.width());sizes[0].setHeight(image.height())
                 return image
         if ident.startswith('menu/'):
             _,color,name=ident.split('/',2)
@@ -42,7 +84,11 @@ class Icons(QQuickImageProvider):
                 if path.is_file():
                     ident=str(path)
                     break
-        icon=QIcon(ident) if ident.startswith('/') else QIcon.fromTheme(ident)
+        if ident.startswith('mellipi-'):
+            from icon_theme import artwork_icon
+            icon=artwork_icon(ident)
+        else:
+            icon=QIcon(ident) if ident.startswith('/') else QIcon.fromTheme(ident)
         if icon.isNull(): icon=QIcon.fromTheme('application-x-executable')
         side=max(16,min(64,requested.width() if requested.width()>0 else 40))
         image=icon.pixmap(QSize(side,side)).toImage()
@@ -54,19 +100,21 @@ class Icons(QQuickImageProvider):
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
             painter.fillRect(image.rect(),tint)
             painter.end()
-        if QT5:return image,image.size()
+        if LAYER_SHELL:return image,image.size()
         size=sizes[0];size.setWidth(image.width()); size.setHeight(image.height())
         return image
 
 class Bridge(QObject):
     changed=Signal(); windowsChanged=Signal(); noticeChanged=Signal(); panelChanged=Signal(); aiChanged=Signal(); settingsChanged=Signal(); shortcutsChanged=Signal();geometryChanged=Signal();frameChanged=Signal();dockLayoutChanged=Signal();launcherChanged=Signal();interactionChanged=Signal()
-    dockAppsChanged=Signal();systemActionsChanged=Signal()
+    dockAppsChanged=Signal();systemActionsChanged=Signal();taskbarFocusRequested=Signal()
     desktopSnapshot=Signal(object); shortcutUpdate=Signal(str); aiEvent=Signal(object)
     completed=Signal(object); hotkey=Signal(str); hardwareKey=Signal(str); actionRequested=Signal(str); quitRequested=Signal()
     def __init__(self,app,preferences=None,store=None):
         super().__init__(); self.app=app; self.preferences=preferences or Preferences(); self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='orbit')
         self.store=store or PythonStore(); self.store.on_event=self.aiEvent.emit; self.aiEvent.connect(self.receiveAI); self._earlyAI=[]; self._undo=''; self._offset=0; self._total=0; self._search=[]; self._known={}
         self._settingsOpen=False;self._settingsDestination='system-settings';self._settingsSection=0;self._nativePaletteSupported=False
+        self._nativeSnapSupported=None;self._nativeSnapEnabled=None
+        self._nativePlacementSupported=None;self._nativePlacementLayout=None;self._placementSeen=set();self._outputWorkspaces={};self._nativeWorkspaceMode=None;self._nativeWorkspaceSupported=None
         self._dockApps=[];self._windowFilter=[];self._mru=[];self._switch=[];self._switchIndex=0;self._switchActive=False;self._tooltip={};self._context={}
         self.tooltipWindow=None;self.contextWindow=None
         self._pendingTooltip=None;self._tooltipAnchorSignals=[];self._tooltipLifecycleConnected=False
@@ -94,6 +142,11 @@ class Bridge(QObject):
         from app_catalog import AppCatalog
         self.appCatalog=AppCatalog(initial=self._apps,parent=self)
         self.appCatalog.catalogChanged.connect(self.applyAppCatalog);self.appCatalog.notice.connect(self.notify)
+        # Catalog watching stays live; defer the fallback scan until the
+        # launcher has rendered and accepted input from the cached catalog.
+        self._launcherRefreshTimer=QTimer(self)
+        self._launcherRefreshTimer.setSingleShot(True)
+        self._launcherRefreshTimer.timeout.connect(self.refreshAppCatalog)
         from arrangements import Arrangements
         self.arrangements=Arrangements(self,self);self.arrangements.notice.connect(self.notify)
         self.settingsChanged.connect(self.systemActionsChanged.emit)
@@ -133,6 +186,12 @@ class Bridge(QObject):
     themeMode=Property(str,lambda s:s.preferences.values['mode'],notify=settingsChanged)
     workspaceMotion=Property(bool,lambda s:s.preferences.values['workspaceMotion'],notify=settingsChanged)
     nativePaletteSupported=Property(bool,lambda s:getattr(s,'_nativePaletteSupported',False),notify=interactionChanged)
+    nativeSnapSupported=Property(bool,lambda s:s._nativeSnapSupported is True,notify=interactionChanged)
+    nativePlacementSupported=Property(bool,lambda s:s._nativePlacementSupported is True,notify=interactionChanged)
+    windowPlacementChanged=Signal()
+    windowPlacementEnabled=Property(bool,lambda s:s.preferences.values['windowPlacementEnabled'],notify=windowPlacementChanged)
+    windowGridCount=Property(int,lambda s:int(s.preferences.values['windowPlacement'].split('-')[-1]),notify=windowPlacementChanged)
+    windowPlacement=Property(str,lambda s:s.preferences.values['windowPlacement'],notify=windowPlacementChanged)
     switchWindows=Property('QVariantList',lambda s:s._switch,notify=interactionChanged)
     switchIndex=Property(int,lambda s:s._switchIndex,notify=interactionChanged)
     switchActive=Property(bool,lambda s:s._switchActive,notify=interactionChanged)
@@ -146,6 +205,13 @@ class Bridge(QObject):
     def dockForWidth(self,width):
         from dock_layout import layout
         return layout(max(240,min(16384,width)),self.compact,len(self.dockApps),fold=self.appearance.get('shellLayout')=='fold')
+    @Slot(bool)
+    def setTaskbarKeyboard(self,enabled):
+        if LAYER_SHELL and self.isWayland and self.topbarWindow:
+            from wayland_surfaces import get,keyboard,sip
+            keyboard(get(sip.unwrapinstance(self.topbarWindow)),1 if enabled else 0)
+        if enabled:self.topbarWindow.requestActivate()
+
     @Slot(str,str)
     def showPanelOn(self,name,output):
         def open_on_output():
@@ -178,7 +244,7 @@ class Bridge(QObject):
         def switch():
             self.displays.setTransientName(output)
             if native_session():
-                self.windowTask('__workspace__','switch',lambda:self.windowActions.client.switch_workspace(ident+1));return
+                self.windowTask('__workspace__','switch',lambda:self.windowActions.client.request('workspace',workspace=ident+1,output=output));return
             import sway_events
             current=next((d['id'] for d in self._desktops if d.get('output')==output and d.get('visible')),None)
             if current==ident:return
@@ -217,21 +283,63 @@ class Bridge(QObject):
     @Slot()
     def applyNativePreferences(self):
         if not native_session() or not self.windowActions:return
-        settings=dict(economy=self.appearance['profile']=='economy',reduced_motion=self.appearance['reducedMotion'],enabled=self.appearance['workspaceMotion'])
-        mode='light' if self.themeMode=='light' else 'black' if self.appearance['darkLevel']=='black' else 'dark'
+        appearance=self.appearance
+        settings=dict(economy=appearance['profile']=='economy',reduced_motion=appearance['reducedMotion'],enabled=appearance['workspaceMotion'])
+        mode='light' if self.themeMode=='light' else 'black' if appearance['darkLevel']=='black' else 'dark'
         accent=self.accentColor
         palette=Bridge.windowPalette(self)
-        outline=self.appearance.get('matchWindows',True)
+        outline=appearance.get('matchWindows',True)
+        snap_enabled=appearance['windowSnap']
+        snap_supported=self._nativeSnapSupported
+        applied_snap=self._nativeSnapEnabled
+        independent=appearance['independentWorkspaces']
+        applied_workspace_mode=self._nativeWorkspaceMode
+        workspace_supported=self._nativeWorkspaceSupported
+        placement=appearance['windowPlacement'] if appearance['windowPlacementEnabled'] else 'off'
+        placement_supported=self._nativePlacementSupported
+        applied_placement=self._nativePlacementLayout
         def configure():
-            self.windowActions.client.request('motion',settings=settings)
-            return self.windowActions.client.request('theme',mode=mode,accent=accent,palette=palette,outline=outline)
+            client=self.windowActions.client
+            client.request('motion',settings=settings)
+            result=client.request('theme',mode=mode,accent=accent,palette=palette,outline=outline)
+            supports_snap,current_snap=snap_supported,applied_snap
+            supports_placement,current_placement=placement_supported,applied_placement
+            supports_workspace=workspace_supported
+            if supports_snap is None or supports_placement is None or supports_workspace is None:
+                status=client.status()
+                capabilities=status.get('capabilities',{})
+                supports_snap=capabilities.get('window_snap') is True
+                current_snap=status.get('window_snap_enabled')
+                supports_placement=capabilities.get('window_placement') is True
+                current_placement=status.get('window_placement')
+                supports_workspace=capabilities.get('independent_workspaces') is True
+            if supports_workspace and applied_workspace_mode!=independent:
+                client.request('workspace-mode',independent=independent)
+            if supports_snap and current_snap is not snap_enabled:
+                client.request('window-snap',enabled=snap_enabled)
+                current_snap=snap_enabled
+            if supports_placement and current_placement!=placement:
+                client.request('window-placement',layout=placement)
+                current_placement=placement
+            return result,supports_snap,current_snap,supports_placement,current_placement,supports_workspace
         def configured(result):
-            supported=isinstance(result,dict) and 'palette_applied' in result
-            if supported!=getattr(self,'_nativePaletteSupported',False):
-                self._nativePaletteSupported=supported;self.interactionChanged.emit()
+            theme_result,supports_snap,current_snap,supports_placement,current_placement,supports_workspace=result
+            palette_supported=isinstance(theme_result,dict) and 'palette_applied' in theme_result
+            changed=(palette_supported!=self._nativePaletteSupported or supports_snap!=self._nativeSnapSupported
+                     or supports_placement!=self._nativePlacementSupported)
+            self._nativePaletteSupported=palette_supported
+            self._nativeSnapSupported=supports_snap
+            self._nativeSnapEnabled=current_snap
+            self._nativePlacementSupported=supports_placement
+            self._nativePlacementLayout=current_placement
+            self._nativeWorkspaceMode=independent
+            self._nativeWorkspaceSupported=supports_workspace
+            if changed:self.interactionChanged.emit()
         def settled():
-            latest=dict(economy=self.appearance['profile']=='economy',reduced_motion=self.appearance['reducedMotion'],enabled=self.appearance['workspaceMotion'])
-            if latest!=settings or outline!=self.appearance.get('matchWindows',True) or palette!=Bridge.windowPalette(self) or accent!=self.accentColor or mode!=('light' if self.themeMode=='light' else 'black' if self.appearance['darkLevel']=='black' else 'dark'):self.applyNativePreferences()
+            current=self.appearance
+            latest=dict(economy=current['profile']=='economy',reduced_motion=current['reducedMotion'],enabled=current['workspaceMotion'])
+            latest_placement=current['windowPlacement'] if current['windowPlacementEnabled'] else 'off'
+            if latest!=settings or outline!=current.get('matchWindows',True) or palette!=Bridge.windowPalette(self) or accent!=self.accentColor or mode!=('light' if self.themeMode=='light' else 'black' if current['darkLevel']=='black' else 'dark') or snap_enabled!=current['windowSnap'] or placement!=latest_placement or independent!=current['independentWorkspaces']:self.applyNativePreferences()
         self.windowTask('__motion__','configure',configure,configured,settled=settled)
     @Slot(int,int,int,int)
     def updateDockMask(self,x,y,width,height):
@@ -290,9 +398,10 @@ class Bridge(QObject):
             ('bluetooth','Bluetooth devices','Pair or connect a device','bluetooth','headphones wireless pair battery'),
             ('appearance','Appearance','Theme, colors and desktop layout','color-select','dark light black theme accent wallpaper'),
             ('shortcuts','Keyboard shortcuts','Find and change keyboard shortcuts','preferences-desktop-keyboard-shortcuts','hotkeys keys bindings'),
+            ('focus-taskbar','Focus taskbar','Navigate taskbar controls with the keyboard','view-list','dock panel keyboard focus'),
             ('help','Getting around Mellipi','Learn where actions are and how to use the desktop','help-browser','help guide how login logout shortcuts'),
             ('lock','Lock screen','Lock this session; apps stay open','system-lock-screen','lock password privacy'),
-            ('logout','Log out','Review apps before returning to the login screen','system-log-out','logout log out sign out login sign in'),
+            ('logout','Log out','Return to the login screen; review apps if any are open','system-log-out','logout log out sign out login sign in'),
             ('suspend','Sleep','Open the Power menu to confirm sleep','weather-clear-night','suspend sleep standby'),
             ('reboot','Restart','Review apps before restarting the computer','system-reboot','restart reboot power'),
             ('shutdown','Shut down','Review apps before turning off the computer','system-shutdown','shutdown shut down power off turn off'),
@@ -306,6 +415,53 @@ class Bridge(QObject):
             dict(id='do-not-disturb',name='Do not disturb',description='Open notification controls',icon='notifications-disabled',searchText='do not disturb dnd notifications quiet mute alerts',destination='panel:notifications'),
         ])
         return result
+    @Slot(str, result=str)
+    def launcherSearchSnapshot(self, section):
+        """Return plain JSON to avoid Qt Quick repeatedly marshalling QVariantList properties.
+
+        Only the fields used by Super are copied; the other shell components
+        keep their existing models. Bound text originating in desktop files.
+        """
+        if section=='apps':
+            rows=[dict(id=app['id'],name=app['name'][:1024],description=app.get('description','')[:2048],
+                       icon=app.get('icon','')[:4096],searchText=app.get('searchText','')[:8192])
+                  for app in self._launcherApps]
+        elif section=='windows':
+            rows=dict(windows=[{key:row[key] for key in ('id','title','klass','icon','desktop','minimized') if key in row}
+                               for row in self._windows],
+                      filter=self._windowFilter,desktops=[{key:row[key] for key in ('id','active') if key in row} for row in self._desktops],
+                      dock=[dict(id=group['id'],name=group.get('name','')[:1024],icon=group.get('icon','')[:4096],
+                                 windows=[{'id':window['id']} for window in group['windows']])
+                            for group in self.dockTasks()])
+        elif section=='actions':
+            rows=self.actionCatalog()
+        elif section=='pins':
+            rows=self.preferences.values['pins']
+        else:
+            return 'null'
+        return json.dumps(rows,separators=(',',':'))
+
+    @Slot(str, result=str)
+    def launcherCalculation(self, query):
+        from calculator_core import CalculationError, calculate
+        query = query.strip()
+        if query.startswith('='):
+            query = query[1:].strip()
+        elif not any(ch.isdigit() for ch in query) or not any(ch in query for ch in '+-*/^%×÷'):
+            return ''
+        # A launcher search must stay cheap and never evaluate application names.
+        try:
+            return calculate(query) if len(query) <= 128 else ''
+        except CalculationError:
+            return ''
+
+    @Slot(str)
+    def copyCalculation(self, result):
+        if result and len(result) <= 160:
+            self.app.clipboard().setText(result)
+            self.dismiss()
+            self.notify('Copied result')
+
     systemActions=Property('QVariantList',actionCatalog,notify=systemActionsChanged)
     @Slot(str)
     def activateSystemAction(self,action):
@@ -316,6 +472,10 @@ class Bridge(QObject):
             self.dismiss()
             self.launch('mellipi-software.desktop')
             return
+        if action=='wifi-quick':
+            self.dismiss();self._quickSection=1;self.interactionChanged.emit();return self.showPanel('quick')
+        if action=='focus-taskbar':
+            self.dismiss();QTimer.singleShot(160,self.taskbarFocusRequested.emit);return
         if action in SETTING_TARGETS:return self.openSettingsTarget(*SETTING_TARGETS[action])
         if action in ('screenshot','do-not-disturb'):
             panel='screenshot' if action=='screenshot' else 'notifications'
@@ -329,6 +489,8 @@ class Bridge(QObject):
         elif action=='lock' and getattr(self,'systemServices',None):self.dismiss();self.systemServices.lock()
     @Slot()
     def closeSettingsTask(self):
+        row=next((w for w in self._windows if w['klass']=='orbit-settings' and w['id']!='orbit-settings'),None)
+        if row:return self.closeWindow(row['id'])
         self._settingsOpen=False
         if self._panel in ('settings','system-settings'):self.dismiss()
         self.dockAppsChanged.emit();self.dockLayoutChanged.emit()
@@ -342,6 +504,7 @@ class Bridge(QObject):
     launcherApps=Property('QVariantList',lambda s:s._launcherApps,notify=launcherChanged)
     windows=Property('QVariantList',lambda s:s._windows,notify=windowsChanged)
     desktops=Property('QVariantList',lambda s:s._desktops,notify=windowsChanged)
+    outputWorkspaces=Property('QVariantMap',lambda s:s._outputWorkspaces,notify=windowsChanged)
     objects=Property('QVariantList',lambda s:s._objects,notify=changed)
     searchResults=Property('QVariantList',lambda s:s._search,notify=changed)
     selectedObjects=Property('QVariantList',lambda s:[s._known[i] for i in s._selected if i in s._known],notify=changed)
@@ -373,6 +536,11 @@ class Bridge(QObject):
         except (ValueError,OSError):
             if remap:self._surfacesReady=True;self.settingsChanged.emit()
             return self.notify('Could not save this setting')
+        if key in ('windowPlacementEnabled','windowPlacement'):
+            # Placement has no effect on shell surface geometry or keyboard focus.
+            self.windowPlacementChanged.emit()
+            self.applyNativePreferences()
+            return
         if key=='launcherSort':self.recordAppInteraction()
         if key=='output':self.displays.setRequestedName(value)
         if key=='pins':
@@ -607,7 +775,7 @@ class Bridge(QObject):
         if inline:
             origin=self.panelTooltipOrigin();local_x=x-origin['x'];local_y=y-origin['y']
         self._tooltip=dict(text=text,x=x,y=y,width=width,inline=inline,localX=local_x,localY=local_y)
-        if QT5 and wayland_session() and self.tooltipWindow:
+        if LAYER_SHELL and wayland_session() and self.tooltipWindow:
             from wayland_surfaces import position_tooltip
             if self.tooltipWindow.screen() is not target:self.tooltipWindow.setScreen(target)
             position_tooltip(self.tooltipWindow,x-screen.x(),y-screen.y())
@@ -687,6 +855,7 @@ class Bridge(QObject):
                 add('Minimize','minimize-window',wid);add('Maximize / Restore size','maximize-window',wid)
                 add_workspace_moves(window)
                 add('Close window','close-window',wid)
+                self.addRememberPlacement(add,next((w for w in self._windows if w['id']==wid),None))
         elif kind=='desktop-file':
             add('Open','desktop-open',ident)
             if not ident.startswith('orbit-place:'):
@@ -710,6 +879,7 @@ class Bridge(QObject):
             if self.windowActions:
                 add('Snap left','snap-window',[ident,'left']);add('Snap right','snap-window',[ident,'right'])
                 add_workspace_moves(target)
+                self.addRememberPlacement(add,target)
         if kind in ('desktop','window') and self.arrangements.undoLabel:add('Undo '+self.arrangements.undoLabel,'undo-arrangement')
         if kind=='object':
             add('Copy full content','copy',ident);add('Open','open',ident)
@@ -792,7 +962,7 @@ class Bridge(QObject):
         screen=screen or self.screenMap()
         if getattr(self,'_panel','') in CENTERED_PANELS:return dict(x=screen['x']+(screen['width']-width)/2,y=screen['y']+(screen['height']-height)/2)
         spine=self.appearance.get('shellLayout')=='fold';right=getattr(self,'_panelPlacement',False)
-        if spine:return panel_body_origin(getattr(self,'_panel',''),width,height,screen,panel_edge(self.appearance),Bridge.taskbarBodyRect(self,screen))
+        if spine:return panel_body_origin(getattr(self,'_panel',''),width,height,screen,panel_edge(self.appearance),Bridge.taskbarBodyRect(self,screen),content_size=self.panelContentSize())
         return dict(x=screen['x']+(76 if spine else screen['width']-width-12 if right else (screen['width']-width)/2),y=screen['y']+((screen['height']-height-16 if getattr(self,'_panelBottom',False) else 16) if spine else 42 if right else (screen['height']-height)/2))
     def panelTooltipOrigin(self):
         window=self.panelWindow;origin=Bridge.overlayOrigin(self,window.width(),window.height())
@@ -898,8 +1068,62 @@ class Bridge(QObject):
         elif action=='maximize-window':self.maximizeWindow(value)
         elif action=='close-window':self.closeWindow(value)
         elif action=='undo-arrangement':self.arrangements.undo()
+        elif action=='remember-placement':self.rememberPlacement(value)
+        elif action=='forget-placement':self.forgetPlacement(value)
         elif action=='snap-window':self.arrangeWindow(value[0],value[1])
         elif action=='move-window':self.moveWindow(value[0],value[1])
+    def addRememberPlacement(self,add,window):
+        if not native_session() or not window or not window.get('klass') or window.get('transient'):return
+        if not window.get('minimized') and not window.get('fullscreen') and not window.get('maximized'):
+            add('Remember this placement','remember-placement',window['id'])
+        if window['klass'] in self.preferences.values['appPlacements']:
+            add('Forget placement','forget-placement',window['klass'])
+    def rememberPlacement(self,ident):
+        window=next((row for row in self._windows if row['id']==ident),None)
+        if not window or not window.get('klass') or any(window.get(key) for key in ('transient','minimized','fullscreen','maximized')):return
+        area=window.get('workarea',{})
+        output=next((row['name'] for row in self.outputs if row.get('workarea')==area),'')
+        rule=dict(workspace=window['workspace'],output=output,rect=window['rect'],area=area,snap=window.get('snap'))
+        try:self.preferences.set('appPlacements',dict(self.preferences.values['appPlacements'],**{window['klass']:rule}))
+        except (ValueError,OSError):return self.notify('Could not remember this placement')
+        self.notify('Placement remembered for this app')
+    def forgetPlacement(self,app):
+        rules=dict(self.preferences.values['appPlacements']);rules.pop(app,None)
+        try:self.preferences.set('appPlacements',rules)
+        except (ValueError,OSError):return self.notify('Could not forget this placement')
+        self.notify('Placement forgotten')
+    def applyRememberedPlacements(self,state):
+        rows=state['windows'];seen={row['id'] for row in rows}
+        self._placementSeen.intersection_update(seen)
+        rules=self.preferences.values['appPlacements']
+        for row in rows:
+            ident=row['id'];rect=row.get('rect',{})
+            if ident in self._placementSeen or not row.get('klass') or min(rect.get('width',0),rect.get('height',0))<=1:continue
+            if row.get('transient'):continue
+            self._placementSeen.add(ident)
+            if self.arrangements.overridesPlacement(row):continue
+            rule=rules.get(row['klass'])
+            if not rule or any(row.get(key) for key in ('minimized','fullscreen','maximized')):continue
+            def place(ident=int(ident),rule=rule,area=row.get('workarea'),app=row['klass']):
+                actions=self.windowActions
+                outputs=actions.snapshot().get('outputs',[])
+                output=next((o for o in outputs if o['name']==rule['output']),None)
+                if not output:output=next((o for o in outputs if o['workarea']==area),outputs[0] if outputs else None)
+                if not output:return
+                target=output['workarea'];prior=rule['area'];saved=rule['rect']
+                from arrangements import bounded_rect
+                rect=bounded_rect(dict(x=target['x']+round((saved['x']-prior['x'])*target['width']/prior['width']),
+                    y=target['y']+round((saved['y']-prior['y'])*target['height']/prior['height']),
+                    width=max(1,round(saved['width']*target['width']/prior['width'])),
+                    height=max(1,round(saved['height']*target['height']/prior['height']))),target)
+                if self.preferences.values['appPlacements'].get(app)!=rule:return
+                actions.client.move(ident,rule['workspace'])
+                if rule['snap']:
+                    actions.client.request('snap',id=ident,side=rule['snap'],output=output['name'],available_only=True)
+                else:
+                    actions.client.request('resize',id=ident,rect=rect,output=output['name'])
+            self.windowTask(ident,'remembered-placement',place)
+
     @Slot(str,str)
     def arrangeWindow(self,ident,side):
         if not self.windowActions or side not in ('left','right'):return
@@ -933,8 +1157,9 @@ class Bridge(QObject):
         else:self.windowTask(ident,'maximize',lambda:desktop.command(['wmctrl','-ir',ident,'-b','toggle,maximized_vert,maximized_horz']))
     @Slot(str)
     def closeWindow(self,ident):
-        if ident=="orbit-settings":self.closeSettingsTask();return
+        if ident=="orbit-settings":return self.closeSettingsTask()
         if not any(w['id']==ident for w in self._windows):return False
+        if (ident,'close') in self._windowPending:return True
         generation=self.sessionExit._generation
         def close_action(work):
             def run():
@@ -954,7 +1179,7 @@ class Bridge(QObject):
         if self._panel=='session-exit' and self.sessionExit.state['armed']:return
         if not self._panelRemapping and not self._context and self._panel and self._panel!='switcher':self.dismiss()
     def syncExitReviewFocus(self):
-        if QT5 and self.isWayland and getattr(self,'panelWindow',None) and self._panel=='session-exit':
+        if LAYER_SHELL and self.isWayland and getattr(self,'panelWindow',None) and self._panel=='session-exit':
             from wayland_surfaces import get,keyboard,sip
             keyboard(get(sip.unwrapinstance(self.panelWindow)),2 if self.sessionExit.state['armed'] else 1)
     @Slot(int,int)
@@ -967,7 +1192,7 @@ class Bridge(QObject):
         self._panelRemapping=True
         try:
             window=self.panelWindow
-            if QT5 and wayland_session():
+            if LAYER_SHELL and wayland_session():
                 # One stable layer buffer: Qt5 may ignore mapped resizing and
                 # recreating its role can commit before the first configure.
                 # Only the inner body and matching input region change size.
@@ -979,18 +1204,20 @@ class Bridge(QObject):
                     y=(window.height()-height+1)//2 if centered else 0 if right else (window.height()-height+1)//2
             else:
                 window.resize(width,height);x=y=0
+            old_size=self._panelGeometry[:2] if self._panelGeometry else None
             window.setMask(QRegion(x,y,width,height));self._panelGeometry=(width,height,right)
+            if spine and old_size!=(width,height):self.positionPanel(self._panel)
             self._panelMask=dict(x=x,y=y,width=width,height=height)
             if getattr(self,'contextWindow',None):self.syncContextSurface()
         finally:self._panelRemapping=False
     @Slot()
     def settlePanelFocus(self):
-        if QT5 and self.isWayland and self.panelWindow and not self._panel:
+        if LAYER_SHELL and self.isWayland and self.panelWindow and not self._panel:
             from wayland_surfaces import get,keyboard,sip
             keyboard(get(sip.unwrapinstance(self.panelWindow)),2)
     @Slot()
     def syncContextSurface(self):
-        if not self.contextWindow or not self.isWayland or not QT5:return
+        if not self.contextWindow or not self.isWayland or not LAYER_SHELL:return
         screen=self.screenMap();menu=bool(self._context);spine=self.appearance.get('shellLayout')=='fold';bar=0 if spine else 30 if self.compact else 38;bottom=0 if spine else 62 if self.compact else 76;left=64 if spine else 0
         edge=panel_edge(self.appearance);right=0
         if spine:
@@ -1002,12 +1229,17 @@ class Bridge(QObject):
         native=get(sip.unwrapinstance(self.contextWindow));layer(native,3 if menu else 2);keyboard(native,1 if menu else 0)
         self.contextWindow.setMask(QRegion(0,0,screen['width'],screen['height']) if menu else QRegion(left,bar,max(1,screen['width']-left-right),max(1,screen['height']-bar-bottom)))
         self._contextSurfaceMode=key
+    def panelContentSize(self):
+        window=getattr(self,'panelWindow',None)
+        size=window.property('orbitPanelContentSize') if window else None
+        if size is not None and size.width()>0 and size.height()>0:return size.width(),size.height()
+        return None
     @Slot(str)
     def positionPanel(self,name):
-        if QT5 and wayland_session() and self.panelWindow:
+        if LAYER_SHELL and wayland_session() and self.panelWindow:
             from wayland_surfaces import position_overlay
             self._panelBottom=self.appearance.get('shellLayout')=='fold' and name in SPINE_FOOTER_PANELS
-            position_overlay(self.panelWindow,name,self.appearance.get('shellLayout')=='fold',panel_position=panel_edge(self.appearance),screen_geometry=self.screenMap(),bar_geometry=self.taskbarBodyRect(self.screenMap()))
+            position_overlay(self.panelWindow,name,self.appearance.get('shellLayout')=='fold',panel_position=panel_edge(self.appearance),screen_geometry=self.screenMap(),bar_geometry=self.taskbarBodyRect(self.screenMap()),content_size=self.panelContentSize())
             self._panelPlacement=self.appearance.get('shellLayout')!='fold' and name in SPINE_FOOTER_PANELS
             self.syncContextSurface()
     @Slot(str)
@@ -1018,6 +1250,7 @@ class Bridge(QObject):
             self.bluetoothControls.stopDiscovery();self.bluetoothControls.cancelPairing()
         if hasattr(self,'resourceUsage'):self.resourceUsage.setActive(name=='usage')
         if hasattr(self,'trayHost'):self.trayHost.showLegacy(name=='tray')
+        if name=='input' and hasattr(self,'inputControls'):self.inputControls.refresh()
         if name=='music' and hasattr(self,'systemServices'):self.systemServices.refreshAudio()
         elif name=='battery' and hasattr(self,'powerControls'):self.powerControls.refresh()
         elif name=='brightness' and hasattr(self,'brightnessControls'):self.brightnessControls.refresh()
@@ -1025,6 +1258,7 @@ class Bridge(QObject):
 
     @Slot(str)
     def showPanel(self,name):
+        if name=='window-placement' and self._nativePlacementSupported is not True:return
         hardware_sections={'bluetooth':9,'battery':7}
         if name in hardware_sections:
             return self.openSettingsSection(hardware_sections[name])
@@ -1037,13 +1271,14 @@ class Bridge(QObject):
         if name=='launcher' and self._windowFilter:self._windowFilter=[];self.windowsChanged.emit()
         if name=='ai' and not self.aiEnabled:name='launcher'
         if name in ('ai','capture'):self.refresh()
-        if name=='launcher':self.refreshAppCatalog()
         if name in ('settings','system-settings'):self._settingsOpen=True;self._settingsDestination=name
         fold=getattr(self,'foldController',None)
         if fold and self._panel!=name and self.appearance.get('shellLayout')=='fold' and name in ('launcher','overview'):
             fold.setView('apps')
         if name=='overview':self._windowFilter=[];self.windowsChanged.emit()
         self._panel='' if self._panel==name and name!='session-exit' else name
+        if self._panel=='launcher':self._launcherRefreshTimer.start(220)
+        else:self._launcherRefreshTimer.stop()
         if self._panel!='system-settings':self._settingsPage=''
         if self._panel:self.positionPanel(self._panel)
         else:self.settlePanelFocus()
@@ -1053,6 +1288,7 @@ class Bridge(QObject):
             if not os.environ.get('SWAYSOCK'):self.panelWindow.raise_();self.panelWindow.requestActivate()
     @Slot()
     def dismiss(self):
+        self._launcherRefreshTimer.stop()
         self._quickSection=0
         self.sessionExit.cancel()
         self._panel='';self._switchActive=False
@@ -1152,24 +1388,32 @@ class Bridge(QObject):
     def launch(self,ident):
         self.launchApplication(ident)
     @Slot(str)
-    def launchForLayout(self,ident):
+    def launchForLayout(self,ident,finished=None,allow_new=False):
         group=next((g for g in self._dockApps if g['id']==ident and g['windows']),None)
         if group:
             if len(group['windows'])==1 and group['windows'][0].get('minimized') and self.windowActions:
-                target=group['windows'][0]['id'];self.windowTask(target,'restore',lambda:self.windowActions.restore(int(target)));return
-            return self.notify('This app already has windows. Restore one from Apps, or open another window in the app, then refresh the layout.')
-        self.launchApplication(ident,keep_open=True)
-    def launchApplication(self,ident,keep_open=False):
+                target=group['windows'][0]['id'];self.windowTask(target,'restore',lambda:self.windowActions.restore(int(target)),settled=finished);return
+            if not allow_new:return self.notify('This app already has windows. Open another window in the app, then choose it in the layout.')
+        self.launchApplication(ident,keep_open=True,finished=finished)
+    def launchApplication(self,ident,keep_open=False,finished=None,file_uri=None):
         app=next((a for a in self._apps if a['id']==ident),None)
-        if not app:return
+        if not app:
+            if finished:finished()
+            return
         pending=getattr(self,'_pendingAppLaunches',None)
         if pending is None:self._pendingAppLaunches=pending=set()
-        if ident in pending:return
-        if len(pending)>=8:return self.notify('Wait for the application activation to finish')
+        if ident in pending or len(pending)>=8:
+            if finished:
+                QTimer.singleShot(100,lambda:self.launchApplication(ident,keep_open,finished,file_uri))
+            elif ident not in pending:self.notify('Wait for the application activation to finish')
+            return
         import subprocess
         from app_catalog import launch_result
         environment=desktop.application_environment()
-        if ident in ('mellipi-files.desktop','mellipi-terminal.desktop'):
+        if ident in ('mellipi-files.desktop','mellipi-terminal.desktop','mellipi-software.desktop',
+                     'mellipi-photos.desktop','mellipi-pdf.desktop','mellipi-media.desktop','mellipi-disks.desktop',
+                     'mellipi-editor.desktop','mellipi-calculator.desktop','mellipi-calendar.desktop','mellipi-browser.desktop',
+                     'mellipi-monitor.desktop','mellipi-recorder.desktop'):
             environment['ORBIT_SETTINGS_FILE']=str(self.preferences.path)
         if self.appearance['matchApps']:
             from application_theme import launch_environment
@@ -1177,15 +1421,20 @@ class Bridge(QObject):
         try:
             # Keep application processes independent of shell recovery. gio parses
             # desktop field codes and returns when activation is accepted.
-            process=subprocess.Popen(['gio','launch',desktop.application_launch_path(app,environment)],env=environment,cwd=Path.home(),start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        except OSError as error:return self.notify('Could not start '+app['name']+': '+str(error)[:120])
+            process=subprocess.Popen(['gio','launch',desktop.application_launch_path(app,environment),*([file_uri] if file_uri else [])],env=environment,cwd=Path.home(),start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except OSError as error:
+            self.notify('Could not start '+app['name']+': '+str(error)[:120])
+            if finished:finished()
+            return
         pending.add(ident)
         def accepted(_):
             pending.discard(ident)
             self.recordAppInteraction(ident,'launch')
+            if finished:finished()
             if self.panel=='launcher' and not keep_open:self.dismiss()
         def rejected(error):
             pending.discard(ident);self.notify('Could not start '+app['name']+': '+str(error)[:160])
+            if finished:finished()
         self.asyncTask(lambda:launch_result(process),accepted,rejected)
     @Slot(object)
     def removableDeviceArrived(self,device):
@@ -1202,6 +1451,14 @@ class Bridge(QObject):
         if not target:return self.notify('The app for this notification is unavailable')
         if target[0]=='window':self.focusWindow(target[1])
         else:self.launch(target[1])
+    @Slot()
+    def openSystemMonitor(self):
+        ident='mellipi-monitor.desktop'
+        group=next((g for g in self._dockApps if g['id']==ident and g['windows']),None)
+        if group:
+            self.focusWindow(group['windows'][0]['id'])
+        else:
+            self.launch(ident)
     @Slot(str,bool)
     def activateDock(self,ident,showAll):
         if ident=="orbit-settings":self.showPanel(self._settingsDestination);return
@@ -1240,7 +1497,7 @@ class Bridge(QObject):
         if ident not in [d['id'] for d in self._desktops]:return
         current=next((d['id'] for d in self._desktops if d['active']),ident)
         if native_session() and getattr(self,'_workspaceIntent',None) is not None:current=self._workspaceIntent
-        if ident==current:return
+        if ident==current and not self._outputWorkspaces:return
         if native_session():
             self._workspaceIntent=ident
             serial=getattr(self,'_workspaceIntentSerial',0)+1;self._workspaceIntentSerial=serial
@@ -1277,7 +1534,9 @@ class Bridge(QObject):
         self.asyncTask(work,done)
     @Slot(object)
     def applyWindowState(self,state):
-        if native_session() and self.windowActions:self.windowActions.update(state)
+        if native_session() and self.windowActions:
+            self.windowActions.update(state)
+            if not state.get('locked'):self.applyRememberedPlacements(state)
         self.sessionExit.setWindows(state['windows'])
         if self.nativeControlsEnabled and self.xwaylandControls and any(w.get('xid') for w in state['windows']):self.xwaylandControls.start()
         if (self.nativeControlsEnabled or native_session()) and getattr(self,'legacyProxy',None) and any(w.get('xid') for w in state['windows']):self.legacyProxy.start()
@@ -1299,7 +1558,9 @@ class Bridge(QObject):
                 match=desktop.match_application(window,self._apps)
                 self._iconCache[klass]=match['icon'] if match else 'application-x-executable'
             window['icon']=self._iconCache[klass]
-        if state['windows']!=self._windows or state['desktops']!=self._desktops:
+        output_workspaces={o['name']:o['workspace'] for o in state.get('outputs',[]) if 'workspace' in o} if state.get('independent_workspaces') else {}
+        if state['windows']!=self._windows or state['desktops']!=self._desktops or output_workspaces!=self._outputWorkspaces:
+            self._outputWorkspaces=output_workspaces
             self._windows=state['windows']; self._desktops=state['desktops']; self._dockApps=desktop.dock_groups(self._apps,self._windows,self.preferences.values['pins']); self.windowsChanged.emit()
             if self.windowActions:
                 for window in self._windows:
@@ -1351,6 +1612,10 @@ class Bridge(QObject):
         self.sessionExit.setWindows(self._windows)
         if not self.sessionExit.state['active'] or self.sessionExit.state['action']!=action:
             self.sessionExit.openReview(action)
+        # Clicking Log out is enough when there are no app windows to review.
+        if action=='logout' and not self.sessionExit.state['windowCount']:
+            self.sessionExit.closeAndWait()
+            if not self.sessionExit.state['active']:return
         self.showPanel('session-exit')
     @Slot(str)
     def requestPower(self,action):
@@ -1501,9 +1766,12 @@ def main():
     if QT5:
         from PyQt5.QtQml import QQmlEngine
     else:
-        from PySide6.QtQml import QQmlEngine
+        if os.environ.get("ORBIT_QT") == "6":
+            from PyQt6.QtQml import QQmlEngine
+        else:
+            from PySide6.QtQml import QQmlEngine
     native_surfaces=list(root.findChildren(QQuickWindow))
-    for surface in native_surfaces:QQmlEngine.setObjectOwnership(surface,QQmlEngine.CppOwnership)
+    for surface in native_surfaces:QQmlEngine.setObjectOwnership(surface,(QQmlEngine.CppOwnership if QT5 else QQmlEngine.ObjectOwnership.CppOwnership))
     engine._orbitSurfaceRefs=native_surfaces;bridge._qmlSurfaceRefs=native_surfaces;bridge.shellWindows=native_surfaces
     bridge.settingsChanged.connect(bridge.applyShellCursor)
     windows={name:next(surface for surface in native_surfaces if surface.objectName()==name) for name in ('desktopSurface','topbarSurface','dockSurface','overlaySurface')}
@@ -1512,7 +1780,7 @@ def main():
     bridge.tooltipWindow=root.findChild(QObject,'tooltipSurface');bridge.contextWindow=root.findChild(QObject,'contextSurface')
     bridge.dockWindow=windows['dockSurface'];bridge.topbarWindow=windows['topbarSurface']
     bridge.panelWindow=windows['overlaySurface']; bridge.desktopWindow=windows['desktopSurface']
-    if QT5 and wayland_session():
+    if LAYER_SHELL and wayland_session():
         from wayland_surfaces import configure
         for name in windows:configure(windows[name],name,bridge.compact,bridge.appearance['dockAlign'],bridge.appearance['shellLayout']=='fold',panel_position=panel_edge(bridge.appearance),floating=bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(bridge.appearance))
         configure(root.findChild(QObject,'dockReserveSurface'),'dockReserveSurface',bridge.compact,spine=bridge.appearance['shellLayout']=='fold',panel_position=panel_edge(bridge.appearance),floating=bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(bridge.appearance))
@@ -1528,8 +1796,8 @@ def main():
         # LayerShellQt commits anchor changes immediately. Do not commit a new
         # edge against the old vertical/horizontal zero-size request; the
         # queued surface move first unmaps/resizes/reconfigures it atomically.
-        if not force and QT5 and wayland_session() and (surface_state['moving'] or (panel_edge(bridge.appearance)!=surface_state['position'] or bridge.appearance.get('taskbarFloating',False)!=surface_state['floating'] or bridge.appearance.get('density','compact')!=surface_state['density'])):return
-        if QT5 and wayland_session():
+        if not force and LAYER_SHELL and wayland_session() and (surface_state['moving'] or (panel_edge(bridge.appearance)!=surface_state['position'] or bridge.appearance.get('taskbarFloating',False)!=surface_state['floating'] or bridge.appearance.get('density','compact')!=surface_state['density'])):return
+        if LAYER_SHELL and wayland_session():
             from wayland_surfaces import configure
             configure(windows['desktopSurface'],'desktopSurface',bridge.compact)
             for name in ('topbarSurface','dockSurface'):configure(windows[name],name,bridge.compact,bridge.appearance['dockAlign'],bridge.appearance['shellLayout']=='fold',panel_position=panel_edge(bridge.appearance),floating=bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(bridge.appearance))
@@ -1551,7 +1819,7 @@ def main():
         try:
             bridge.hideTooltip();bridge.closeContext()
             surfaces=root.findChildren(QQuickWindow)
-            if QT5 and wayland_session():
+            if LAYER_SHELL and wayland_session():
                 # Same-output geometry/density changes retain the configured
                 # native layer roles. Recreating a QWindow's wl_surface here can
                 # reuse LayerShellQt configure state and commit before first ack.

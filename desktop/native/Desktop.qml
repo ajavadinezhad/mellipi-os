@@ -10,6 +10,7 @@ QtObject {
     id: shell
     property string renderedPanel: ""
     property bool overlayShown: false
+    property bool launcherPrepared: false
     property int sw: Orbit.screenGeometry.width
     property int sh: Orbit.screenGeometry.height
     property int sx: Orbit.screenGeometry.x
@@ -34,7 +35,7 @@ QtObject {
     readonly property int panelGap: Theme.extraCompact ? 6 : Theme.compact ? 10 : 14
     readonly property int panelOverhead: 2*panelPadding+panelGap+(foldStyle ? sheetHeader.implicitHeight : 30)
     readonly property bool foldPanel: foldStyle && (renderedPanel === "launcher" || renderedPanel === "overview")
-    property int panelWidth: ({launcher:workspacePanelWidth,overview:workspacePanelWidth,ai:workspacePanelWidth,settings:420,"system-settings":600,capture:520,quick:350,music:350,usage:350,notifications:380,tray:310,bluetooth:380,battery:380,screenshot:380,"window-capture":500,switcher:620})[shell.renderedPanel] || 560
+    property int panelWidth: ({launcher:workspacePanelWidth,overview:workspacePanelWidth,ai:workspacePanelWidth,settings:420,"system-settings":600,capture:520,quick:350,music:350,usage:350,notifications:380,tray:310,bluetooth:380,battery:380,screenshot:380,"window-capture":500,"window-placement":270,switcher:620})[shell.renderedPanel] || 560
     readonly property bool panelRight: !foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
     readonly property int panelBodyWidth: Math.max(1,Math.min(sw-(foldStyle ? horizontalBar ? 32 : Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0) : 24),panelWidth,760))
     readonly property int panelBodyHeight: Math.max(1,Math.min(sh-(foldStyle ? horizontalBar ? Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0) : 32 : foldPanel ? (Theme.compact ? 144 : 172) : 100),panelHeight,620))
@@ -43,6 +44,7 @@ QtObject {
     property int panelHeight: {
         if(shell.workPanel) return Theme.compact ? 560 : 620;
         if(shell.renderedPanel === "window-capture") return 440;
+        if(shell.renderedPanel === "window-placement") return (pageLoader.item ? pageLoader.item.implicitHeight : 55)+shell.panelOverhead;
         if(shell.renderedPanel === "screenshot") return Math.max(280,(pageLoader.item ? pageLoader.item.implicitHeight : 240)+shell.panelOverhead);
         if(shell.renderedPanel === "launcher") return Math.min(540,160+Math.max(2,Math.min(7,filteredApps().length))*(Theme.compact ? 50 : 60));
         if(shell.renderedPanel === "switcher") return Math.min(470,85+Math.max(1,Math.min(6,Orbit.switchWindows.length))*62);
@@ -62,14 +64,22 @@ QtObject {
     }
     function filteredApps() { return Orbit.launcherApps.filter(a => (!launchPinned || Orbit.appearance.pins.indexOf(a.id)>=0) && (a.name + " " + a.description).toLowerCase().includes(query.toLowerCase())); }
     function filteredWindows() { return Orbit.windows.filter(w => w.title.toLowerCase().includes(query.toLowerCase())); }
-    function title() { return ({launcher:"Applications",overview:"Windows",ai:"Intelligence",settings:"Appearance","system-settings":"System settings",capture:"New note",quick:"Quick settings",music:"Music and sound",usage:"System usage",notifications:"Notifications",tray:"Background apps",bluetooth:"Bluetooth",battery:"Battery",screenshot:"Screenshot","window-capture":"Choose a window",switcher:"Switch windows"})[shell.renderedPanel] || "Mellipi"; }
+    function title() { return ({launcher:"Applications",overview:"Windows",ai:"Intelligence",settings:"Appearance","system-settings":"System settings",capture:"New note",quick:"Quick settings",music:"Music and sound",usage:"System usage",notifications:"Notifications",tray:"Background apps",bluetooth:"Bluetooth",battery:"Battery",screenshot:"Screenshot","window-capture":"Choose a window","window-placement":"Auto-snap",switcher:"Switch windows"})[shell.renderedPanel] || "Mellipi"; }
     property Timer clockTimer: Timer { interval: 60000; repeat: true; running: true; onTriggered: { shell.clockNow = new Date(); shell.hour = Qt.formatDateTime(new Date(), "hh:mm"); } }
     property Connections orbitConnections: Connections {
         target: Orbit
         function onPanelChanged() {
             shell.query="";shell.launchTab="Apps";
+            if(Orbit.panel!=="launcher")shell.launcherPrepared=false;
             enterPanel.stop();exitPanel.stop();swapPanel.stop();
             if(Orbit.panel === "")exitPanel.restart();
+            else if(Orbit.panel==="launcher") {
+                // A Super press is immediately actionable, even over another sheet.
+                shell.renderedPanel=Orbit.panel;
+                shell.overlayShown=true;
+                enterPanel.restart();
+                Qt.callLater(overlay.focusLauncher);
+            }
             else if(!shell.overlayShown) {shell.renderedPanel=Orbit.panel;shell.overlayShown=true;enterPanel.restart();}
             else if(shell.renderedPanel !== Orbit.panel)swapPanel.restart();
             else enterPanel.restart();
@@ -84,8 +94,8 @@ QtObject {
     }
     onRenderedPanelChanged: {Orbit.positionPanel(renderedPanel);queuePanelGeometry();}
     property SequentialAnimation enterPanel: SequentialAnimation {
-        PropertyAction { target: surface;property: "opacity";value: 0 }
-        PropertyAction { target: surfaceShift;property: "y";value: Theme.reducedMotion ? 0 : 7 }
+        PropertyAction { target: surface;property: "opacity";value: shell.renderedPanel==="launcher" ? 0.85 : 0 }
+        PropertyAction { target: surfaceShift;property: "y";value: Theme.reducedMotion || shell.renderedPanel==="launcher" ? 0 : 7 }
         ParallelAnimation {
             NumberAnimation { target: surface;property: "opacity";to: 1;duration: Theme.motion;easing.type: Easing.OutCubic }
             NumberAnimation { target: surfaceShift;property: "y";to: 0;duration: Theme.motion;easing.type: Easing.OutCubic }
@@ -122,11 +132,27 @@ QtObject {
     property Window topbarWindow: Window {
         id: top; objectName: "topbarSurface"; title: "Mellipi — Bar"
         visible: Orbit.surfacesReady; x: shell.foldStyle ? shell.taskbarRect.x : shell.sx; y: shell.foldStyle ? shell.taskbarRect.y : shell.sy; width: shell.foldStyle ? shell.taskbarRect.width : shell.sw; height: shell.foldStyle ? shell.taskbarRect.height : Orbit.isWayland ? 38 : (Theme.compact ? 30 : 38); color: "transparent"
-        flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
+        flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        property bool keyboardMode: false
+        function leaveKeyboardMode() {
+            if(!keyboardMode)return;
+            keyboardMode=false;
+            Orbit.setTaskbarKeyboard(false);
+        }
+        onActiveChanged: if(active && keyboardMode)spine.focusTaskbar();else if(!active)leaveKeyboardMode()
+        Connections {
+            target: Orbit
+            function onTaskbarFocusRequested() {
+                top.keyboardMode=true;
+                Orbit.setTaskbarKeyboard(true);
+                spine.focusTaskbar();
+            }
+            function onPanelChanged() {if(Orbit.panel!=="")top.leaveKeyboardMode();}
+        }
         property rect orbitTaskbarBody: spine.visible ? spine.bodyGeometry : Qt.rect(0,0,0,0)
         function syncBarMask() {Orbit.syncTaskbarMask(top);}
         onOrbitTaskbarBodyChanged: Qt.callLater(syncBarMask)
-        OrbitSpine {id: spine;anchors.fill: parent;visible: shell.foldStyle;clockText: ClockFormat.shortTime(shell.clockNow,Orbit.appearance.clock24);clockNow: shell.clockNow;outputName: Orbit.selectedOutput}
+        OrbitSpine {id: spine;Keys.onEscapePressed: top.leaveKeyboardMode();anchors.fill: parent;visible: shell.foldStyle;clockText: ClockFormat.shortTime(shell.clockNow,Orbit.appearance.clock24);clockNow: shell.clockNow;outputName: Orbit.selectedOutput}
         Item {
             visible: !shell.foldStyle
             width: parent.width;height: Theme.compact ? 30 : 38
@@ -173,7 +199,7 @@ QtObject {
             OrbitButton { visible: Power.state.batteryPresent || System.values.batteryPresent;text: Power.state.percentageAvailable ? Power.state.batteryPercent+"%" : System.values.batteryPresent ? System.values.batteryPercent+"%" : "Battery";quiet: true;implicitHeight: 28;hint: "Battery and charging limit";onClicked: Orbit.showPanel("battery") }
             OrbitButton {
                 objectName: "usageButton";quiet: true;implicitWidth: shell.sw>=900 ? Math.min(112,Math.max(48,Usage.username.length*6+28)) : 28;implicitHeight: 28
-                hint: "System usage · Signed in as "+Usage.username;onClicked: Orbit.showPanel("usage")
+                hint: "System Monitor · Signed in as "+Usage.username;onClicked: Orbit.openSystemMonitor()
                 contentItem: Row {
                     spacing: 5
                     Canvas {
@@ -184,7 +210,7 @@ QtObject {
                     Text { visible: shell.sw>=900;text: Usage.username;width: Math.min(80,implicitWidth);elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.fontSize(11);height: 16;verticalAlignment: Text.AlignVCenter;textFormat: Text.PlainText }
                 }
             }
-            IconButton { iconName: "settings";implicitHeight: 28;hint: "Quick settings";onClicked: Orbit.showPanel("quick") }
+            IconButton { phosphor: true;iconName: "settings";implicitHeight: 28;hint: "Quick settings";onClicked: Orbit.showPanel("quick") }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.border }
         }
@@ -277,18 +303,35 @@ QtObject {
         id: overlay; property bool heldFocus: false
         readonly property bool utilityPanel: shell.renderedPanel !== "switcher"
         onActiveChanged: {
-            if(active){heldFocus=true;Orbit.settlePanelFocus();}
+            if(active){
+                heldFocus=true;Orbit.settlePanelFocus();
+                if(Orbit.panel==="launcher")Qt.callLater(focusLauncher);
+            }
             else if(heldFocus && visible && utilityPanel && Orbit.panel!=="" && !swapPanel.running && !enterPanel.running) {heldFocus=false;Orbit.utilityFocusLost();}
         }
         objectName: "overlaySurface"; title: "Mellipi — Action surface"
         visible: Orbit.surfacesReady && shell.overlayShown
+        readonly property size orbitPanelContentSize: Qt.size(shell.panelBodyWidth,shell.panelBodyHeight)
         width: Orbit.isWayland ? 760 : shell.panelBodyWidth;height: Orbit.isWayland ? 620 : shell.panelBodyHeight
+        onWidthChanged: shell.queuePanelGeometry()
+        onHeightChanged: shell.queuePanelGeometry()
         readonly property var popupOrigin: {var style=Orbit.appearance;var bar=top.orbitTaskbarBody;return Orbit.panelPopupOrigin(shell.renderedPanel,width,height,Orbit.screenGeometry,shell.panelEdge)}
         x: popupOrigin.x
         y: popupOrigin.y
         color: "transparent";flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        function focusLauncher() {
+            if(visible && Orbit.panel==="launcher" && shell.renderedPanel==="launcher" &&
+               surface.enabled && foldLoader.item && !shell.launcherPrepared) {
+                shell.launcherPrepared=foldLoader.item.focusLauncher();
+            }
+        }
         onVisibleChanged: {
-            if(visible) {if(!Orbit.isWayland)requestActivate();overlayItem.forceActiveFocus();shell.queuePanelGeometry();}
+            if(visible) {
+                if(!Orbit.isWayland)requestActivate();
+                if(shell.renderedPanel==="launcher")Qt.callLater(focusLauncher);
+                else overlayItem.forceActiveFocus();
+                shell.queuePanelGeometry();
+            }
             else heldFocus=false;
         }
         Item {
@@ -313,6 +356,7 @@ QtObject {
                 SheetChrome {anchors.fill: parent;visible: shell.foldStyle}
                 transform: Translate { id: surfaceShift }
                 enabled: !swapPanel.running
+                onEnabledChanged: if(enabled && shell.renderedPanel==="launcher")Qt.callLater(overlay.focusLauncher)
                 MouseArea { anchors.fill: parent; onClicked: mouse => mouse.accepted=true }
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: shell.panelPadding; spacing: shell.panelGap
@@ -336,9 +380,17 @@ QtObject {
                         onSelected: view => Orbit.showPanel(view)
                     }
                     Loader {
+                        id: foldLoader;Layout.fillWidth: true;Layout.fillHeight: true
+                        visible: shell.foldPanel
+                        active: shell.foldPanel
+                        sourceComponent: foldPage
+                        onLoaded: if(shell.renderedPanel==="launcher")Qt.callLater(overlay.focusLauncher)
+                    }
+                    Loader {
                         id: pageLoader; Layout.fillWidth: true; Layout.fillHeight: true
-                        active: shell.renderedPanel !== ""
-                        sourceComponent: shell.foldPanel ? foldPage : ({launcher:launcherPage,overview:overviewPage,ai:aiPage,capture:capturePage,settings:settingsPage,"system-settings":systemSettingsPage,"session-exit":sessionExitPage,quick:quickPage,music:musicPage,usage:usagePage,notifications:notificationsPage,tray:trayPage,bluetooth:bluetoothPage,battery:batteryPage,screenshot:screenshotPage,"window-capture":windowCapturePage,switcher:switcherPage})[shell.renderedPanel] || null
+                        active: visible && shell.renderedPanel !== ""
+                        visible: !shell.foldPanel
+                        sourceComponent: ({launcher:launcherPage,overview:overviewPage,ai:aiPage,capture:capturePage,settings:settingsPage,"system-settings":systemSettingsPage,"session-exit":sessionExitPage,quick:quickPage,music:musicPage,usage:usagePage,notifications:notificationsPage,tray:trayPage,bluetooth:bluetoothPage,battery:batteryPage,screenshot:screenshotPage,"window-capture":windowCapturePage,"window-placement":windowPlacementPage,switcher:switcherPage})[shell.renderedPanel] || null
                     }
 
                 }
@@ -397,19 +449,21 @@ QtObject {
         Item {
             id: contextRoot;anchors.fill: parent;focus: true
             Keys.onEscapePressed: {if(Orbit.context.items!==undefined)Orbit.closeContext();else Orbit.dismiss();}
-            Keys.onDownPressed: contextList.currentIndex=(contextList.currentIndex+1)%contextList.count
-            Keys.onUpPressed: contextList.currentIndex=(contextList.currentIndex+contextList.count-1)%contextList.count
+            Keys.onDownPressed: if(contextList.count)contextList.currentIndex=(contextList.currentIndex+1)%contextList.count
+            Keys.onUpPressed: if(contextList.count)contextList.currentIndex=(contextList.currentIndex+contextList.count-1)%contextList.count
             Keys.onReturnPressed: Orbit.contextAction(contextList.currentIndex)
             MouseArea { anchors.fill: parent;acceptedButtons: Qt.LeftButton | Qt.RightButton;onClicked: {if(Orbit.context.items!==undefined)Orbit.closeContext();else Orbit.dismiss();} }
             Rectangle {
                 id: contextPopup;objectName: "contextPopup";visible: Orbit.context.items !== undefined
-                onVisibleChanged: if(visible){Orbit.syncContextSurface();contextRoot.forceActiveFocus();contextList.currentIndex=0;opacity=0;contextEnter.restart();}
-                width: 250;height: contextList.contentHeight+12;radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
+                onVisibleChanged: if(visible){Orbit.syncContextSurface();contextRoot.forceActiveFocus();contextList.currentIndex=0;opacity=Theme.reducedMotion ? 1 : 0;if(!Theme.reducedMotion)contextEnter.restart();}
+                width: Math.max(1,Math.min(250,parent.width-16));height: Math.min(contextList.contentHeight+12,Math.max(1,parent.height-48));radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
                 x: Math.max(8,Math.min((Orbit.context.x || 0)-shell.sx-(Orbit.context.placement === "above" ? width/2 : 0),parent.width-width-8));y: Math.max(36,Math.min((Orbit.context.y || 0)-shell.sy-(Orbit.context.placement === "above" ? height+8 : 0),parent.height-height-12))
                 ListView {
-                    id: contextList;anchors.fill: parent;anchors.margins: 6;interactive: false;model: Orbit.context.items || []
+                    id: contextList;anchors.fill: parent;anchors.margins: 6;clip: true;interactive: contentHeight>height;model: Orbit.context.items || []
+                    onCurrentIndexChanged: if(currentIndex>=0)positionViewAtIndex(currentIndex,ListView.Contain)
+                    ScrollBar.vertical: ScrollBar {}
                     delegate: Rectangle {
-                        required property var modelData;required property int index;width: ListView.view.width;height: 32;radius: Theme.corner(6);color: index===contextList.currentIndex ? Theme.hover : "transparent"
+                        required property var modelData;required property int index;width: ListView.view.width;height: Math.max(32,Theme.fontSize(12)+14);radius: Theme.corner(6);color: index===contextList.currentIndex ? Theme.selectedSurface : "transparent";border.color: Theme.focusColor;border.width: index===contextList.currentIndex && contextRoot.activeFocus ? (Theme.highContrast ? 2 : 1) : 0
                         Accessible.role: Accessible.MenuItem
                         Accessible.name: modelData.label
                         Accessible.focused: index===contextList.currentIndex
@@ -461,6 +515,43 @@ QtObject {
     property Component usageComponent: Component { id: usagePage;UsagePanel {} }
     property Component musicComponent: Component { id: musicPage;MusicPanel {compactControls: true} }
     property Component quickComponent: Component { id: quickPage;QuickPanel {} }
+    property Component windowPlacementComponent: Component {
+        id: windowPlacementPage
+        ColumnLayout {
+            id: placement;objectName: "windowPlacementPanel"
+            spacing: 8
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    Layout.fillWidth: true
+                    text: "Auto-snap new windows"
+                    wrapMode: Text.Wrap
+                    color: Theme.text
+                    font.pixelSize: Theme.fontSize(11)
+                }
+                SettingToggle {
+                    objectName: "windowPlacementToggle"
+                    label: "Auto-snap new windows"
+                    checked: Orbit.windowPlacementEnabled === true
+                    onToggled: Orbit.setPreference("windowPlacementEnabled",checked)
+                }
+            }
+            Text {
+                text: "Grid slots"
+                color: Theme.text
+                font.pixelSize: Theme.fontSize(11)
+            }
+            SettingsSegments {
+                objectName: "windowPlacementOptions"
+                Layout.fillWidth: true
+                enabled: Orbit.windowPlacementEnabled === true
+                segmentWidth: Math.max(1, Math.floor((width-11)/8))
+                value: Orbit.windowGridCount
+                options: [2,3,4,5,6,7,8,9].map(count => ({label:String(count),value:count}))
+                onSelected: count => Orbit.setPreference("windowPlacement","grid-"+count)
+            }
+        }
+    }
     property Component windowCaptureComponent: Component {
         id: windowCapturePage
         WindowCapturePicker {

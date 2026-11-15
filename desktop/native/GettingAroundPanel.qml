@@ -38,7 +38,7 @@ ScrollView {
         }
         SettingsGroup {
             title: "Arrange your work"
-            Text {Layout.fillWidth:true;text:"Open Super → Saved layouts to save app positions and workspaces. Layouts reuse open windows; they do not save documents or browser tabs. Undo restores Mellipi arrangement changes.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
+            Text {Layout.fillWidth:true;text:"Open Super → Saved layouts to save and resume a workspace. Mellipi can reopen apps and arrange their windows. Each app handles its own documents and tabs.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
         }
         SettingsGroup {
             title: "Daily controls"

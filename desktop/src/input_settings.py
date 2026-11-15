@@ -27,11 +27,14 @@ def available_layouts(path=Path('/usr/share/X11/xkb/rules/evdev.xml')):
     except (OSError,ValueError,ET.ParseError):return fallback
 
 LAYOUTS=available_layouts()
-DEFAULTS=dict(layout='us',repeatRate=25,repeatDelay=600,pointerSpeed=0.0,naturalScroll=False,tapToClick=False)
+DEFAULTS=dict(layout='us',repeatRate=25,repeatDelay=600,pointerSpeed=0.0,naturalScroll=False,tapToClick=False,touchpadScrollSpeed=1.0)
 
 def validate(values):
-    if not isinstance(values,dict) or set(values)!=set(DEFAULTS):raise ValueError('Invalid input settings')
+    if not isinstance(values,dict) or set(values)-{'touchpadScrollSpeed'}!=set(DEFAULTS)-{'touchpadScrollSpeed'}:raise ValueError('Invalid input settings')
     result=dict(values)
+    scroll=values.get("touchpadScrollSpeed",1.0)
+    if type(scroll) not in (int,float) or not .25<=scroll<=3:raise ValueError("Invalid touchpad scroll speed")
+    result["touchpadScrollSpeed"]=round(scroll,2)
     if not isinstance(result['layout'],str):raise ValueError('Choose supported keyboard layouts')
     codes=result['layout'].split(',')
     if not 1<=len(codes)<=4 or len(set(codes))!=len(codes) or any(code not in dict(LAYOUTS) for code in codes):raise ValueError('Choose up to four distinct supported keyboard layouts')
@@ -57,6 +60,7 @@ def input_lines(values,keys,selector=''):
         'repeatDelay':[f'{prefix("keyboard")} repeat_delay {v["repeatDelay"]}'],
         'pointerSpeed':[f'{prefix("pointer")} pointer_accel {v["pointerSpeed"]:.2f}'] if selector else [f'input type:pointer pointer_accel {v["pointerSpeed"]:.2f}',f'input type:touchpad pointer_accel {v["pointerSpeed"]:.2f}'],
         'naturalScroll':[f'{prefix("pointer")} natural_scroll {toggle(v["naturalScroll"])}'] if selector else [f'input type:pointer natural_scroll {toggle(v["naturalScroll"])}',f'input type:touchpad natural_scroll {toggle(v["naturalScroll"])}'],
+        'touchpadScrollSpeed':[],
         'tapToClick':[f'{prefix("touchpad")} tap {toggle(v["tapToClick"])}']}
     return [line for key in DEFAULTS if key in keys for line in lines[key]]
 
@@ -172,8 +176,7 @@ class InputSettings(QObject):
     def _state(self):
         active=next((code for code,label in LAYOUTS if label.lower()==str(self.layout_name).lower()),None)
         device=self._device()
-        if not self.selected and 'layout' in self.configured:active=self.values['layout'].split(',')[0]
-        return dict(self.values,layout=(active or self.values['layout'].split(',')[0]) if self.layout_known else '',layoutList=self.values['layout'] if self.layout_known or 'layout' in self.configured else '',layoutName=self.layout_name,device=self.selected,deviceType=device['type'] if device else '',available=self._available(),sessionAvailable=self.enabled,busy=self.busy,reading=self._reading,error=self.error)
+        return dict(self.values,layout=(active or self.values['layout'].split(',')[0]) if self.layout_known else '',layoutList=self.values['layout'] if self.layout_known or 'layout' in self.configured else '',layoutName=self.layout_name,device=self.selected,deviceType=device['type'] if device else '',available=self._available(),keyboardEditable=self._available() and (not self.native or not self.selected),touchpadScrollAvailable=bool(self.native) and self._available() and not device,sessionAvailable=self.enabled,busy=self.busy,reading=self._reading,error=self.error)
     state=Property('QVariantMap',_state,notify=changed)
     layouts=Property('QVariantList',lambda self:[dict(value=k,label=v) for k,v in LAYOUTS],constant=True)
     devices=Property('QVariantList',lambda self:[dict(d) for d in self._devices],notify=changed)
@@ -181,7 +184,9 @@ class InputSettings(QObject):
     @Slot(str)
     def selectDevice(self,identifier):
         if self.closed:return
-        if self.busy:return self.notice.emit('Wait for the current input change to finish')
+        if self.busy:
+            self._nextDevice=identifier
+            return
         if identifier and not any(d['identifier']==identifier for d in self._devices):return self.notice.emit('Input device is no longer connected')
         self.profiles[self.selected]=dict(values=dict(self.values),configured=set(self.configured))
         self.selected=identifier
@@ -201,6 +206,7 @@ class InputSettings(QObject):
         if self._reading:return self.notice.emit('Input device details are still loading')
         device=self._device()
         if self.selected:
+            if self.native and key in ('layout','repeatRate','repeatDelay'):return self.notice.emit('Choose All devices to change keyboard settings')
             allowed={'keyboard':{'layout','repeatRate','repeatDelay'},'pointer':{'pointerSpeed','naturalScroll'},'touchpad':{'pointerSpeed','naturalScroll','tapToClick'}}
             if not device or key not in allowed[device['type']]:return self.notice.emit('This setting does not apply to the selected device')
         try:desired=validate(dict(self._desired,**{key:value}))
@@ -208,8 +214,15 @@ class InputSettings(QObject):
         if not self._available():self.notice.emit('Input controls require a connected device in Orbit Wayland');return
         self._desired=desired;self._desired_keys.add(key)
         if not self.busy:self._start()
-    def _start(self):
+    def _start(self,global_layout=None):
         desired=dict(self._desired);keys=set(self._desired_keys);previous=dict(self.values);changed_keys={k for k in DEFAULTS if desired[k]!=previous[k]}|(keys-self.configured);scope=self.selected
+        if global_layout is not None:
+            scope=''
+            profile=self.profiles['']
+            previous=dict(profile['values'])
+            desired=dict(previous,layout=global_layout)
+            keys=set(profile['configured'])|{'layout'}
+            changed_keys={'layout'}
         self.busy=True;self.error='';self.changed.emit()
         if self.pool is None:self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='orbit-input')
         profiles={identifier:dict(values=dict(profile['values']),configured=set(profile['configured'])) for identifier,profile in self.profiles.items()}
@@ -255,11 +268,18 @@ class InputSettings(QObject):
             self.error=result['error'];self.notice.emit(self.error)
             if self._desired==result.get('attempt') and self._desired_keys==result.get('attemptKeys'):self._desired=dict(self.values);self._desired_keys=set(self.configured)
         elif not result.get('cycle'):
-            self.values=result['values'];self.configured=result['configured'];self.profiles=result['profiles']
+            self.profiles=result['profiles']
+            if result['scope']==self.selected:
+                self.values=result['values'];self.configured=result['configured']
             if result.get('layoutChanged'):self.layout_known=True;self.layout_name=dict(LAYOUTS)[self.values['layout'].split(',')[0]]
         self.changed.emit()
         if result.get('cycle'):self.refresh()
         elif self._desired!=self.values or self._desired_keys!=self.configured:self._start()
+        elif getattr(self,'_cycleQueued',False):
+            self._cycleQueued=False;self.nextLayout()
+        elif hasattr(self,'_nextDevice'):
+            identifier=self._nextDevice;del self._nextDevice
+            self.selectDevice(identifier)
     @Slot(str)
     def setLayout(self,value):self._set('layout',value)
     @Slot(str)
@@ -269,8 +289,18 @@ class InputSettings(QObject):
     @Slot()
     def nextLayout(self):
         if self.native:
-            layouts=self._desired['layout'].split(',')
-            if len(layouts)>1:self._set('layout',','.join(layouts[1:]+layouts[:1]))
+            if self.closed or not self.enabled:return
+            if self.busy or self._reading:
+                self._cycleQueued=True
+                return
+            profile=self.profiles['']
+            values=self._desired if not self.selected else profile['values']
+            layouts=values['layout'].split(',')
+            if len(layouts)<2:return
+            if not self.selected:
+                self._set('layout',','.join(layouts[1:]+layouts[:1]))
+            else:
+                self._start(global_layout=','.join(layouts[1:]+layouts[:1]))
             return
         if self.closed or self.busy or not self.enabled:return
         self.busy=True;self.changed.emit()
@@ -287,6 +317,10 @@ class InputSettings(QObject):
     def setRepeatDelay(self,value):self._set('repeatDelay',value)
     @Slot(float)
     def setPointerSpeed(self,value):self._set('pointerSpeed',value)
+    @Slot(float)
+    def setTouchpadScrollSpeed(self,value):
+        if not self.native:return self.notice.emit('Touchpad scroll speed requires the native compositor')
+        self._set('touchpadScrollSpeed',value)
     @Slot(bool)
     def setNaturalScroll(self,value):self._set('naturalScroll',value)
     @Slot(bool)
@@ -319,6 +353,9 @@ class InputSettings(QObject):
             self.layout_name=label;self.layout_known=not label or any(name.lower()==str(label).lower() for _,name in LAYOUTS)
             self.error='' if self._available() else 'Selected input device is disconnected'
         self.changed.emit()
+        if getattr(self,'_cycleQueued',False):
+            self._cycleQueued=False;self.nextLayout()
+
     def close(self):
         self.closed=True
         if self.pool:self.pool.shutdown(wait=True,cancel_futures=False)

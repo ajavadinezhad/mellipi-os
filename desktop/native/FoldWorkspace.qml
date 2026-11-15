@@ -13,7 +13,13 @@ Item {
     readonly property string workspaceName: /^\d+$/.test(String(currentSpace.name || "")) ? "Workspace "+currentSpace.name : currentSpace.name || "Workspace "+(currentSpace.id+1)
     readonly property var windows: Orbit.windows
     readonly property string windowCount: windows.length+(windows.length===1 ? " window" : " windows")
-    Component.onCompleted: Fold.setView("apps")
+    function focusLauncher() {
+        Fold.setView("apps")
+        if(!unified.visible)return false;
+        if(typeof unified.resetForOpen==="function")unified.resetForOpen();
+        else unified.focusSearch();
+        return true;
+    }
     onViewChanged: if(view!=="work")Qt.callLater(function(){unified.focusSearch();})
     ColumnLayout {
         anchors.fill: parent;spacing: Theme.compact ? 10 : 12

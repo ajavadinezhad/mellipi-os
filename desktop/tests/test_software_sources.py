@@ -38,3 +38,51 @@ class AptFirstRunTests(unittest.TestCase):
             [PKEXEC, APT_GET, '-o', 'APT::Update::Error-Mode=any', 'update'],
             timeout=None,
         )
+
+
+class InstalledSoftwareTests(unittest.TestCase):
+    @patch('software_sources.executable', side_effect=lambda path: path == DPKG_QUERY)
+    @patch('software_sources.run', return_value=(
+        'hello:amd64\tinstalled\t2.10\tGreeter app\n'
+        'hello:i386\tinstalled\t2.10\tGreeter app\n'
+        'removed\tconfig-files\t1.0\tUninstalled\n'
+        'other\tinstalled\t1.0\tAnother utility\n'
+    ))
+    def test_apt_inventory_needs_no_index_and_filters_local_metadata(self, run, _):
+        from software_sources import installed_software
+        result = installed_software('GREETER', ('apt',))['apt']
+        self.assertEqual([p.identifier for p in result.packages], ['hello:amd64', 'hello:i386'])
+        self.assertTrue(all(p.installed and p.version == '2.10' for p in result.packages))
+        self.assertFalse(result.needs_refresh)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][:2], [DPKG_QUERY, '-W'])
+
+    @patch('software_sources.executable', return_value=True)
+    @patch('software_sources.run', side_effect=[
+        'org.example.App\tExample App\t1.2\tstable\tflathub\n',
+        RuntimeError('Inventory unavailable'),
+    ])
+    def test_flatpak_inventory_preserves_working_scope_when_other_fails(self, run, _):
+        from software_sources import FLATPAK, installed_software
+        seen = []
+        result = installed_software('example', ('flatpak',), lambda *row: seen.append(row))['flatpak']
+        self.assertEqual([(p.identifier, p.scope, p.branch) for p in result.packages],
+                         [('org.example.App', 'user', 'stable')])
+        self.assertIn('System Flatpak: Inventory unavailable', result.status)
+        self.assertEqual(seen, [('flatpak', result)])
+        self.assertEqual([call.args[0][:4] for call in run.call_args_list],
+                         [[FLATPAK, '--user', 'list', '--app'],
+                          [FLATPAK, '--system', 'list', '--app']])
+
+    @patch('software_sources.executable', return_value=True)
+    @patch('software_sources.SNAP_SOCKET')
+    @patch('software_sources.snap_request', return_value=[
+        {'name': 'hello-world', 'title': 'Hello World', 'version': '1.0'},
+        {'name': '../../bad'},
+    ])
+    def test_snap_inventory_reads_only_local_snaps_endpoint(self, request, socket, _):
+        from software_sources import installed_software
+        socket.is_socket.return_value = True
+        result = installed_software('', ('snap',))['snap']
+        self.assertEqual([p.identifier for p in result.packages], ['hello-world'])
+        request.assert_called_once_with('/v2/snaps')

@@ -1,6 +1,6 @@
 """Package discovery and installation through configured Linux software sources."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from http.client import HTTPConnection, HTTPException
 import json
@@ -222,21 +222,94 @@ def friendly_error(error):
     return str(error)
 
 
-def search(query, sources=SOURCES):
+def search(query, sources=SOURCES, on_result=None):
     query = query.strip()
     if len(query) > 120:
         raise ValueError('Search terms must be 120 characters or fewer.')
     adapters = {'apt': apt_search, 'flatpak': flatpak_search, 'snap': snap_search}
+    return _query_sources(adapters, sources, on_result, query)
+
+
+def _query_sources(adapters, sources, on_result, *arguments, match=''):
     with ThreadPoolExecutor(max_workers=len(SOURCES)) as pool:
-        searches = {source: pool.submit(adapters[source], query) for source in sources}
+        searches = {pool.submit(adapters[source], *arguments): source for source in sources}
         results = {}
-        for source, future in searches.items():
+        for future in as_completed(searches):
+            source = searches[future]
             try:
-                results[source] = future.result()
+                result = future.result()
+                if match:
+                    result.packages = [p for p in result.packages if match in
+                                       (p.name + '\n' + p.identifier + '\n' + p.description).casefold()]
+                results[source] = result
             except (RuntimeError, OSError, HTTPException, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
                 results[source] = SourceResult(status=friendly_error(error))
+            if on_result:on_result(source, results[source])
         return results
 
+
+
+def apt_installed():
+    if not executable(DPKG_QUERY):
+        return SourceResult(status='APT inventory is unavailable.')
+    fields = r'${binary:Package}\t${db:Status-Status}\t${Version}\t${binary:Synopsis}\n'
+    packages = []
+    for line in run([DPKG_QUERY, '-W', '-f=' + fields]).splitlines():
+        row = line.split('\t', 3)
+        if len(row) != 4:
+            continue
+        identifier, status, version, summary = row
+        name, separator, arch = identifier.partition(':')
+        if status == 'installed' and APT_ID.fullmatch(name) and (
+                not separator or re.fullmatch(r'[a-z0-9-]+', arch)):
+            packages.append(Package('apt', identifier, name, summary, version, installed=True))
+    return SourceResult(packages, f'APT: {len(packages)} installed.')
+
+
+def flatpak_installed():
+    if not executable(FLATPAK):
+        return SourceResult(status='Flatpak is not installed.')
+    packages, errors = [], []
+    for scope in ('user', 'system'):
+        try:
+            rows = run([FLATPAK, '--' + scope, 'list', '--app',
+                        '--columns=application:f,name:f,version:f,branch:f,origin:f'])
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+            errors.append(f'{scope.title()} Flatpak: {friendly_error(error)}')
+            continue
+        for line in rows.splitlines():
+            row = line.split('\t')
+            if len(row) != 5:
+                continue
+            identifier, name, version, branch, remote = row
+            if FLATPAK_ID.fullmatch(identifier) and FLATPAK_COMPONENT.fullmatch(branch):
+                packages.append(Package('flatpak', identifier, name or identifier, '',
+                                        version, scope, remote or 'Flatpak', branch, installed=True))
+    return SourceResult(packages, ' '.join([f'Flatpak: {len(packages)} installed.', *errors]))
+
+
+def snap_installed():
+    if not (executable(SNAP) and SNAP_SOCKET.is_socket()):
+        return SourceResult(status='Snap is not configured.')
+    packages = []
+    for row in snap_request('/v2/snaps'):
+        identifier = row.get('name')
+        if not isinstance(identifier, str) or not SNAP_ID.fullmatch(identifier):
+            continue
+        title, summary, version = (row.get(key) for key in ('title', 'summary', 'version'))
+        packages.append(Package('snap', identifier, title if isinstance(title, str) and title else identifier,
+                                summary if isinstance(summary, str) else '',
+                                version if isinstance(version, str) else '', installed=True))
+    return SourceResult(packages, f'Snap: {len(packages)} installed.')
+
+
+def installed_software(query, sources=SOURCES, on_result=None):
+    """List local package-manager state without refresh, network searches or authorization."""
+    query = query.strip().casefold()
+    if len(query) > 120:
+        raise ValueError('Search terms must be 120 characters or fewer.')
+    adapters = {'apt': apt_installed, 'flatpak': flatpak_installed, 'snap': snap_installed}
+    return _query_sources(adapters, sources, on_result, match=query)
 
 def install_arguments(package):
     if package.installed:

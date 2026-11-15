@@ -5,7 +5,10 @@ from qt_compat import QObject,Property,Signal,Slot,QT5
 if QT5:
     from PyQt5.QtCore import QProcess,QProcessEnvironment
 else:
-    from PySide6.QtCore import QProcess,QProcessEnvironment
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtCore import QProcess,QProcessEnvironment
+    else:
+        from PySide6.QtCore import QProcess,QProcessEnvironment
 from project_paths import PROJECT_ROOT as ROOT, SOURCE_ROOT
 STOPPED=QProcess.NotRunning if QT5 else QProcess.ProcessState.NotRunning
 

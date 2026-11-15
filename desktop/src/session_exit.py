@@ -10,7 +10,7 @@ windows and waits for their normal close/save flow.
 import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
-from qt_compat import QObject, Property, Signal, Slot
+from qt_compat import QObject, Property, QTimer, Signal, Slot
 
 
 def parse_inhibitors(raw):
@@ -57,11 +57,13 @@ class SessionExit(QObject):
         self.enabled=bool(enabled);self.close_window=close_window;self.reader=inhibitor_reader or read_inhibitors
         self._active=False;self._armed=False;self._busy=False;self._closed=False;self._action='logout'
         self._windows=[];self._inhibitors=[];self._error='';self._generation=0;self._revision=0
-        self._requested=set();self._targets=set();self._pool=None;self._again=False;self._sending=False
+        self._requested=set();self._targets=set();self._pool=None;self._again=False;self._sending=False;self._retry=False
         self.completed.connect(self._complete)
+        self._waitTimer=QTimer(self);self._waitTimer.setSingleShot(True)
+        self._waitTimer.timeout.connect(self._closeTimedOut)
 
     state=Property('QVariantMap',lambda s:dict(active=s._active,armed=s._armed,checking=s._busy,
-        error=s._error,enabled=s.enabled,windowCount=len(s._windows),action=s._action),notify=changed)
+        error=s._error,retry=s._retry,enabled=s.enabled,windowCount=len(s._windows),action=s._action),notify=changed)
     windows=Property('QVariantList',lambda s:[dict(row,closeRequested=row['id'] in s._requested) for row in s._windows],notify=changed)
     inhibitors=Property('QVariantList',lambda s:[dict(row) for row in s._inhibitors],notify=changed)
 
@@ -87,12 +89,14 @@ class SessionExit(QObject):
     def openReview(self,action='logout'):
         if action not in ('logout','reboot','shutdown'):return
         if not self.enabled or self._closed:return
+        self._waitTimer.stop();self._retry=False
         self._action=action
         self._generation+=1;self._active=True;self._armed=False;self._error='';self._inhibitors=[]
         self._requested=set();self._targets=set();self.changed.emit();self._check()
 
     @Slot()
     def cancel(self):
+        self._waitTimer.stop();self._retry=False
         self._generation+=1;self._active=False;self._armed=False;self._again=False
         self._targets=set();self._error='';self.changed.emit()
 
@@ -102,9 +106,18 @@ class SessionExit(QObject):
 
     @Slot()
     def closeAndWait(self):
-        if not self._active or self._armed or self._closed:return
+        if not self._active or (self._armed and not self._retry) or self._closed:return
+        self._retry=False
         self._generation+=1;self._armed=True;self._targets={row['id'] for row in self._windows}
+        self._requested.clear()
+        self._waitTimer.start(12000)
         self._error='';self.changed.emit();self._check()
+
+    def _closeTimedOut(self):
+        if not self._active or not self._armed or not self._windows:return
+        self._retry=True
+        self._error='Some windows are still open. Open them to finish or save your work, or try closing them again.'
+        self.changed.emit()
 
     @Slot()
     def recheck(self):
@@ -112,6 +125,8 @@ class SessionExit(QObject):
 
     def closeFailed(self,ident,message,generation):
         if self._closed or not self._active or generation!=self._generation:return
+        if not self._armed or not any(row['id']==ident for row in self._windows):return
+        self._waitTimer.stop();self._retry=False
         self._requested.discard(ident);self._armed=False
         self._error=str(message)[:500] or 'The application could not be asked to close.'
         self.changed.emit()
@@ -119,8 +134,12 @@ class SessionExit(QObject):
     def _check(self):
         if not self._active or self._closed:return
         if self._busy:self._again=True;return
-        self._busy=True;self._again=False;self._error=''
+        self._again=False;self._error=''
         generation,revision,action=self._generation,self._revision,self._action
+        if action=='logout':
+            self._complete(dict(generation=generation,revision=revision,rows=[]))
+            return
+        self._busy=True
         self.changed.emit()
         if self._pool is None:self._pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='orbit-exit-check')
         def work():
@@ -128,7 +147,7 @@ class SessionExit(QObject):
             # block signing out, or show unrelated shutdown guidance. Do not
             # query logind at all for logout: a bus failure is irrelevant too.
             try:return dict(generation=generation,revision=revision,
-                            rows=self.reader() if action in ('reboot','shutdown') else [])
+                            rows=self.reader())
             except Exception as error:return dict(generation=generation,revision=revision,error=str(error)[:500])
         future=self._pool.submit(work)
         future.add_done_callback(lambda f:self.completed.emit(f.result()) if not self._closed and not f.cancelled() else None)
@@ -147,11 +166,13 @@ class SessionExit(QObject):
         # an operation already in progress. Waiting for its release before system
         # shutdown would deadlock ordinary browsers. Blocking protections remain visible
         # and conservatively prevent this flow; no logind override is issued.
-        if self._error or any(row.get('mode')!='delay' for row in self._inhibitors):return
+        if self._error or any(row.get('mode')!='delay' for row in self._inhibitors):
+            self._waitTimer.stop();self._retry=False;self._armed=False;self.changed.emit();return
         if self._armed:
             if not self._windows:
                 # Consume consent before emitting, so reentrant calls and late
                 # replies cannot produce a second exit or override cancellation.
+                self._waitTimer.stop();self._retry=False
                 self._armed=False;self._active=False;self._generation+=1
                 consent=self._generation;self.changed.emit()
                 if consent==self._generation and not self._closed:self.readyToExit.emit()
@@ -169,6 +190,7 @@ class SessionExit(QObject):
                         if self.close_window(ident) is False:raise RuntimeError('The application could not be asked to close.')
                     except Exception as error:
                         self._requested.discard(ident)
+                        self._waitTimer.stop();self._retry=False
                         self._error=str(error)[:500];self._armed=False;break
             finally:self._sending=False
             self.changed.emit()

@@ -14,7 +14,9 @@ class GreeterProfilePackageTest(unittest.TestCase):
             self.assertEqual(greeter['background'],'/usr/share/backgrounds/abstract/login.svg')
             self.assertIn('gnome-themes-extra',(stage/'DEBIAN/control').read_text())
             self.assertNotIn('position',greeter)
-            self.assertEqual(greeter['theme-name'],'Adwaita-dark');self.assertEqual(greeter['icon-theme-name'],'Adwaita')
+            self.assertEqual(greeter['theme-name'],'Mellipi-Greeter');self.assertEqual(greeter['icon-theme-name'],'Adwaita')
+            css=stage/'usr/share/themes/Mellipi-Greeter/gtk-3.0/gtk.css'
+            self.assertIn('entry:focus',css.read_text())
             self.assertEqual(greeter['user-background'],'false');self.assertEqual(greeter['transition-duration'],'0')
             self.assertTrue({'~session','~a11y','~clock','~power'}.issubset(set(greeter['indicators'].split(';'))))
             self.assertNotIn('~language',greeter['indicators']);self.assertIn('%d',greeter['clock-format']);self.assertIn('%H:%M',greeter['clock-format'])

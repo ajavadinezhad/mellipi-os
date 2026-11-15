@@ -27,6 +27,23 @@ class BackupRecoveryTests(unittest.TestCase):
         self.assertEqual(list(self.destination.iterdir()),[])
         nested=self.home/'nested';nested.mkdir()
         with self.assertRaises(ValueError):backup.create_backup(self.destination,self.env,[nested/'..'])
+    def test_directory_scan_failure_aborts_backup(self):
+        docs=self.home/'Documents';docs.mkdir()
+        def fail_scan(source,*,followlinks,onerror):
+            onerror(PermissionError('Cannot read selected directory'))
+        with patch.object(backup.os,'walk',side_effect=fail_scan):
+            with self.assertRaises(PermissionError):self.create([docs])
+        self.assertEqual(list(self.destination.iterdir()),[])
+    def test_non_object_restore_marker_is_rejected(self):
+        marker=self.data/'pending-settings-restore.json'
+        marker.write_text('[]');marker.chmod(0o600)
+        with self.assertRaises(ValueError):backup.consume_settings_restore(self.env)
+    def test_literal_backslash_in_linux_filename_round_trips(self):
+        source=self.home/r'project\notes.txt'
+        source.write_text('important')
+        saved=self.create([source])
+        result=Path(backup.restore_files(saved,self.restore)['path'])
+        self.assertEqual((result/'personal'/'0000'/source.name).read_text(),'important')
     def test_symlinks_and_special_files_are_not_followed(self):
         docs=self.home/'Documents';docs.mkdir();(docs/'link').symlink_to(self.config/'settings.json')
         with self.assertRaises(ValueError):self.create([docs])
@@ -103,7 +120,7 @@ class PackageRecoveryTests(unittest.TestCase):
     def test_only_known_signed_apt_package_specs_allowed(self):
         for spec in (['bash=1'],['mellipi-shell=--allow-unauthenticated'],['/tmp/a.deb=1'],['mellipi-shell=1;echo pwn'],['mellipi-shell=1','mellipi-shell=2'],['mellipi-desktop=1']):
             with self.subTest(spec=spec),self.assertRaises(ValueError):recovery.restore_command(spec)
-        self.assertEqual(recovery.restore_command(['mellipi-shell=0.1.8','abstract-shell=0.1.8']),['/usr/bin/apt-get','--allow-downgrades','install','mellipi-shell=0.1.8','abstract-shell=0.1.8'])
+        self.assertEqual(recovery.restore_command(['mellipi-shell=0.1.8','abstract-shell=0.1.8']),['/usr/bin/apt-get','--allow-downgrades','--no-remove','install','mellipi-shell=0.1.8','abstract-shell=0.1.8'])
     def test_save_working_version_records_transitional_dependencies(self):
         with tempfile.TemporaryDirectory() as temporary:
             env={'HOME':temporary}

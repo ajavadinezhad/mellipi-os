@@ -57,6 +57,7 @@ smithay::backend::renderer::element::render_elements! {
  pub DrmRenderElement<R> where R: ImportAll + ImportMem;
  Surface=WaylandSurfaceRenderElement<R>,
  Window=crate::window_motion::WindowRenderElement<R>,
+ SnapPreview=smithay::backend::renderer::element::solid::SolidColorRenderElement,
  Cursor=MemoryRenderBufferRenderElement<R>,
 }
 
@@ -416,6 +417,21 @@ pub fn init_drm(
         match event {
             SessionEvent::PauseSession => {
                 data.state.cancel_touch_sequence();
+                data.state.clear_snap_preview();
+                if let Some(pointer) = data.state.seat.get_pointer().filter(|pointer| pointer.is_grabbed()) {
+                    let serial = SERIAL_COUNTER.next_serial();
+                    let time = data.state.start_time.elapsed().as_millis() as u32;
+                    let button = pointer.grab_start_data().map(|grab| grab.button);
+                    pointer.unset_grab(&mut data.state, serial, time);
+                    if let Some(button) = button {
+                        pointer.button(&mut data.state, &smithay::input::pointer::ButtonEvent {
+                            button,
+                            state: smithay::backend::input::ButtonState::Released,
+                            serial,
+                            time,
+                        });
+                    }
+                }
                 backend.active = false;
                 data.state.native_system.devices.clear();
                 libinput.suspend();
@@ -530,6 +546,11 @@ impl Backend {
             return Ok(());
         }
         let previous_names = self.surfaces.values().map(|surface|surface.output.name()).collect::<HashSet<_>>();
+        let prior_workspaces: std::collections::HashMap<_, _> = if state.independent_workspaces {
+            state.windows.iter().filter_map(|(id, window)| {
+                state.window_location(*id, window).map(|(workspace, _, _)| (*id, workspace))
+            }).collect()
+        } else { Default::default() };
         let resources = self.drm.resource_handles()?;
         let mut plans = Vec::new();
         let mut used = HashSet::new();
@@ -715,6 +736,16 @@ impl Backend {
             }
         }
         let current_names = self.surfaces.values().map(|surface|surface.output.name()).collect::<HashSet<_>>();
+        state.output_workspaces.retain(|name, _| current_names.contains(name));
+        if state.independent_workspaces {
+            for (id, window) in state.windows.clone() {
+                if let (Some(workspace), Some((_, location, false))) =
+                    (prior_workspaces.get(&id), state.window_location(id, &window))
+                {
+                    state.reconcile_window_workspace(&window, *workspace, location);
+                }
+            }
+        }
         self.saved_restores.retain(|name,_|current_names.contains(name));
         let added = current_names.difference(&previous_names).cloned().collect::<HashSet<_>>();
         if !added.is_empty() {
@@ -835,6 +866,9 @@ impl Backend {
                             );
                         elements.extend(rendered.into_iter().map(Into::into));
                     }
+                }
+                if let Some(preview) = state.snap_preview_element(output, scale) {
+                    elements.push(preview.into());
                 }
                 let (outgoing, incoming) = transition
                     .map(|t| {
@@ -1174,11 +1208,15 @@ impl Backend {
         }
         let delta = smithay::utils::Point::<i32, Logical>::from((x, y)) - old_origin;
         if delta != (0, 0).into() {
+            let snapped: Vec<_> = state.windows.iter().filter(|(id, _)| state.snapped_windows.contains_key(id)).map(|(_, window)| window.clone()).collect();
             for space in std::iter::once(&mut state.space).chain(state.workspaces.iter_mut()) {
                 let windows = space
                     .elements()
                     .filter_map(|window| {
                         use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
+                        if snapped.contains(window) {
+                            return None;
+                        }
                         if window.toplevel().is_some_and(|surface|{let state=surface.current_state();state.states.contains(State::Maximized)||state.states.contains(State::Fullscreen)})||window.x11_surface().is_some_and(|surface|surface.is_maximized()||surface.is_fullscreen()){return None;}
                         let loc = space.element_location(window)?;
                         if !old_geometry.is_some_and(|g| g.contains(loc)) {
@@ -1193,6 +1231,9 @@ impl Backend {
             }
         }
         if delta != (0, 0).into() {
+            if let Some(old) = old_geometry {
+                state.shift_snap_restore(old, delta);
+            }
             for geometry in state.normal_geometry.values_mut() {
                 if old_geometry.is_some_and(|output| output.contains(geometry.loc)) {
                     geometry.loc += delta;

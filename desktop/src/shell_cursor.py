@@ -1,11 +1,15 @@
 """Static, cached Xcursor arrows for Orbit-owned desktop windows."""
 import struct
 from pathlib import Path
+import os
 from qt_compat import QT5,QImage,QColor
 if QT5:
     from PyQt5.QtGui import QCursor,QPixmap
 else:
-    from PySide6.QtGui import QCursor,QPixmap
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtGui import QCursor,QPixmap
+    else:
+        from PySide6.QtGui import QCursor,QPixmap
 _CACHE={}
 
 def read_arrow(name,size=24):
@@ -25,7 +29,7 @@ def read_arrow(name,size=24):
         if not (0<width<=128 and 0<height<=128 and xhot<width and yhot<height):continue
         pixels=data[start:start+width*height*4]
         if len(pixels)!=width*height*4:continue
-        image=QImage(pixels,width,height,QImage.Format_ARGB32).copy()
+        image=QImage(pixels,width,height,QImage.Format.Format_ARGB32).copy()
         return image,xhot,yhot
     raise ValueError('No usable cursor image')
 
@@ -39,7 +43,7 @@ def arrow(mode,accent=None):
         except (OSError,ValueError,struct.error):
             # Optional system artwork must never escape a Qt event callback.
             # Cache failures too, so hovering does not repeatedly hit the disk.
-            cursor=QCursor(Qt.ArrowCursor)
+            cursor=QCursor(Qt.CursorShape.ArrowCursor)
         else:
             color=QColor(accent or '')
             if accent and color.isValid():
@@ -67,17 +71,17 @@ class CursorController(QObject):
         if self.current is None:return self.release()
         try:shape=self.current.cursor().shape()
         except RuntimeError:self.current=None;return self.release()
-        if shape not in (Qt.ArrowCursor,Qt.BitmapCursor):return self.release()
+        if shape not in (Qt.CursorShape.ArrowCursor,Qt.CursorShape.BitmapCursor):return self.release()
         if not self.owned:
             if self.app.overrideCursor() is not None:return
             self.app.setOverrideCursor(arrow(self.mode,self.accent));self.owned=True;self.appliedMode=(self.mode,self.accent)
         elif self.appliedMode!=(self.mode,self.accent):self.app.changeOverrideCursor(arrow(self.mode,self.accent));self.appliedMode=(self.mode,self.accent)
     def eventFilter(self,window,event):
         kind=event.type()
-        if kind in (QEvent.Enter,QEvent.MouseMove,QEvent.HoverMove,QEvent.MouseButtonRelease):
+        if kind in (QEvent.Type.Enter,QEvent.Type.MouseMove,QEvent.Type.HoverMove,QEvent.Type.MouseButtonRelease):
             self.current=window
             if not self.pending:self.pending=True;QTimer.singleShot(0,self.refresh)
-        elif kind in (QEvent.Leave,QEvent.Hide,QEvent.Close):
+        elif kind in (QEvent.Type.Leave,QEvent.Type.Hide,QEvent.Type.Close):
             if self.current is window:self.current=None;self.release()
         return False
 

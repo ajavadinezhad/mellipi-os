@@ -2,9 +2,12 @@
 import ctypes,ctypes.util,os
 from pathlib import Path
 from panel_policy import SPINE_FOOTER_PANELS,CENTERED_PANELS,panel_edge,overlay_layout,taskbar_overlay_layout
-from PyQt5 import sip
+if os.environ.get("ORBIT_QT") == "6":
+    from PyQt6 import sip
+else:
+    from PyQt5 import sip
 from project_paths import PROJECT_ROOT as ROOT, SOURCE_ROOT
-library=ctypes.util.find_library('LayerShellQtInterface') if os.environ.get('ORBIT_WAYLAND_RUNTIME')!='private' else None
+library=os.environ.get('MELLIPI_QT6_LAYER_LIBRARY') if os.environ.get('ORBIT_QT')=='6' else ctypes.util.find_library('LayerShellQtInterface') if os.environ.get('ORBIT_WAYLAND_RUNTIME')!='private' else None
 lib=ctypes.CDLL(library or str(ROOT/'.wayland-runtime/usr/lib/x86_64-linux-gnu/libLayerShellQtInterface.so.5'))
 
 def fn(name,args,returns=None):
@@ -25,7 +28,7 @@ def configure(window,name,compact,dock_align="center",spine=False,panel_position
     elif name=='topbarSurface':
         edge=panel_edge(panel_position)
         anchors(surface,{'left':7,'right':11,'top':13,'bottom':14}[edge] if spine else 13)
-        layer(surface,2);zone(surface,(thickness+(16 if floating else 0)) if spine else 30 if compact else 38);keyboard(surface,0)
+        layer(surface,2);zone(surface,(thickness+(16 if floating else 0)) if spine else 30 if compact else 38);keyboard(surface,1 if window.property("keyboardMode") else 0)
         margins(surface,ctypes.byref(Margins(0,0,0,0)))
     elif name=='dockReserveSurface':anchors(surface,2);layer(surface,2);zone(surface,0 if spine else 62 if compact else 76);keyboard(surface,0)
     elif name=='dockSurface':
@@ -37,14 +40,14 @@ def configure(window,name,compact,dock_align="center",spine=False,panel_position
     elif name=='overlaySurface':anchors(surface,0);layer(surface,3);zone(surface,-1);keyboard(surface,2)
     else:anchors(surface,1|8);layer(surface,3);zone(surface,-1);keyboard(surface,0);margins(surface,ctypes.byref(Margins(0,42,14,0)))
 
-def position_overlay(window,panel,spine=False,panel_position="left",screen_geometry=None,bar_geometry=None):
+def position_overlay(window,panel,spine=False,panel_position="left",screen_geometry=None,bar_geometry=None,content_size=None):
     from panel_policy import keyboard_mode
     surface=get(sip.unwrapinstance(window))
     keyboard(surface,keyboard_mode(panel))
     if panel in CENTERED_PANELS:
         anchors(surface,0);margins(surface,ctypes.byref(Margins(0,0,0,0)))
     elif spine:
-        layout=taskbar_overlay_layout(panel,screen_geometry,panel_position,bar_geometry) if screen_geometry and bar_geometry else overlay_layout(panel,panel_position)
+        layout=taskbar_overlay_layout(panel,screen_geometry,panel_position,bar_geometry,content_size) if screen_geometry and bar_geometry else overlay_layout(panel,panel_position)
         anchors(surface,layout['anchors']);margins(surface,ctypes.byref(Margins(*layout['margins'])))
     elif panel in SPINE_FOOTER_PANELS:
         anchors(surface,1|8);margins(surface,ctypes.byref(Margins(0,42,12,0)))

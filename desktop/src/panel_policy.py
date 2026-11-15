@@ -2,9 +2,9 @@
 
 CENTERED_PANELS=('launcher','overview','settings','system-settings')
 
-SPINE_FOOTER_PANELS=('quick','music','usage','notifications','tray','bluetooth','battery','screenshot')
+SPINE_FOOTER_PANELS=('quick','music','usage','notifications','tray','bluetooth','battery','screenshot','window-placement')
 
-UTILITY_PANELS=frozenset(('quick','music','usage','notifications','tray','bluetooth','battery','screenshot','settings','system-settings'))
+UTILITY_PANELS=frozenset(('quick','music','usage','notifications','tray','bluetooth','battery','screenshot','settings','system-settings','window-placement'))
 
 def keyboard_mode(panel):
     # Popovers retain keyboard navigation and close through the existing
@@ -48,8 +48,10 @@ def panel_mask_origin(buffer_width,buffer_height,body_width,body_height,panel,ed
     y=(buffer_height-body_height)/2 if layout['vertical']=='center' else buffer_height-body_height if layout['vertical']=='bottom' else 0
     return dict(x=int(x+0.5),y=int(y+0.5))
 
-def panel_body_origin(panel,width,height,screen,edge,body=None):
-    layout=taskbar_overlay_layout(panel,screen,edge,body) if body else overlay_layout(panel,edge);left,top,right,bottom=layout['margins']
+def panel_body_origin(panel,width,height,screen,edge,body=None,*,content_size=None):
+    # For a layer surface, width/height describe its stable buffer; align it
+    # using the visible content size so the masked body stays on the output.
+    layout=taskbar_overlay_layout(panel,screen,edge,body,content_size or (width,height)) if body else overlay_layout(panel,edge);left,top,right,bottom=layout['margins']
     x=screen['x']+(screen['width']-width)/2 if layout['horizontal']=='center' else screen['x']+screen['width']-width-right if layout['horizontal']=='right' else screen['x']+left
     y=screen['y']+(screen['height']-height)/2 if layout['vertical']=='center' else screen['y']+screen['height']-height-bottom if layout['vertical']=='bottom' else screen['y']+top
     return dict(x=x,y=y)
@@ -65,7 +67,7 @@ def taskbar_body_rect(screen,appearance):
     return dict(x=surface['x']+(surface['width']-length)//2,y=surface['y']+margin,width=length,height=thickness)
 
 
-def taskbar_overlay_layout(panel,screen,edge,body):
+def taskbar_overlay_layout(panel,screen,edge,body,content_size=None):
     result=overlay_layout(panel,edge)
     if panel in CENTERED_PANELS:return result
     edge=panel_edge(edge);footer=panel in SPINE_FOOTER_PANELS
@@ -74,4 +76,13 @@ def taskbar_overlay_layout(panel,screen,edge,body):
     elif edge=='right':m=(0,0,right-body['x']+12,bottom-body['y']-body['height']+16) if footer else (0,body['y']-sy+16,right-body['x']+12,0)
     elif edge=='top':m=(0,body['y']+body['height']-sy+12,right-body['x']-body['width']+16,0) if footer else (body['x']-sx+16,body['y']+body['height']-sy+12,0,0)
     else:m=(0,0,right-body['x']-body['width']+16,bottom-body['y']+12) if footer else (body['x']-sx+16,0,0,bottom-body['y']+12)
+    if content_size:
+        # The popup can be larger than the floating bar. Clamp only along
+        # the bar; moving towards the bar would overlap its input surface.
+        index = (3 if footer else 1) if edge in ('left','right') else (2 if footer else 0)
+        span, size = (screen['height'], content_size[1]) if index in (1,3) else (screen['width'], content_size[0])
+        limit = max(0, span - size)
+        edge_gap = min(16, limit // 2)
+        clamped = max(edge_gap, min(m[index], limit - edge_gap))
+        m = (*m[:index], clamped, *m[index+1:])
     return dict(result,margins=m)

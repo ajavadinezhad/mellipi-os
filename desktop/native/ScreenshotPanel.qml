@@ -12,9 +12,9 @@ ScrollView {
             title: "Capture"
             RowLayout {
                 Layout.fillWidth: true;Layout.margins: 4;spacing: 6
-                OrbitButton { text: "Display";Layout.fillWidth: true;enabled: !Screenshots.state.busy && !Screenshots.state.selecting;onClicked: Screenshots.captureScreen() }
-                OrbitButton { text: "Area";Layout.fillWidth: true;enabled: !Screenshots.state.busy && !Screenshots.state.selecting;onClicked: Screenshots.beginArea() }
-                OrbitButton { text: "Window";Layout.fillWidth: true;enabled: !Screenshots.state.busy && !Screenshots.state.selecting;onClicked: Screenshots.captureWindow() }
+                IconButton { iconName: "display"; text: "Display"; hint: "Capture a display";Layout.fillWidth: true;enabled: !Screenshots.state.busy && !Screenshots.state.selecting;onClicked: Screenshots.captureScreen() }
+                IconButton { iconName: "selection"; text: "Area"; hint: "Select an area to capture";Layout.fillWidth: true;enabled: !Screenshots.state.busy && !Screenshots.state.selecting;onClicked: Screenshots.beginArea() }
+                IconButton { iconName: "window"; text: "Window"; hint: "Choose a window to capture";Layout.fillWidth: true;enabled: !Screenshots.state.busy && !Screenshots.state.selecting;onClicked: Screenshots.captureWindow() }
             }
         }
         SettingsGroup {
@@ -33,7 +33,7 @@ ScrollView {
             Text {
                 id: destination;objectName: "screenshotDestination"
                 text: Screenshots.state.destination || "";Layout.fillWidth: true;Layout.margins: 6
-                color: Theme.accent;font.pixelSize: Theme.fontSize(11);font.underline: true;wrapMode: Text.WrapAnywhere;textFormat: Text.PlainText
+                color: Theme.accentInk;font.pixelSize: Theme.fontSize(11);font.underline: true;wrapMode: Text.WrapAnywhere;textFormat: Text.PlainText
                 activeFocusOnTab: true
                 Accessible.role: Accessible.Link;Accessible.name: "Open screenshots folder: "+text
                 Accessible.onPressAction: panel.openDestination()

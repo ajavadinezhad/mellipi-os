@@ -6,6 +6,7 @@ import argparse
 ROOT=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description="Verify essential Settings pages and a real file chooser in a private nested desktop; never mutates accounts or clock.")
 parser.add_argument('--package',type=Path,required=True)
+parser.add_argument('--size',choices=('1440x900','800x600'),default='1440x900')
 args=parser.parse_args()
 package=args.package.resolve()
 assert package.is_file() and not args.package.is_symlink(), 'Use a reviewed regular package'
@@ -19,7 +20,7 @@ OUT=BASE/'images';OUT.mkdir(mode=0o700)
 sys.path.insert(0,str(INSTALLED));os.environ['ORBIT_QT']='5'
 from preferences import Preferences
 prefs=Preferences(BASE/'config/abstract/settings.json');prefs.apply_theme('forest');prefs.update({'profile':'balanced','density':'comfortable','desktopIcons':False,'idleLockEnabled':False,'displayOffMinutes':0,'matchApps':False,'matchWindows':False,'taskbarFloating':True,'taskbarLength':'fit','panelPosition':'left','pins':['firefox.desktop','thunar.desktop']})
-config=BASE/'sway.conf';config.write_text('output HEADLESS-1 mode 1440x900\nseat seat0 fallback true\ndefault_border none\nfor_window [app_id="orbit-native"] fullscreen enable\n')
+config=BASE/'sway.conf';config.write_text(f'output HEADLESS-1 mode {args.size}\nseat seat0 fallback true\ndefault_border none\nfor_window [app_id="orbit-native"] fullscreen enable\n')
 def wait(check,seconds=30):
  end=time.monotonic()+seconds
  while time.monotonic()<end:
@@ -67,14 +68,16 @@ with (BASE/'session.log').open('w') as log:
    time.sleep(1.3)
    state=control('status');assert not state['qml_errors'],state['qml_errors']
    if state.get('settings_window',{}).get('errors'):raise AssertionError(state['settings_window']['errors'])
+   assert state['settings_page']=='tools',(name,state['settings_page'])
    path=BASE/(name+'.png');subprocess.run(['grim','-t','png',str(path)],env=capture_env,check=True,capture_output=True,timeout=15)
    from PIL import Image
-   picture=Image.open(path);assert picture.width>=1200 and picture.height>=800,(picture.width,picture.height)
+   picture=Image.open(path);assert picture.size==tuple(map(int,args.size.split('x'))),picture.size
    picture.save(OUT/(name+'.webp'),format='WEBP',quality=92,method=6)
    return {'name':name,'width':picture.width,'height':picture.height,'bytes':(OUT/(name+'.webp')).stat().st_size,'png':str(path)}
   control('system-settings');wait(lambda:(control('status') or {}).get('settings_window',{}).get('ready'));
   for section in (12,10,2,15,8,9,5,0,6,7,1,4,3,16):
    control('qa-system-section:'+str(section));time.sleep(.15);state=control('status');assert not state['settings_window']['errors']
+  wait(lambda:(control('status') or {}).get('settings_page')=='tools')
   captures=[]
   for tool in ('users','datetime','recovery'):
    control('qa-essential-tool:'+tool);time.sleep(1);captures.append(capture('essentials-'+tool))

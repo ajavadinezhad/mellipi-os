@@ -1,0 +1,124 @@
+{
+  "package": "oxygen-icon-theme",
+  "version": "5:5.115.0-0ubuntu1",
+  "assets": {
+    "files": {
+      "source": "places/folder.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "terminal": {
+      "source": "apps/utilities-terminal.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "editor": {
+      "source": "apps/accessories-text-editor.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "calculator": {
+      "source": "apps/accessories-calculator.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "calendar": {
+      "source": "apps/office-calendar.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "browser": {
+      "source": "apps/internet-web-browser.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "photos": {
+      "source": "apps/gwenview.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "pdf": {
+      "source": "apps/okular.png",
+      "sizes": [
+        16,
+        22,
+        48,
+        64
+      ]
+    },
+    "media": {
+      "source": "apps/kmplayer.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "disks": {
+      "source": "devices/drive-harddisk.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    },
+    "software": {
+      "source": "apps/muondiscover.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48
+      ]
+    },
+    "settings": {
+      "source": "categories/preferences-system.png",
+      "sizes": [
+        16,
+        22,
+        32,
+        48,
+        64
+      ]
+    }
+  }
+}

@@ -27,6 +27,7 @@ smithay::backend::renderer::element::render_elements! {
  pub SceneRenderElement<R> where R: ImportAll + ImportMem;
  Surface=WaylandSurfaceRenderElement<R>,
  Window=crate::window_motion::WindowRenderElement<R>,
+ SnapPreview=smithay::backend::renderer::element::solid::SolidColorRenderElement,
  Memory=MemoryRenderBufferRenderElement<R>,
 }
 pub fn init_winit(
@@ -165,6 +166,9 @@ pub fn init_winit(
                                     ),
                                 );
                             }
+                        }
+                        if let Some(preview) = state.snap_preview_element(&output, scale) {
+                            elements.push(preview.into());
                         }
                         let (outgoing, incoming) = transition
                             .map(|t| crate::motion::offsets(progress, t.direction, height))

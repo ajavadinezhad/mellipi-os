@@ -85,7 +85,14 @@ class NativeWindowActions:
             row=self._row(ident);self.snapped.setdefault(ident,(dict(row['rect']),True));return self.client.request('snap',id=ident,side=side)
     def restore_size(self,ident):
         with self.lock:
-            if ident in self.saved:self.maximize(ident,False)
+            row=self._row(ident)
+            if row.get('snap'):
+                result=self.client.request('maximize',id=ident,restore=True)
+                self.saved.pop(ident,None)
+                self.snapped.pop(ident,None)
+                self._maximized=self._maximized-{ident}
+                return result
+            if row.get('maximized') or ident in self.saved:self.maximize(ident,False)
             saved=self.snapped.pop(ident,None)
             if saved:return self._resize(ident,saved[0])
     def constrain_workarea(self,ident):return self.client.request('constrain',id=ident)
@@ -119,7 +126,7 @@ class NativeWindowActions:
                         box=candidate['rect'];return max(0,min(rect['x']+rect['width'],box['x']+box['width'])-max(rect['x'],box['x']))*max(0,min(rect['y']+rect['height'],box['y']+box['height'])-max(rect['y'],box['y']))
                     assigned=max(outputs,key=overlap)['name'] if outputs else ''
                     if window['desktop']!=desktop['id'] or assigned!=output['name']:continue
-                    view=dict(type='con',id=int(window['id']),app_id=window['klass'] or 'native-window',pid=window['pid'],name=window['title'],rect=rect,deco_rect=dict(height=0),focused=window['active'],fullscreen_mode=1 if window.get('fullscreen') else 0,nodes=[],floating_nodes=[])
+                    view=dict(type='con',id=int(window['id']),app_id=window['klass'] or 'native-window',pid=window['pid'],name=window['title'],rect=rect,deco_rect=dict(height=0),focused=window['active'],snap=window.get('snap'),fullscreen_mode=1 if window.get('fullscreen') else 0,nodes=[],floating_nodes=[])
                     space['floating_nodes'].append(dict(type='floating_con',id=int(window['id'])+2**48,rect=rect,nodes=[view],floating_nodes=[]))
         return root
     def configure_input(self,values,keys,device=''):return self.client.request('input_configure',values=values,keys=list(keys),device=device)

@@ -1,4 +1,4 @@
-use crate::OrbitCompositor;
+use crate::{window_snap::DragSnap, OrbitCompositor};
 use smithay::{
     input::pointer::{
         AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
@@ -17,6 +17,7 @@ pub struct X11SurfaceGrab {
     pub initial_rect: Rectangle<i32, Logical>,
     pub resize: Option<ResizeEdge>,
     pub button: u32,
+    pub drag: Option<DragSnap>,
 }
 
 impl PointerGrab<OrbitCompositor> for X11SurfaceGrab {
@@ -30,6 +31,15 @@ impl PointerGrab<OrbitCompositor> for X11SurfaceGrab {
         // While the grab is active, no client has pointer focus
         handle.motion(data, None, event);
 
+        if let Some(drag) = self.drag.as_mut() {
+            if let Some((_, window)) = data.x11_window(&self.window) {
+                if let Some(rect) = drag.motion(data, &window, event.location) {
+                    let _ = self.window.configure(rect);
+                    data.position_x11(&self.window, rect);
+                }
+            }
+            return;
+        }
         let delta = event.location - self.start_data.location;
         let mut rect = self.initial_rect;
         if let Some(edge) = self.resize {
@@ -77,8 +87,6 @@ impl PointerGrab<OrbitCompositor> for X11SurfaceGrab {
             if top {
                 rect.loc.y = self.initial_rect.loc.y + self.initial_rect.size.h - rect.size.h;
             }
-        } else {
-            rect.loc += delta.to_i32_round();
         }
         let rect = data.bounded_x11_geometry(&self.window, rect);
         let _ = self.window.configure(rect);
@@ -107,7 +115,9 @@ impl PointerGrab<OrbitCompositor> for X11SurfaceGrab {
         // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
 
         if !handle.current_pressed().contains(&self.button) {
-            // No more buttons are pressed, release the grab.
+            if let (Some(drag), Some((_, window))) = (&self.drag, data.x11_window(&self.window)) {
+                drag.finish(data, &window, handle.current_location());
+            }
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
@@ -205,5 +215,7 @@ impl PointerGrab<OrbitCompositor> for X11SurfaceGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut OrbitCompositor) {}
+    fn unset(&mut self, data: &mut OrbitCompositor) {
+        data.clear_snap_preview();
+    }
 }

@@ -7,12 +7,19 @@ ColumnLayout {
     property int section: typeof Orbit.quickSection!=="undefined" ? Orbit.quickSection : 0
     property alias displayOptions: brightnessControls.displayOptions
     property string selectedSsid: ""
+    property bool selectedSecure: false
+    property bool submitted: false
+    onWifiBusyChanged: if(!wifiBusy && submitted) {
+        submitted=false;
+        if(!System.values.wifiError) {selectedSsid="";wifiPassword.text="";}
+    }
     property bool contentReady: false
     readonly property bool wifiBusy: !!System.values.wifiConnecting
     readonly property bool wifiScanning: !!System.values.wifiScanning
     function connectSelectedNetwork() {
         if(!selectedSsid || wifiBusy)return;
-        System.connectWifi(selectedSsid,wifiPassword.text);wifiPassword.text="";selectedSsid="";
+        submitted=true;
+        System.connectWifi(selectedSsid,selectedSecure ? wifiPassword.text : "");
     }
     function animateTab() {
         if(!contentReady)return;
@@ -72,7 +79,7 @@ ColumnLayout {
                         required property var modelData
                         enabled: !quick.wifiBusy
                         activeFocusOnTab: true
-                        function selectNetwork(){if(quick.wifiBusy)return;quick.selectedSsid=modelData.ssid;wifiPassword.text="";wifiPassword.forceActiveFocus();}
+                        function selectNetwork(){if(quick.wifiBusy)return;quick.selectedSsid=modelData.active ? "" : modelData.ssid;quick.selectedSecure=modelData.secure;wifiPassword.text="";if(modelData.active)return;if(modelData.secure)wifiPassword.forceActiveFocus();else quick.connectSelectedNetwork();}
                         Accessible.role: Accessible.Button
                         Accessible.name: modelData.ssid
                         Accessible.description: (modelData.active ? "Connected · " : "")+(modelData.secure ? "Secured" : "Open network")+" · "+modelData.signal+"%"
@@ -113,7 +120,7 @@ ColumnLayout {
                     Text { text: "Connect to "+quick.selectedSsid;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.muted;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText }
                     RowLayout {
                         Layout.fillWidth: true
-                        OrbitField { id: wifiPassword;objectName: "wifiPassword";placeholderText: "Password, if required";echoMode: TextInput.Password;Layout.fillWidth: true;implicitHeight: 30;onAccepted:quick.connectSelectedNetwork() }
+                        OrbitField { id: wifiPassword;visible: quick.selectedSecure;objectName: "wifiPassword";placeholderText: "Password, if required";echoMode: TextInput.Password;Layout.fillWidth: true;implicitHeight: 30;onAccepted:quick.connectSelectedNetwork() }
                         OrbitButton { text: "Connect";implicitHeight: 28;onClicked: quick.connectSelectedNetwork() }
                     }
                 }
@@ -123,7 +130,7 @@ ColumnLayout {
                 title: "Bluetooth"
                 SettingRow {
                     label: Bluetooth.state.available ? (Bluetooth.state.powered ? "On" : "Off") : "Unavailable"
-                    OrbitButton { text: "Devices…";quiet: true;implicitHeight: 26;enabled: Bluetooth.state.available;onClicked: Orbit.showPanel("bluetooth") }
+                    IconButton { iconName: "bluetooth";hint: "Bluetooth devices";enabled: Bluetooth.state.available;onClicked: Orbit.showPanel("bluetooth") }
                     SettingToggle { label: "Bluetooth power";checked: Bluetooth.state.powered;enabled: Bluetooth.state.available && !Bluetooth.state.busy;onClicked: Bluetooth.setPowered(checked) }
                 }
                 Repeater {
@@ -139,7 +146,7 @@ ColumnLayout {
                 title: "Battery"
                 SettingRow {
                     label: Power.state.percentageAvailable ? Power.state.batteryPercent+"%"+(Power.state.charging ? " · Charging" : "") : System.values.batteryPresent ? System.values.batteryPercent+"%" : Power.state.batteryPresent ? "Battery level unavailable" : "No system battery"
-                    OrbitButton {text: "Health…";quiet: true;implicitHeight: 26;onClicked: Orbit.showPanel("battery")}
+                    IconButton {iconName: "battery";hint: "Battery health";onClicked: Orbit.showPanel("battery")}
                 }
             }
         }
@@ -147,7 +154,8 @@ ColumnLayout {
     }
     RowLayout {
         id:settingsLink;Layout.fillWidth:true;spacing:6
-        OrbitButton {objectName:"systemSettingsLink";text:"System settings…";quiet:true;implicitHeight:28;Layout.fillWidth:true;onClicked:Orbit.showPanel("system-settings")}
+        Item {Layout.fillWidth: true}
+        IconButton {objectName:"systemSettingsLink";iconName:"settings";hint:"Open Settings";implicitHeight:28;onClicked:Orbit.showPanel("system-settings")}
         IconButton {
             objectName:"quickUpdates";iconName:"updates";implicitWidth:28;implicitHeight:28
             accessibleLabel:"Software updates"

@@ -151,6 +151,10 @@ def assemble(output, packages=None, key_home=None, fingerprint=None, sources=(),
     with tempfile.TemporaryDirectory(prefix='abstract-website-stage-') as directory:
         stage = Path(directory)
         prepare_website(stage, fingerprint)
+        if not site_only:
+            # A failed dependency-pair check or signing operation must not
+            # leave new website files pointing at an older archive.
+            subprocess.run(['python3', str(ROOT / 'tools/build-apt-repository.py'), '--output', str(output / 'apt'), '--packages', *[str(Path(p).resolve()) for p in packages], '--gnupg-home', str(Path(key_home).resolve()), '--signing-key', fingerprint], check=True)
         output.mkdir(parents=True, exist_ok=True)
         for name in (*WEBSITE_FILES, '.nojekyll'):
             shutil.copy2(stage / name, output / name)
@@ -160,7 +164,6 @@ def assemble(output, packages=None, key_home=None, fingerprint=None, sources=(),
         if (stage / 'assets').is_dir():
             shutil.copytree(stage / 'assets', assets)
     if not site_only:
-        subprocess.run(['python3', str(ROOT / 'tools/build-apt-repository.py'), '--output', str(output / 'apt'), '--packages', *[str(Path(p).resolve()) for p in packages], '--gnupg-home', str(Path(key_home).resolve()), '--signing-key', fingerprint], check=True)
         shutil.copy2(ROOT / 'tools/install-update-source.sh', output / 'apt/install-update-source.sh')
         for source in map(Path, sources):
             if not source.is_file() or source.is_symlink() or not source.name.endswith(('.tar.gz', '.tar.xz', '.json', '.md')):

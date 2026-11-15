@@ -34,6 +34,12 @@ Source launchers resolve `src/` automatically. Packaged installations keep their
 
 Open **Mellipi Software** from Super or use **Settings → System tools → Tools → Install applications**. Search can include system APT packages, apps from configured Flatpak remotes such as Flathub, and the Snap Store on systems with snapd. Software shows the source and installation scope before asking you to confirm. System updates still use the distribution's update manager.
 
+The native app suite includes **Photos**, **PDF Viewer**, **Media**, and **Disks**. Files can create ZIP archives and extract ZIP or TAR archives into a new folder. Disks lists and mounts volumes; formatting and writing images require selecting a removable USB device and confirming the operation. Media exposes playback controls to the taskbar through MPRIS.
+
+The Qt apps share a live appearance layer and title bar. Settings and the VTE-based Terminal use the same palette and window-control artwork through their existing toolkits.
+
+The installer image ships one everyday app where Mellipi already provides a replacement. The ISO builder checks for competing packages in reused build roots and rejects leftovers before packaging. Recovery uses the VTE terminal engine in a minimal Xorg session. The distribution update backend stays accessible through the desktop's Updates action without a separate launcher entry on the image. This build policy does not uninstall apps from existing systems.
+
 Directory guide:
 
 - `native/`: QML interface, assets and workspace surfaces.
@@ -43,3 +49,23 @@ Directory guide:
 - `src/session/`: startup, preflight and session configuration.
 - `themes/`, `patches/`, `packaging/`: appearance data, runtime patches and package assets.
 - `tools/`: application builds and isolated QA utilities. Public-repository and release tools remain in the repository’s top-level `tools/`.
+
+Mellipi includes a local Text Editor, Calculator and Calendar. In Super, type
+an expression and press Enter to copy its result. Open Calendar from the
+taskbar clock to import local .ics files, including simple daily and weekly
+repeats. Calendar reports unsupported recurrence rules and exceptions. Photos
+accepts a pasted screenshot and exports edits as a PNG copy.
+
+The taskbar usage icon opens **System Monitor**. It shows CPU, RAM, and
+processes, and pauses sampling when minimized. In **Files**, use the menu’s
+**Analyze Storage** action to see what takes up space in a folder.
+**Calendar → Clocks** has a timer, one-shot alarm, and stopwatch; leave Calendar
+open (it can be minimized) for alerts. **Sound Recorder** lets you pick a
+microphone and saves WAV files in Music/Recordings. In **PDF Viewer**, use
+highlight or note, then **Save annotated copy** to keep the original unchanged.
+
+The optional browser is built with `build-desktop-package.py --with-browser`.
+It uses the distribution's Qt WebEngine and leaves your default browser alone.
+Its engine updates come from the distribution. The standalone ISO includes
+Mellipi Browser as its only default browser; the shell package does not
+require it on an existing Linux installation.

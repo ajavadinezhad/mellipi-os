@@ -6,9 +6,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from qt_compat import QApplication, QEvent, Qt, QT5
+from qt_compat import QApplication, QEvent, Qt, QT5, QT6_WAYLAND
 if QT5:
     from PyQt5.QtGui import QWindow
+elif QT6_WAYLAND:
+    from PyQt6.QtGui import QWindow
 else:
     from PySide6.QtGui import QWindow
 import shell_cursor
@@ -35,12 +37,12 @@ class CursorFallbackTest(unittest.TestCase):
         try:
             with patch.object(shell_cursor, 'read_arrow', wraps=shell_cursor.read_arrow) as reads:
                 for _ in range(4):
-                    controller.eventFilter(window, QEvent(QEvent.Enter))
+                    controller.eventFilter(window, QEvent(QEvent.Type.Enter))
                     self.app.processEvents()
                     self.assertTrue(controller.owned)
-                    self.assertEqual(self.app.overrideCursor().shape(), Qt.ArrowCursor)
+                    self.assertEqual(self.app.overrideCursor().shape(), Qt.CursorShape.ArrowCursor)
                 self.assertEqual(reads.call_count, 1)
-            controller.eventFilter(window, QEvent(QEvent.Leave))
+            controller.eventFilter(window, QEvent(QEvent.Type.Leave))
             self.assertFalse(controller.owned)
             self.assertIsNone(self.app.overrideCursor())
         finally:
@@ -49,17 +51,17 @@ class CursorFallbackTest(unittest.TestCase):
         for payload in (b'not an Xcursor', b'Xcur', b'Xcur' + struct.pack('<III', 16, 65536, 0)):
             with self.subTest(payload=payload):
                 self.file.write_bytes(payload); shell_cursor._CACHE.clear()
-                self.assertEqual(shell_cursor.arrow('dark', '#78b7ff').shape(), Qt.ArrowCursor)
+                self.assertEqual(shell_cursor.arrow('dark', '#78b7ff').shape(), Qt.CursorShape.ArrowCursor)
     def test_fallback_cache_stays_bounded_across_color_changes(self):
         for index in range(40):
-            self.assertEqual(shell_cursor.arrow('dark', f'#{index:06x}').shape(), Qt.ArrowCursor)
+            self.assertEqual(shell_cursor.arrow('dark', f'#{index:06x}').shape(), Qt.CursorShape.ArrowCursor)
             self.assertLessEqual(len(shell_cursor._CACHE), 12)
     def test_valid_artwork_keeps_accent_variants(self):
         image_type = 0xfffd0002
         self.file.write_bytes(b'Xcur' + struct.pack('<III', 16, 65536, 1) + struct.pack('<III', image_type, 24, 28) + struct.pack('<9I', 36, image_type, 24, 1, 2, 2, 0, 0, 0) + struct.pack('<4I', 0xffffffff, 0xff000000, 0xffffffff, 0xff000000))
         blue = shell_cursor.arrow('dark', '#78b7ff')
         green = shell_cursor.arrow('dark', '#8ab775')
-        self.assertEqual(blue.shape(), Qt.BitmapCursor)
+        self.assertEqual(blue.shape(), Qt.CursorShape.BitmapCursor)
         self.assertFalse(blue.pixmap().isNull())
         self.assertNotEqual(blue.pixmap().toImage(), green.pixmap().toImage())
 

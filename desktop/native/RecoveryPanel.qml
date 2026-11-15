@@ -14,7 +14,7 @@ ColumnLayout {
             OrbitButton {required property var modelData;text:modelData.name;Layout.fillWidth:true;quiet:view.section!==modelData.id;onClicked:{view.section=modelData.id;view.confirmSettings=false;}}
         }
     }
-    Text {visible:!!view.state.error;Layout.fillWidth:true;text:view.state.error || "";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.accent;font.pixelSize:Theme.fontSize(11)}
+    Text {visible:!!view.state.error;Layout.fillWidth:true;text:view.state.error || "";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.accentInk;font.pixelSize:Theme.fontSize(11)}
     Text {visible:!!view.state.message;Layout.fillWidth:true;text:view.state.message || "";textFormat:Text.PlainText;wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.fontSize(11)}
     RowLayout {
         visible:view.state.busy;Layout.fillWidth:true

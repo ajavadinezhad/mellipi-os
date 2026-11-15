@@ -7,7 +7,10 @@ from qt_compat import QObject,Property,Signal,Slot,QUrl,QDesktopServices,QApplic
 if QT5:
     from PyQt5.QtCore import QFileSystemWatcher,QStandardPaths,QCoreApplication,QEvent,QTimer,QMimeData
 else:
-    from PySide6.QtCore import QFileSystemWatcher,QStandardPaths,QCoreApplication,QEvent,QTimer,QMimeData
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtCore import QFileSystemWatcher,QStandardPaths,QCoreApplication,QEvent,QTimer,QMimeData
+    else:
+        from PySide6.QtCore import QFileSystemWatcher,QStandardPaths,QCoreApplication,QEvent,QTimer,QMimeData
 import desktop
 from file_transfers import Transfer,CancelToken,Cancelled,gio_modules,MAX_SOURCES
 MAX_ITEMS=128
@@ -105,6 +108,7 @@ class DesktopIcons(QObject):
     changed=Signal();notice=Signal(str);completed=Signal(object);editRequested=Signal(str,str);folderRequested=Signal();selectionChanged=Signal();transferChanged=Signal();transferEvent=Signal(object);filePanelChanged=Signal()
     def __init__(self,enabled=False,parent=None,directory=None,opener=None,launcher=None,places=None):
         super().__init__(parent);self.root=Path(directory).expanduser().resolve() if directory is not None else desktop_directory();self.opener=opener or QDesktopServices.openUrl;self.launcher=launcher or launch_shortcut
+        self.use_native_files=opener is None
         self.layout_path=Path(os.environ.get('ORBIT_DATA',str(self.root.parent/'.orbit-desktop-layout') if directory is not None else str(Path.home()/'.local/share/orbit-shell')))/'desktop-layout.json'
         self._layout=self.read_layout();self.layout_timer=QTimer(self);self.layout_timer.setSingleShot(True);self.layout_timer.setInterval(250);self.layout_timer.timeout.connect(self.save_layout)
         self._places_enabled=(directory is None) if places is None else bool(places)
@@ -434,17 +438,22 @@ class DesktopIcons(QObject):
         self._pending.add(kind);self.submit(kind,work,done)
     def place(self,value):
         return next((item for item in self._places if item['path']==value),None) if self._enabled and self._places_enabled else None
+    def open_folder(self,url):
+        executable=shutil.which('mellipi-files') if self.use_native_files else None
+        if not executable:return self.opener(QUrl(url))
+        def launch():
+            environment=desktop.application_environment()
+            if os.environ.get('ORBIT_SETTINGS_FILE'):
+                environment['ORBIT_SETTINGS_FILE']=os.environ['ORBIT_SETTINGS_FILE']
+            subprocess.Popen([executable,url],env=environment,start_new_session=True,
+                             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        self.action('open-folder:'+url,launch)
+        return True
     @Slot(str)
     def open(self,value):
         item=self.place(value)
         if item:
-            if item['url'].startswith('trash:') and (executable:=shutil.which('mellipi-files')):
-                def open_trash():
-                    subprocess.Popen([executable,'trash:///'],env=desktop.application_environment(),
-                                     start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-                self.action('open:trash',open_trash)
-                return
-            if not self.opener(QUrl(item['url'])):self.notice.emit('Could not open '+item['name'])
+            if not self.open_folder(item['url']):self.notice.emit('Could not open '+item['name'])
             return
         try:
             path=self.validate(value)
@@ -463,6 +472,8 @@ class DesktopIcons(QObject):
                     if not trusted_launcher(path):raise PermissionError('This shortcut is not trusted. Mark a known local launcher executable before opening it')
                     self.launcher(path)
                 self.action('open:'+value,launch)
+            elif path.is_dir():
+                if not self.open_folder(QUrl.fromLocalFile(str(path)).toString()):self.notice.emit('Could not open this folder')
             elif not self.opener(QUrl.fromLocalFile(str(path))):self.notice.emit('No application could open this desktop item')
         except (OSError,ValueError) as error:self.notice.emit(str(error))
     @Slot(str)

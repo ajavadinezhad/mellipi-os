@@ -13,6 +13,7 @@ Item {
     readonly property real availableLength: Math.max(0,(horizontal ? width : height)-2*inset)
     readonly property real footerLength: horizontal ? footer.width+10 : footer.height+(Theme.compact ? 8 : 12)
     readonly property real bodyLength: fit ? Math.min(availableLength,Math.ceil(spine.taskStart+spine.preferredTaskLength+8+footerLength)) : availableLength
+    function focusTaskbar() {home.forceActiveFocus(Qt.TabFocusReason);}
     readonly property rect bodyGeometry: Qt.rect(spine.x,spine.y,spine.width,spine.height)
     Item {
 
@@ -32,6 +33,8 @@ Item {
     readonly property bool denseFooter: horizontal && (frame.fit || frame.availableLength<850)
     readonly property var spaces: Orbit.desktops.filter(s => !outputName || !s.output || s.output===outputName)
     readonly property var tasks: Orbit.dockApps
+    readonly property var emptyTask: ({id:"",name:"",icon:"",windows:[]})
+    readonly property var emptySpace: ({id:-1,active:false})
     readonly property int taskStart: horizontal ? workspaceColumn.x+workspaceColumn.width+16 : workspaceColumn.y+workspaceColumn.height+40
     readonly property int taskSlotWidth: horizontal ? (Theme.extraCompact ? 56 : Theme.compact ? 64 : 76) : width-10
     readonly property int taskSlotHeight: horizontal ? frame.thickness-12 : Theme.extraCompact ? 35 : Theme.compact ? 43 : 52
@@ -46,70 +49,94 @@ Item {
         : Math.max(0,Math.min(fullTaskCapacity,Math.floor((taskLaneLength-overflowLength)/(taskSlotLength+taskSpacing))))
     readonly property int hiddenTaskCount: Math.max(0,tasks.length-taskCapacity)
     readonly property int backgroundCount: Tray.items.length+Background.items.length+Tray.legacyCount
-    function isCurrentSpace(space) {return outputName && space.output ? space.output===outputName && space.visible : space.active;}
+    function isCurrentSpace(space) {
+        var workspace=Orbit.outputWorkspaces[outputName];
+        return workspace!==undefined ? workspace===space.id : outputName && space.output ? space.output===outputName && space.visible : space.active;
+    }
     function openPanel(name) {if(outputName)Orbit.showPanelOn(name,outputName);else Orbit.showPanel(name);}
     function switchSpace(ident) {if(outputName)Orbit.switchDesktopOn(ident,outputName);else Orbit.switchDesktop(ident);}
     function taskTooltip(item,text) {Orbit.queueItemTooltip(item,text,horizontal ? item.width/2 : edge==="right" ? 0 : item.width,horizontal ? edge==="bottom" ? 0 : item.height : item.height/2);}
 
-    Rectangle {anchors.fill: parent;color: Theme.background;radius: Theme.corner(12);border.width:frame.inset>0 ? Theme.surfaceOutline : 0;border.color:Theme.border}
+    readonly property bool outlined: frame.inset > 0 || Orbit.appearance.taskbarLength === "fit"
+    readonly property color edgeInk: Theme.highContrast ? Theme.controlBorder
+        : Theme.legibleInk(Theme.separator, 1.8, [Theme.luminance(Theme.background)], true)
     Rectangle {
-        visible: frame.inset===0 && Orbit.appearance.taskbarLength!=="fit"
+        anchors.fill: parent
+        color: Theme.background
+        radius: Theme.corner(12)
+        border.width: spine.outlined ? 1 : 0
+        border.color: spine.edgeInk
+    }
+    Rectangle {
+        visible: !spine.outlined
         x: spine.horizontal ? Theme.corner(12) : spine.edge==="right" ? 0 : spine.width-1
         y: spine.horizontal ? spine.edge==="top" ? spine.height-1 : 0 : Theme.corner(12)
-        width: spine.horizontal ? spine.width-2*Theme.corner(12) : 1;height: spine.horizontal ? 1 : spine.height-2*Theme.corner(12);color: Theme.separator
+        width: spine.horizontal ? spine.width-2*Theme.corner(12) : 1;height: spine.horizontal ? 1 : spine.height-2*Theme.corner(12);color: spine.edgeInk
     }
-    Rectangle {visible: frame.inset===0 && Orbit.appearance.taskbarLength!=="fit";x: spine.edge==="right" ? spine.width-3 : 0;y: Theme.corner(12);width: 3;height: spine.horizontal ? spine.height-2*Theme.corner(12) : 32;color: Theme.accent}
+    Rectangle {visible: frame.inset===0 && Orbit.appearance.taskbarLength!=="fit";x: spine.edge==="right" ? spine.width-3 : 0;y: Theme.corner(12);width: 3;height: spine.horizontal ? spine.height-2*Theme.corner(12) : 32;color: Theme.accentInk}
     IconButton {
-        id: home;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? (Theme.extraCompact ? 2 : 4) : 7;width: 38;height: Theme.extraCompact ? 26 : Theme.compact ? 32 : 38;iconName: "fold"
+        id: home;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 26 : Theme.compact ? 32 : 38;iconName: "fold"
         hint: "Apps, windows and actions · Super";accessibleLabel: "Open Mellipi apps, windows and actions"
         onClicked: spine.openPanel("launcher")
     }
-    Text {x: spine.horizontal ? 3 : Math.round((spine.width-50)/2);y: spine.horizontal ? (Theme.extraCompact ? 28 : Theme.compact ? 35 : 43) : 45;width: 50;height: 16;text: "Mellipi";font.pixelSize: Theme.fontSize(8);font.letterSpacing: 0;fontSizeMode: Text.HorizontalFit;minimumPixelSize: 7;horizontalAlignment: Text.AlignHCenter;color: Theme.muted;elide: Text.ElideRight}
+
 
     Item {
         id: workspaceColumn
-        x: spine.horizontal ? 60 : 8;y: spine.horizontal ? 2 : Theme.compact ? 70 : 76
+        x: spine.horizontal ? 60 : 8;y: spine.horizontal ? 2 : Theme.compact ? 52 : 60
         width: spine.horizontal ? Math.max(30,Math.min(spine.spaces.length,4)*33-3) : spine.width-16
         height: spine.horizontal ? frame.thickness-4 : spaceList.y+spaceList.height
-        Text {width: parent.width;height:14;text: "SPACE";font.pixelSize: Theme.fontSize(8);font.letterSpacing: .8;color: Theme.faint;horizontalAlignment: Text.AlignHCenter}
+
         ListView {
             id: spaceList;objectName: "spineWorkspaceList"
-            y: spine.horizontal ? (Theme.extraCompact ? 16 : Theme.compact ? 21 : 29) : 17
+            y: spine.horizontal ? Math.round((workspaceColumn.height-height)/2) : 0
             width: workspaceColumn.width;height: spine.horizontal ? (Theme.extraCompact ? 26 : Theme.compact ? 30 : 34) : Math.min(count,frame.availableLength<500 ? 2 : 4)*(Theme.compact ? 28 : 33)
             orientation: spine.horizontal ? ListView.Horizontal : ListView.Vertical
-            model: spine.spaces;clip: true;spacing: 3;boundsBehavior: Flickable.StopAtBounds
+            // Updating the workspace array should not recreate its buttons.
+            model: spine.spaces.length;clip: true;spacing: 3;boundsBehavior: Flickable.StopAtBounds
             readonly property int activeIndex: spine.spaces.findIndex(s => spine.isCurrentSpace(s))
             Item {
                 objectName: "workspaceIndicatorTrack";parent: spaceList;z: 2
                 width: spine.horizontal ? 30 : 3;height: spine.horizontal ? spaceList.height : Theme.compact ? 25 : 30
                 visible: spaceList.activeIndex>=0
-                x: spine.horizontal ? spaceList.activeIndex*(30+spaceList.spacing)-spaceList.contentX : 0
-                y: spine.horizontal ? 0 : spaceList.activeIndex*((Theme.compact ? 25 : 30)+spaceList.spacing)-spaceList.contentY
-                Behavior on x {NumberAnimation {duration: Theme.reducedMotion || Orbit.appearance.workspaceMotion===false ? 0 : Theme.economy ? 180 : 240;easing.bezierCurve: [1/3,0,2/3,1,1,1]}}
-                Behavior on y {NumberAnimation {duration: Theme.reducedMotion || Orbit.appearance.workspaceMotion===false ? 0 : Theme.economy ? 180 : 240;easing.bezierCurve: [1/3,0,2/3,1,1,1]}}
+                // Animate selection only. Scroll offsets move immediately
+                // with the list instead of restarting the selection tween.
+                property real selectionPosition: spaceList.activeIndex*((spine.horizontal ? 30 : Theme.compact ? 25 : 30)+spaceList.spacing)
+                x: spine.horizontal ? selectionPosition-spaceList.contentX : 0
+                y: spine.horizontal ? 0 : selectionPosition-spaceList.contentY
+                Behavior on selectionPosition {
+                    enabled: !Theme.reducedMotion && Orbit.appearance.workspaceMotion!==false
+                    NumberAnimation {duration: Theme.economy ? 180 : 240;easing.bezierCurve: [1/3,0,2/3,1,1,1]}
+                }
                 Rectangle {
                     objectName: "workspacePositionIndicator"
                     x: spine.horizontal ? 4 : 0;y: spine.horizontal ? parent.height-3 : 4
                     width: spine.horizontal ? Math.max(1,parent.width-8) : 3;height: spine.horizontal ? 3 : Math.max(1,parent.height-8)
-                    radius: 1.5;color: Theme.accent
+                    radius: 1.5;color: Theme.accentInk
                 }
             }
             onActiveIndexChanged: Qt.callLater(function(){if(spaceList.activeIndex>=0)spaceList.positionViewAtIndex(spaceList.activeIndex,ListView.Contain);})
             delegate: OrbitButton {
-                id: space;required property var modelData
+                id: space;required property int index
+                readonly property var modelData: spine.spaces[index] || spine.emptySpace
                 objectName: "spineWorkspace_"+modelData.id
                 readonly property bool current: spine.isCurrentSpace(modelData)
                 width: spine.horizontal ? 30 : workspaceColumn.width;height: spine.horizontal ? spaceList.height : Theme.compact ? 25 : 30;padding: 2;quiet: true
-                text: (modelData.id<9 ? "0" : "")+(modelData.id+1);font.pixelSize: Theme.fontSize(11)
+                text: (modelData.id<9 ? "0" : "")+(modelData.id+1);font.pixelSize: Theme.detailSize;font.weight: space.current ? Font.DemiBold : Font.Normal
                 hint: "Workspace "+(modelData.id+1);Accessible.name: hint+(current ? ", current" : "")
-                contentItem: Text {text: space.text;font: space.font;horizontalAlignment: Text.AlignHCenter;verticalAlignment: Text.AlignVCenter;color: space.current ? Theme.text : Theme.faint}
-                background: Rectangle {radius:Theme.corner(10);color: space.hovered || space.activeFocus ? Theme.hover : "transparent"}
+                contentItem: Text {text: space.text;font: space.font;horizontalAlignment: Text.AlignHCenter;verticalAlignment: Text.AlignVCenter;color: space.current ? Theme.text : Theme.muted}
+                background: Rectangle {
+                    radius: Theme.corner(8)
+                    color: space.hovered ? Theme.hover : space.current ? Theme.selectedSurface : "transparent"
+                    border.width: space.activeFocus ? 2 : space.current && Theme.highContrast ? 1 : 0
+                    border.color: space.activeFocus ? Theme.focusColor : Theme.controlBorder
+                }
                 onClicked: spine.switchSpace(modelData.id)
             }
         }
     }
     Rectangle {x: spine.horizontal ? spine.taskStart-9 : 14;y: spine.horizontal ? 16 : workspaceColumn.y+workspaceColumn.height+12;width: spine.horizontal ? 1 : 36;height: spine.horizontal ? 32 : 1;color: Theme.separator}
-    Text {visible: !spine.horizontal;x: 8;y: workspaceColumn.y+workspaceColumn.height+23;width: parent.width-16;text: spine.tasks.filter(a=>a.windows.length>0).length+" OPEN";font.pixelSize: Theme.fontSize(8);font.letterSpacing: .6;color: Theme.faint;horizontalAlignment: Text.AlignHCenter}
+
     Flow {
         id: taskColumn
         x: spine.horizontal ? spine.taskStart : 5;y: spine.horizontal ? (Theme.extraCompact ? 3 : 4) : spine.taskStart
@@ -118,20 +145,41 @@ Item {
         flow: spine.horizontal ? Flow.LeftToRight : Flow.TopToBottom
         spacing: spine.taskSpacing;clip: true
         Repeater {
-            model: spine.tasks.slice(0,spine.taskCapacity)
+            // Keep buttons and textures when focus/title changes leave
+            // the number of displayed slots unchanged.
+            model: Math.min(spine.tasks.length,spine.taskCapacity)
             Item {
-                id: task;required property var modelData;width: spine.taskSlotWidth;height: spine.taskSlotHeight
+                id: task;required property int index
+                readonly property var modelData: spine.tasks[index] || spine.emptyTask
+                width: spine.taskSlotWidth;height: spine.taskSlotHeight
                 objectName: "spineTask_"+modelData.id
                 readonly property bool current: modelData.windows.some(w => w.active)
                 readonly property bool running: modelData.windows.length>0
                 Accessible.name: modelData.name;Accessible.role: Accessible.Button
                 Accessible.description: modelData.windows.length ? modelData.windows.length+" open windows" : "Launch application"
                 Accessible.onPressAction: Orbit.activateDock(modelData.id,false)
-                Rectangle {anchors.fill: parent;radius:Theme.corner(10);color: hit.containsMouse || task.activeFocus ? Theme.hover : "transparent";border.color: task.activeFocus ? Theme.focusColor : "transparent"}
-                Rectangle {objectName: "spineTaskRunningIndicator_"+modelData.id;x: spine.horizontal ? (task.current ? 10 : parent.width/2-2) : 0;y: spine.horizontal ? parent.height-2 : task.current ? 9 : parent.height/2-2;width: spine.horizontal ? (task.current ? parent.width-20 : 4) : 2;height: spine.horizontal ? 2 : task.current ? 23 : 4;color: task.current ? Theme.accent : Theme.muted;visible: task.running}
-                Image {x: Math.round((parent.width-(Theme.extraCompact ? 20 : Theme.compact ? 24 : 28))/2);y: spine.horizontal ? (Theme.extraCompact ? 2 : 4) : 3;width: Theme.extraCompact ? 20 : Theme.compact ? 24 : 28;height: width;source: Theme.iconSource(modelData.icon);sourceSize: Qt.size(32,32);fillMode: Image.PreserveAspectFit}
-                Text {x: 3;y: spine.horizontal ? (Theme.extraCompact ? 25 : Theme.compact ? 31 : 39) : Theme.extraCompact ? 25 : 29;width: parent.width-6;text: modelData.name;font.pixelSize: Theme.fontSize(8);color: task.current ? Theme.text : Theme.faint;elide: Text.ElideRight;horizontalAlignment: Text.AlignHCenter;textFormat: Text.PlainText}
-                Text {anchors.right: parent.right;anchors.top: parent.top;anchors.rightMargin: 3;text: modelData.windows.length>1 ? modelData.windows.length : "";color: Theme.accent;font.pixelSize: Theme.fontSize(8)}
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.corner(8)
+                    color: hit.containsMouse ? Theme.hover : task.current ? Theme.selectedSurface : "transparent"
+                    border.width: task.activeFocus ? 2 : task.current && Theme.highContrast ? 1 : 0
+                    border.color: task.activeFocus ? Theme.focusColor : Theme.controlBorder
+                }
+                Rectangle {objectName: "spineTaskRunningIndicator_"+modelData.id;x: spine.horizontal ? (task.current ? 10 : parent.width/2-2) : 0;y: spine.horizontal ? parent.height-2 : task.current ? 9 : parent.height/2-2;width: spine.horizontal ? (task.current ? parent.width-20 : 4) : 2;height: spine.horizontal ? 2 : task.current ? 23 : 4;color: task.current ? Theme.accentInk : Theme.muted;visible: task.running}
+                Image {x: Math.round((parent.width-(Theme.extraCompact ? 20 : Theme.compact ? 24 : 28))/2);y: spine.horizontal && !Theme.extraCompact && Theme.textScale <= 1.1 ? 4 : Math.round((parent.height-height)/2);width: Theme.extraCompact ? 20 : Theme.compact ? 24 : 28;height: width;source: modelData.icon ? Theme.iconSource(modelData.icon) : "";sourceSize: Qt.size(32,32);fillMode: Image.PreserveAspectFit}
+                Text {visible: spine.horizontal && !Theme.extraCompact && Theme.textScale <= 1.1;x: 3;anchors.bottom: parent.bottom;anchors.bottomMargin: 4;width: parent.width-6;text: modelData.name;font.pixelSize: Theme.detailSize;color: task.current ? Theme.text : Theme.muted;elide: Text.ElideRight;horizontalAlignment: Text.AlignHCenter;textFormat: Text.PlainText}
+                Rectangle {
+                    visible: modelData.windows.length > 1
+                    anchors.right: parent.right; anchors.top: parent.top
+                    anchors.rightMargin: 3; anchors.topMargin: 2
+                    width: Math.max(14, windowCount.implicitWidth+6); height: windowCount.implicitHeight
+                    radius: Theme.corner(5); color: Theme.background
+                    Text {
+                        id: windowCount; anchors.centerIn: parent
+                        text: modelData.windows.length > 99 ? "99+" : modelData.windows.length.toString()
+                        color: Theme.accentInk; font.pixelSize: Math.round(10*Theme.textScale)
+                    }
+                }
                 MouseArea {id: hit;anchors.fill: parent;hoverEnabled: true;acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: mouse => {if(mouse.button===Qt.RightButton){var p=Orbit.itemScreenPoint(task,mouse.x,mouse.y);Orbit.openDockContext(modelData.id,p.x,p.y);}else Orbit.activateDock(modelData.id,false);}
                     onEntered: spine.taskTooltip(task,modelData.name)
@@ -163,30 +211,88 @@ Item {
         Rectangle {visible: !spine.horizontal;width: parent.width;height: 1;color: Theme.separator}
         Grid {
             id: footerIcons;x: 0;y: spine.horizontal ? Math.max(0,Math.round((footer.height-height)/2)) : 6
-            columns: spine.horizontal ? spine.denseFooter ? 3 : 6 : 2;spacing: 0
+            columns: spine.horizontal ? spine.denseFooter ? Math.ceil(iconCount/2) : iconCount : 2
+            spacing: 0
+            readonly property int iconCount: placementButton.visible ? 7 : 6
             readonly property int buttonWidth: spine.horizontal ? (Theme.extraCompact ? 22 : Theme.compact ? 28 : 32) : Math.floor((frame.thickness-(Theme.extraCompact ? 12 : 16))/2)
             readonly property int buttonHeight: spine.horizontal ? buttonWidth : Theme.extraCompact ? 24 : Theme.compact ? 27 : 32
-            readonly property color iconInk: Theme.highContrast ? Theme.text : Theme.accent
-            IconButton {objectName: "spineCapture";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "camera";hint: "Screenshot";onClicked: spine.openPanel("screenshot")}
-            IconButton {objectName: "spineNotifications";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "bell";hint: "Notifications";onClicked: spine.openPanel("notifications")
-                Rectangle {x: Math.round(parent.width/2)+6;y: Math.max(2,Math.round(parent.height/2)-9);width: 4;height: 4;radius: 2;color: Theme.accent;visible: System.notifications.length>0}
+            readonly property color iconInk: Theme.text
+            IconButton {objectName: "spineCapture";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: Orbit.panel==="screenshot" ? Theme.accentInk : footerIcons.iconInk;iconName: "camera";hint: "Screenshot";onClicked: spine.openPanel("screenshot")}
+            IconButton {objectName: "spineNotifications";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: Orbit.panel==="notifications" ? Theme.accentInk : footerIcons.iconInk;iconName: "bell";hint: "Notifications";onClicked: spine.openPanel("notifications")
+                Rectangle {x: Math.round(parent.width/2)+6;y: Math.max(2,Math.round(parent.height/2)-9);width: 4;height: 4;radius: 2;color: Theme.accentInk;visible: System.notifications.length>0}
             }
-            IconButton {objectName: "spineSound";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: System.values.muted ? "mute" : "volume";hint: "Volume and playback";onClicked: spine.openPanel("music")}
-            IconButton {objectName: "spineBackground";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: spine.edge==="left" ? "chevron-right" : spine.edge==="right" ? "chevron-left" : spine.edge==="top" ? "chevron-down" : "chevron-up";hint: "Background apps";onClicked: spine.openPanel("tray")}
-            IconButton {objectName: "spineUsage";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "usage";hint: "System usage · "+Usage.username;onClicked: spine.openPanel("usage")}
-            IconButton {objectName: "spineControls";width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "settings";hint: "Quick controls";onClicked: spine.openPanel("quick")}
+            IconButton {objectName: "spineSound";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: Orbit.panel==="music" ? Theme.accentInk : footerIcons.iconInk;iconName: System.values.muted ? "mute" : "volume";hint: "Volume and playback";onClicked: spine.openPanel("music")}
+            IconButton {objectName: "spineBackground";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: spine.edge==="left" ? "chevron-right" : spine.edge==="right" ? "chevron-left" : spine.edge==="top" ? "chevron-down" : "chevron-up";hint: "Background apps";onClicked: spine.openPanel("tray")}
+            IconButton {objectName: "spineUsage";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "usage";hint: "System Monitor";onClicked: Orbit.openSystemMonitor()}
+            IconButton {objectName: "spineControls";phosphor: true;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: Orbit.panel==="quick" ? Theme.accentInk : footerIcons.iconInk;iconName: "settings";hint: "Quick controls";onClicked: spine.openPanel("quick")}
+            IconButton {
+                id: placementButton;objectName: "spineAutoSnap"
+                visible: Orbit.nativePlacementSupported === true
+                width: footerIcons.buttonWidth;height: footerIcons.buttonHeight
+                padding: Theme.extraCompact ? 2 : 4
+                glyphColor: Orbit.windowPlacementEnabled ? footerIcons.iconInk : Theme.muted
+                phosphor: true
+                iconName: "layouts"
+                hint: "Auto-snap · " + (!Orbit.windowPlacementEnabled ? "Off" : "Grid " + Orbit.windowGridCount)
+                onClicked: spine.openPanel("window-placement")
+            }
         }
         FontMetrics {id: clockMetrics;font: clockLabel.font}
         FontMetrics {id: dateMetrics;font: dateLabel.font}
         FontMetrics {id: batteryMetrics;font: batteryLabel.font}
+        Rectangle {
+            anchors.fill: clockGroup
+            anchors.margins: -2
+            radius: Theme.corner(6)
+            color: clockHit.containsMouse ? Theme.hover : "transparent"
+            border.width: clockGroup.activeFocus ? 2 : 0
+            border.color: Theme.focusColor
+        }
+        MouseArea {
+            id: clockHit
+            anchors.fill: clockGroup
+            hoverEnabled: true
+            z: 1
+            cursorShape: Qt.PointingHandCursor
+            onClicked: Orbit.launch("mellipi-calendar.desktop")
+        }
         Column {
-            id: clockGroup;x: spine.horizontal ? footerIcons.width+10 : 0;y: spine.horizontal ? Math.round((frame.thickness-height)/2) : footerIcons.y+footerIcons.height+6
+            id: clockGroup;x: spine.horizontal ? footerIcons.width+10 : (parent.width-width)/2;y: spine.horizontal ? Math.round((frame.thickness-height)/2) : footerIcons.y+footerIcons.height+6
             readonly property int naturalWidth: Math.ceil(Math.max(clockMetrics.advanceWidth(clockLabel.text),dateLabel.visible ? dateMetrics.advanceWidth(dateLabel.text) : 0,batteryLabel.visible ? batteryMetrics.advanceWidth(batteryLabel.text) : 0))+8
-            width: spine.horizontal ? naturalWidth : parent.width;spacing: 2
-            Text {id: clockLabel;width: parent.width;text: spine.horizontal && !Orbit.appearance.clock24 ? spine.clockText+" "+Qt.formatDateTime(spine.clockNow,"AP") : spine.clockText;font.pixelSize: Theme.fontSize(10);color: Theme.text;horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight}
-            Text {width: parent.width;visible: !spine.horizontal && !Orbit.appearance.clock24;text: Qt.formatDateTime(spine.clockNow,"AP");font.pixelSize: Theme.fontSize(8);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
-            Text {id: dateLabel;width: parent.width;visible: !!Orbit.appearance.clockDate;text: Qt.formatDateTime(spine.clockNow,"MMM d");font.pixelSize: Theme.fontSize(8);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
-            Text {id: batteryLabel;width: parent.width;text: Power.state.batteryPresent || System.values.batteryPresent ? (Power.state.percentageAvailable ? Power.state.batteryPercent : System.values.batteryPercent)+"%" : "";visible: text.length>0;font.pixelSize: Theme.fontSize(9);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
+            readonly property string batteryText: Power.state.batteryPresent || System.values.batteryPresent
+                ? (Power.state.percentageAvailable ? Power.state.batteryPercent : System.values.batteryPercent)+"%" : ""
+            readonly property string dateText: Orbit.appearance.clockDate ? Qt.formatDateTime(spine.clockNow,"MMM d") : ""
+            width: spine.horizontal ? naturalWidth : spine.width-4;spacing: 2
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Accessible.name: "Open Calendar"
+            Accessible.description: [clockLabel.text, dateText, batteryText].filter(Boolean).join(" · ")
+            Accessible.onPressAction: Orbit.launch("mellipi-calendar.desktop")
+            Keys.onReturnPressed: Orbit.launch("mellipi-calendar.desktop")
+            Keys.onSpacePressed: Orbit.launch("mellipi-calendar.desktop")
+            Text {id: clockLabel;width: parent.width;fontSizeMode: spine.horizontal ? Text.FixedSize : Text.HorizontalFit;minimumPixelSize: 8;text: spine.horizontal && !Orbit.appearance.clock24 ? spine.clockText+" "+Qt.formatDateTime(spine.clockNow,"AP") : spine.clockText;font.pixelSize: Theme.detailSize;font.weight: Font.DemiBold;color: Theme.text;horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight}
+            Text {width: parent.width;visible: !spine.horizontal && !Orbit.appearance.clock24;text: Qt.formatDateTime(spine.clockNow,"AP");font.pixelSize: Math.round(10*Theme.textScale);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
+            Text {
+                id: dateLabel
+                width: parent.width
+                fontSizeMode: spine.horizontal ? Text.FixedSize : Text.HorizontalFit
+                minimumPixelSize: 8
+                visible: text.length > 0
+                text: spine.horizontal ? [clockGroup.dateText,clockGroup.batteryText].filter(Boolean).join(" · ") : clockGroup.dateText
+                font.pixelSize: Math.round(10*Theme.textScale)
+                color: Theme.muted
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
+            Text {
+                id: batteryLabel
+                width: parent.width
+                text: clockGroup.batteryText
+                visible: !spine.horizontal && text.length > 0
+                font.pixelSize: Math.round(10*Theme.textScale)
+                color: Theme.muted
+                horizontalAlignment: Text.AlignHCenter
+            }
         }
     }
 }

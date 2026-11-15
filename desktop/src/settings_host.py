@@ -5,12 +5,12 @@ from project_paths import PROJECT_ROOT, SOURCE_ROOT
 from qt_compat import QObject,QLocalServer,QTimer,QT5
 from control import socket_path
 from qt5_a11y_runtime import scoped_environment
-ORBIT_PROPERTIES=('appearance','compact','economy','themeMode','accentColor','accentPresets','themePresets','outputs','apps','launcherApps','isWayland','nativeCompositor','nativePaletteSupported','settingsSection','settingsTarget','canSwitchUser','notice','workspaceMotion')
+ORBIT_PROPERTIES=('appearance','compact','economy','themeMode','accentColor','accentPresets','themePresets','outputs','apps','launcherApps','isWayland','nativeCompositor','nativePaletteSupported','nativeSnapSupported','settingsSection','settingsTarget','canSwitchUser','notice','workspaceMotion','systemActions')
 ORBIT_METHODS={'setPreference','resetAppearance','applyTheme','rememberSettingsSection','settingsPageOpened','showPanel','openSettingsSection','launch','switchUser','activateSystemAction'}
 class SettingsHost(QObject):
     def __init__(self,bridge,objects):
         super().__init__(bridge);self.bridge=bridge;self.objects=objects;self.clients={};self.process=None;self.active=False;self.closed=False;self.centered=set();self.pending=set();self.ready=False;self.errors=[];self.show_pending=False;self.show_attempts=0;self.launched=False
-        self.path=socket_path()+'-settings';self.server=QLocalServer(self);self.server.setSocketOptions(QLocalServer.UserAccessOption)
+        self.path=socket_path()+'-settings';self.server=QLocalServer(self);self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         QLocalServer.removeServer(self.path)
         if not self.server.listen(self.path):raise RuntimeError(self.server.errorString())
         self.server.newConnection.connect(self.connected)
@@ -70,6 +70,9 @@ class SettingsHost(QObject):
                 call=json.loads(raw)
                 if call.get('ready') is True:
                     self.ready=True;self.errors=[str(e)[:300] for e in call.get('errors',[])[:20]];continue
+                if call.get('closing') is True:
+                    self.show_pending=False;self.active=False
+                    self.bridge.settingsPageOpened('');continue
                 if 'visible' in call:
                     if type(call['visible']) is not bool:raise ValueError('Invalid visibility')
                     if not call['visible']:self.bridge.settingsPageOpened('')
@@ -85,7 +88,7 @@ class SettingsHost(QObject):
         if self.show_pending:return
         self.show_pending=True;self.show_attempts=0;self.launched=False;self.finish_show()
     def finish_show(self):
-        if self.closed:return
+        if self.closed or not self.show_pending:return
         row=next((w for w in self.bridge._windows if w['klass']=='orbit-settings'),None)
         if self.clients and row:
             for client in self.clients:self.send(client,{'show':True})
@@ -113,7 +116,9 @@ class SettingsHost(QObject):
             if row['klass']!='orbit-settings' or row['id'] in self.centered:continue
             rect=row.get('rect',{})
             if rect.get('width',0)<100 or rect.get('height',0)<100:continue
-            self.centered.add(row['id']);screen=row.get('workarea') or self.bridge.screenMap()
+            self.centered.add(row['id'])
+            if row.get('snap') or row['klass'] in self.bridge.preferences.values['appPlacements']:continue
+            screen=row.get('workarea') or self.bridge.screenMap()
             width=min(rect['width'],max(320,screen['width']-32));height=min(rect['height'],max(240,screen['height']-48))
             target=dict(x=screen['x']+(screen['width']-width)//2,y=screen['y']+(screen['height']-height)//2,width=width,height=height)
             self.bridge.windowTask(row['id'],'settings-center',lambda ident=int(row['id']),r=target:self.bridge.windowActions._resize(ident,r))

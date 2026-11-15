@@ -28,26 +28,27 @@ ScrollView {
             title: "Keyboard"
             visible: !Input.state.deviceType || Input.state.deviceType==="keyboard"
             Text {visible:panel.selectedLayouts.length===0 && (Input.state.layoutName || "")!=="";Layout.fillWidth:true;Layout.margins:6;text:"Current layout: "+(Input.state.layoutName || "");color:Theme.muted;font.pixelSize:Theme.fontSize(10);wrapMode:Text.Wrap}
+            Text {visible: Input.state.keyboardEditable === false;Layout.fillWidth: true;text: "Choose All devices to change keyboard settings.";color: Theme.muted;wrapMode: Text.Wrap}
             Repeater {
                 model:panel.selectedLayouts
                 SettingRow {
                     required property string modelData
                     label:panel.layoutLabel(modelData)+(Input.state.layout===modelData ? " · Active" : "")
-                    OrbitButton {objectName:"keyboardLayoutRemove_"+modelData;text:"Remove";Accessible.name:"Remove "+panel.layoutLabel(modelData)+" keyboard layout";quiet:true;implicitHeight:28;enabled:Input.state.available && !Input.state.busy && panel.selectedLayouts.length>1;onClicked:panel.removeLayout(modelData)}
+                    OrbitButton {objectName:"keyboardLayoutRemove_"+modelData;text:"Remove";Accessible.name:"Remove "+panel.layoutLabel(modelData)+" keyboard layout";quiet:true;implicitHeight:28;enabled:(Input.state.keyboardEditable !== false && Input.state.available) && !Input.state.busy && panel.selectedLayouts.length>1;onClicked:panel.removeLayout(modelData)}
                 }
             }
             AudioDevicePicker {
                 objectName:"keyboardLayoutPicker";accessibleLabel:"Add keyboard layout";chooseLabel:"Add layout…";emptyLabel:"All available layouts selected"
                 devices:Input.layouts.filter(l=>panel.selectedLayouts.indexOf(l.value)<0).map(l=>({name:l.value,description:l.label}))
                 selectedName:"";expanded:panel.layoutsExpanded
-                enabled:Input.state.available && !Input.state.busy && panel.selectedLayouts.length<4 && devices.length>0
+                enabled:(Input.state.keyboardEditable !== false && Input.state.available) && !Input.state.busy && panel.selectedLayouts.length<4 && devices.length>0
                 onToggled:panel.layoutsExpanded=!panel.layoutsExpanded
                 onSelected:name=>{panel.layoutsExpanded=false;panel.addLayout(name);}
             }
             RowLayout {
                 Layout.fillWidth:true
                 Text {Layout.fillWidth:true;text:"Super+Shift+Space switches layouts.";color:Theme.faint;font.pixelSize:Theme.fontSize(10);wrapMode:Text.Wrap}
-                OrbitButton {objectName:"keyboardLayoutNext";text:"Next";Accessible.name:"Next keyboard layout";quiet:true;implicitHeight:28;enabled:Input.state.available && !Input.state.busy && !Input.state.reading && panel.selectedLayouts.length>1;onClicked:Input.nextLayout()}
+                IconButton {objectName:"keyboardLayoutNext";iconName:"chevron-right";hint:"Next keyboard layout";implicitHeight:30;enabled:(Input.state.keyboardEditable !== false && Input.state.available) && !Input.state.busy && !Input.state.reading && panel.selectedLayouts.length>1;onClicked:Input.nextLayout()}
             }
             OrbitButton {objectName:"keyboardLayoutsAdvanced";text:panel.advancedLayouts ? "Hide advanced codes" : "Advanced codes…";quiet:true;implicitHeight:28;onClicked:panel.advancedLayouts=!panel.advancedLayouts}
             ColumnLayout {
@@ -55,21 +56,21 @@ ScrollView {
                 Text {Layout.fillWidth:true;text:"Up to four comma-separated XKB codes, for example us,de.";color:Theme.faint;font.pixelSize:Theme.fontSize(10);wrapMode:Text.Wrap}
                 RowLayout {
                     Layout.fillWidth:true
-                    OrbitField {id:layoutList;objectName:"keyboardLayoutList";enabled:Input.state.available && !Input.state.busy && !Input.state.reading;Accessible.name:"Keyboard layout codes";Layout.fillWidth:true;implicitHeight:30;text:Input.state.layoutList || Input.state.layout || "";maximumLength:32;onAccepted:Input.setLayoutList(text)}
-                    OrbitButton {objectName:"keyboardLayoutsApply";text:"Apply";Accessible.name:"Apply keyboard layout codes";implicitHeight:28;enabled:Input.state.available && !Input.state.reading;onClicked:Input.setLayoutList(layoutList.text)}
+                    OrbitField {id:layoutList;objectName:"keyboardLayoutList";enabled:(Input.state.keyboardEditable !== false && Input.state.available) && !Input.state.busy && !Input.state.reading;Accessible.name:"Keyboard layout codes";Layout.fillWidth:true;implicitHeight:30;text:Input.state.layoutList || Input.state.layout || "";maximumLength:32;onAccepted:Input.setLayoutList(text)}
+                    OrbitButton {objectName:"keyboardLayoutsApply";text:"Apply";Accessible.name:"Apply keyboard layout codes";implicitHeight:28;enabled:(Input.state.keyboardEditable !== false && Input.state.available) && !Input.state.reading;onClicked:Input.setLayoutList(layoutList.text)}
                 }
             }
             SettingRow {label: "Repeat rate";Text {text: Math.round(rate.value)+" / sec";color: Theme.muted;font.pixelSize: Theme.fontSize(11)}}
             OrbitSlider {
                 id: rate;objectName: "keyRepeatRate";Accessible.name: "Keyboard repeat rate"
-                Layout.fillWidth: true;from: 1;to: 100;stepSize: 1;value: Input.state.repeatRate;enabled: Input.state.available
+                Layout.fillWidth: true;from: 1;to: 100;stepSize: 1;value: Input.state.repeatRate;enabled: (Input.state.keyboardEditable !== false && Input.state.available)
                 onMoved: rateTimer.restart()
                 Timer {id: rateTimer;interval: 150;onTriggered: Input.setRepeatRate(Math.round(rate.value))}
             }
             SettingRow {label: "Repeat delay";Text {text: Math.round(delay.value)+" ms";color: Theme.muted;font.pixelSize: Theme.fontSize(11)}}
             OrbitSlider {
                 id: delay;objectName: "keyRepeatDelay";Accessible.name: "Keyboard repeat delay"
-                Layout.fillWidth: true;from: 100;to: 2000;stepSize: 50;value: Input.state.repeatDelay;enabled: Input.state.available
+                Layout.fillWidth: true;from: 100;to: 2000;stepSize: 50;value: Input.state.repeatDelay;enabled: (Input.state.keyboardEditable !== false && Input.state.available)
                 onMoved: delayTimer.restart()
                 Timer {id: delayTimer;interval: 150;onTriggered: Input.setRepeatDelay(Math.round(delay.value))}
             }
@@ -85,6 +86,45 @@ ScrollView {
                 Timer {id: speedTimer;interval: 150;onTriggered: Input.setPointerSpeed(speed.value)}
             }
             SettingRow {label: "Natural scrolling";SettingToggle {objectName: "naturalScrollToggle";label: "Natural scrolling";checked: Input.state.naturalScroll;enabled: Input.state.available;onClicked: Input.setNaturalScroll(checked)}}
+            SettingRow {
+                visible: Input.state.touchpadScrollAvailable
+                label: "Touchpad scroll speed"
+                Text {text: Math.round(scrollSpeed.value*100)+"%";color: Theme.muted}
+            }
+            OrbitSlider {
+                id: scrollSpeed
+                objectName: "touchpadScrollSpeed"
+                Accessible.name: "Touchpad scroll speed"
+                visible: Input.state.touchpadScrollAvailable
+                Layout.fillWidth: true
+                from: .25;to: 3;stepSize: .05
+                value: Input.state.touchpadScrollSpeed || 1
+                onMoved: Input.setTouchpadScrollSpeed(scrollSpeed.value)
+            }
+            Flickable {
+                visible: Input.state.touchpadScrollAvailable
+                Layout.fillWidth: true
+                Layout.preferredHeight: 68
+                contentHeight: Math.max(scrollPreview.implicitHeight, height + 600)
+                clip: true
+                Column {
+                    id: scrollPreview
+                    spacing: 10
+                    width: parent.width
+                    Text {text: "Scroll here to try it";color: Theme.muted}
+                    Repeater {
+                        model: 24
+                        delegate: Rectangle {
+                            required property int index
+                            width: scrollPreview.width * (index % 3 === 0 ? .75 : .5)
+                            height: 18
+                            radius: 3
+                            color: Theme.raised
+                        }
+                    }
+                }
+                ScrollBar.vertical: ScrollBar {}
+            }
             SettingRow {visible: !Input.state.deviceType || Input.state.deviceType==="touchpad";label: "Tap to click";SettingToggle {objectName: "tapToClickToggle";label: "Touchpad tap to click";checked: Input.state.tapToClick;enabled: Input.state.available;onClicked: Input.setTapToClick(checked)}}
         }
         Text {Layout.fillWidth: true;text: Input.state.error || (!Input.state.available ? "Input controls require an Mellipi Wayland session." : "Changes apply to matching keyboards, mice and touchpads, including devices connected later.");wrapMode: Text.Wrap;color: Input.state.error ? Theme.accent : Theme.faint;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText}

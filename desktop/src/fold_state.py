@@ -15,7 +15,10 @@ from qt_compat import QObject, Property, Signal, Slot, QTimer, QUrl, QDesktopSer
 if QT5:
     from PyQt5.QtCore import QMimeData
 else:
-    from PySide6.QtCore import QMimeData
+    if os.environ.get("ORBIT_QT") == "6":
+        from PyQt6.QtCore import QMimeData
+    else:
+        from PySide6.QtCore import QMimeData
 
 from project_paths import PROJECT_ROOT as ROOT, SOURCE_ROOT
 MAX_SCAN = 256

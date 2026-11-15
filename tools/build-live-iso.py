@@ -15,6 +15,42 @@ CALAMARES_PARTITION_PATH='usr/lib/x86_64-linux-gnu/calamares/modules/partition/l
 CALAMARES_STOCK_MODULE_SHA256='55a6c6a1f0624dff6df59358eb2c77b535f520c525a9ec8c7ae06a9d36414ea8'
 BASE_PACKAGES=['ca-certificates','systemd-sysv','udev','dbus','dbus-user-session','sudo','locales','tzdata','keyboard-configuration','console-setup','casper','initramfs-tools','linux-generic','linux-firmware','systemd-resolved','network-manager','calamares','grub-pc-bin','grub-efi-amd64-bin','grub-efi-amd64-signed','shim-signed','sbsigntool','mokutil','grub2-common','efibootmgr','os-prober','rsync','squashfs-tools','cryptsetup','cryptsetup-initramfs','dosfstools','e2fsprogs','parted','python3-yaml','xdg-user-dirs','fonts-dejavu-core','dmz-cursor-theme']
 
+# Only for ISO roots, never for upgrades on an existing Linux desktop.
+REPLACED_APPS={
+    'Files': {'thunar','nautilus','nemo','dolphin','caja','pcmanfm','pcmanfm-qt','spacefm','krusader','ranger','mc'},
+    'Terminal': {'xterm','foot','xfce4-terminal','gnome-terminal','mate-terminal','konsole','qterminal','lxterminal','tilix','kitty','alacritty','terminator','sakura','uxterm','x-terminal-emulator'},
+    'Photos': {'eog','loupe','ristretto','gwenview','qview','feh','gpicview','viewnior','lximage-qt'},
+    'PDF Viewer': {'evince','papers','atril','okular','zathura','xpdf','qpdfview','mupdf'},
+    'Media': {'vlc','mpv','totem','parole','celluloid','dragonplayer','rhythmbox','audacious','haruna','smplayer'},
+    'Disks': {'gnome-disk-utility','gparted','partitionmanager','usb-creator-gtk','usb-creator-kde','mintstick'},
+    'Archives in Files': {'file-roller','engrampa','ark','xarchiver','lxqt-archiver','squeeze','peazip'},
+    'Text Editor': {'mousepad','gedit','gnome-text-editor','xed','pluma','kate','kwrite','leafpad','featherpad','geany'},
+    'Browser': {'epiphany-browser','firefox','firefox-esr','chromium','chromium-browser','google-chrome-stable','falkon','midori','brave-browser','vivaldi-stable'},
+    'Calendar': {'gnome-calendar','korganizer','orage','calindori'},
+    'Calculator': {'gnome-calculator','mate-calc','kcalc','galculator','qalculate-gtk','qalculate-qt'},
+    'System Monitor': {'gnome-system-monitor','xfce4-taskmanager','mate-system-monitor','plasma-systemmonitor','ksysguard','lxtask'},
+    'Sound Recorder': {'gnome-sound-recorder','krecorder','qarecord','audio-recorder'},
+    'Software': {'gnome-software','plasma-discover','mintinstall','pamac-gtk','appcenter'},
+}
+
+def installed_apps(root):
+    result=chroot(root,'dpkg-query','-W','--showformat=${Package}\t${db:Status-Status}\n',capture_output=True,text=True)
+    return {name.partition(':')[0] for row in result.stdout.splitlines()
+            for name,_,status in [row.partition('\t')] if status=='installed'}
+
+def audit_image_apps(root):
+    packages=installed_apps(root)
+    duplicates=sorted(packages & set().union(*REPLACED_APPS.values()))
+    if duplicates:raise ValueError('Duplicate desktop apps in the image: '+', '.join(duplicates))
+    return packages
+
+def prune_image_apps(root):
+    duplicates=sorted(installed_apps(root) & set().union(*REPLACED_APPS.values()))
+    if duplicates:chroot(root,'apt-get','-y','purge',*duplicates)
+    packages=audit_image_apps(root)
+    if not {'mellipi-shell','mellipi-desktop','mellipi-browser','lightdm','calamares'}<=packages:
+        raise ValueError('Removing duplicate apps would leave an incomplete installer image')
+
 def run(args,**kwargs):
     print('+ '+' '.join(map(str,args)),flush=True)
     return subprocess.run(list(map(str,args)),check=True,**kwargs)
@@ -100,8 +136,10 @@ def bootstrap(work,args):
     write(work,'bootstrap-origin.json',json.dumps({'method':'debootstrap-minbase','suite':'noble','architecture':'amd64','created_at':int(time.time()),'copied_builder_filesystem':False},indent=2)+'\n')
     return root
 
-def live_theme(root):
-    theme = json.loads((root / 'usr/lib/abstract/themes/forest.json').read_text())
+def live_theme(root, theme_id='forest'):
+    if not re.fullmatch(r'[a-z][a-z0-9-]{0,39}',theme_id):
+        raise ValueError('Invalid Mellipi live theme name')
+    theme = json.loads((root / 'usr/lib/abstract/themes' / f'{theme_id}.json').read_text())
     palette = theme['palette']
     colors = [theme['accent'], theme['background'], *palette.values()]
     if not all(isinstance(color, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', color)
@@ -109,9 +147,30 @@ def live_theme(root):
         raise ValueError('Invalid color in the packaged live theme')
     return theme
 
-def configure_installer(root,version):
-    theme = live_theme(root)
+def theme_controls(theme):
     colors = dict(theme['palette'], accent=theme['accent'])
+    def luminance(hex_color):
+        parts=[int(hex_color[i:i+2],16)/255 for i in (1,3,5)]
+        return sum((c/12.92 if c<=.04045 else ((c+.055)/1.055)**2.4)*w
+                   for c,w in zip(parts,(.2126,.7152,.0722)))
+    def ratio(left,right):
+        dark,light=sorted((luminance(left),luminance(right)))
+        return (light+.05)/(dark+.05)
+    colors['accent_text']='#000000' if luminance(colors['accent'])>.179 else '#ffffff'
+    edge='#000000' if theme['mode']=='light' else '#ffffff'
+    colors['control_border']=colors['border'] if ratio(colors['border'],colors['surface'])>=3 else edge
+    colors['focus']=colors['accent'] if ratio(colors['accent'],colors['surface'])>=3 else edge
+
+    return colors
+
+def configure_installer(root,version,theme_id='forest'):
+    # Synaptic remains the Ubuntu update backend, exposed by Settings. Hide
+    # its separate launcher so Software is the image's only app-store entry.
+    if (root/'usr/share/applications/synaptic.desktop').is_file():
+        write(root,'usr/local/share/applications/synaptic.desktop',
+              '[Desktop Entry]\nType=Application\nName=Synaptic\nExec=synaptic-pkexec\nNoDisplay=true\n')
+    theme = live_theme(root,theme_id)
+    colors = theme_controls(theme)
 
     settings='''modules-search: [ local ]
 instances:
@@ -351,7 +410,7 @@ style:
   SidebarBackground: "$surface"
   SidebarText: "$muted"
   SidebarBackgroundCurrent: "$accent"
-  SidebarTextCurrent: "$background"
+  SidebarTextCurrent: "$accent_text"
 uploadServer: {{ type: none }}
 ''').substitute(colors)
     write(root,'etc/calamares/branding/abstract/branding.desc',branding)
@@ -362,7 +421,7 @@ QWidget {
     background-color: $background;
     color: $text;
     selection-background-color: $accent;
-    selection-color: $background;
+    selection-color: $accent_text;
 }
 #sidebarApp, #logoApp { background-color: $surface; }
 QLabel, QCheckBox, QRadioButton, QGroupBox { background-color: transparent; }
@@ -375,7 +434,7 @@ QPushButton, QToolButton {
 }
 QPushButton:hover, QToolButton:hover { background-color: $hover; }
 QPushButton:default:enabled, QPushButton#view-button-next:enabled {
-    background-color: $accent; color: $background;
+    background-color: $accent; color: $accent_text;
 }
 QPushButton:default:enabled:hover, QPushButton#view-button-next:enabled:hover {
     border-color: $text;
@@ -385,14 +444,14 @@ QPushButton:disabled, QToolButton:disabled {
 }
 QLineEdit, QComboBox, QSpinBox, QDateTimeEdit {
     background-color: $surface;
-    border: 1px solid $border;
+    border: 1px solid $control_border;
     border-radius: 4px;
     padding: 3px 6px;
 }
 QPushButton:focus, QToolButton:focus, QLineEdit:focus, QComboBox:focus,
-QSpinBox:focus, QDateTimeEdit:focus { border: 1px solid $accent; }
+QSpinBox:focus, QDateTimeEdit:focus { border: 1px solid $focus; }
 QPushButton:default:enabled:focus, QPushButton#view-button-next:enabled:focus {
-    border-color: $background;
+    border-color: $accent_text;
 }
 QAbstractItemView, QTextEdit, QPlainTextEdit, QMenu {
     background-color: $surface;
@@ -400,7 +459,7 @@ QAbstractItemView, QTextEdit, QPlainTextEdit, QMenu {
 }
 /* Calamares paints this legend with fixed black and gray text. */
 PartitionLabelsView { background-color: $text; }
-QMenu::item:selected { background-color: $accent; color: $background; }
+QMenu::item:selected { background-color: $accent; color: $accent_text; }
 QHeaderView::section {
     background-color: $raised;
     color: $text;
@@ -433,7 +492,7 @@ def install(work,root,args):
     write(root,'etc/apt/sources.list.d/mellipi.sources',f'Types: deb\nURIs: {ARCHIVE}\nSuites: noble\nComponents: main\nArchitectures: amd64\nSigned-By: /etc/apt/keyrings/mellipi-archive-keyring.gpg\n')
     (root/'etc/apt/sources.list.d/abstract.sources').unlink(missing_ok=True)
     copied=[];package_inputs={}
-    for name,package in [('mellipi-shell',args.core_deb),('mellipi-desktop',args.desktop_deb)]:
+    for name,package in [('mellipi-shell',args.core_deb),('mellipi-desktop',args.desktop_deb),('mellipi-browser',args.browser_deb)]:
         found=subprocess.check_output(['dpkg-deb','-f',str(package),'Package'],text=True).strip();assert found==name
         version=subprocess.check_output(['dpkg-deb','-f',str(package),'Version'],text=True).strip();assert version==args.version
         arch=subprocess.check_output(['dpkg-deb','-f',str(package),'Architecture'],text=True).strip();assert arch==('amd64' if name=='mellipi-shell' else 'all')
@@ -441,26 +500,22 @@ def install(work,root,args):
         target=root/'tmp'/Path(package).name;target.parent.mkdir(exist_ok=True);shutil.copyfile(package,target);copied.append('/tmp/'+target.name)
     with mounts(root):
         # The new project endpoint is enrolled in the image; local builds use
-        # only signed Ubuntu indexes and the explicitly verified .deb pair.
+        # only signed Ubuntu indexes and the explicitly verified .deb set.
         project_source=root/'etc/apt/sources.list.d/mellipi.sources'
         project_source.rename(project_source.with_suffix('.pending'))
         chroot(root,'apt-get','-o','APT::Update::Error-Mode=any','update')
         chroot(root,'apt-get','-y','--no-install-recommends','install',*BASE_PACKAGES,*copied)
         # Private QA candidates can be rebuilt at the same unpublished version.
-        # Refresh only the local pair, never every base/firmware package.
+        # Refresh only the local package set, never every base/firmware package.
         chroot(root,'apt-get','-y','--no-install-recommends','--reinstall','install',*copied)
-        # Reused build roots can still contain the previous desktop defaults.
-        old_apps = [name for name in ('thunar', 'foot')
-                    if (root / 'usr/bin' / name).is_file()]
-        if old_apps:
-            chroot(root, 'apt-get', '-y', 'purge', *old_apps)
+        prune_image_apps(root)
         chroot(root, 'update-alternatives', '--set', 'x-terminal-emulator',
                '/usr/bin/mellipi-terminal')
         write(root,'etc/locale.gen','en_US.UTF-8 UTF-8\n');chroot(root,'locale-gen')
         chroot(root,'update-locale','LANG=en_US.UTF-8')
         project_source.with_suffix('.pending').rename(project_source)
-        configure_installer(root,args.version)
-        configure_live(root,args.version)
+        configure_installer(root,args.version,args.theme)
+        configure_live(root,args.version,args.theme)
         chroot(root,'update-initramfs','-u','-k','all')
         chroot(root,'apt-get','clean')
     for name in copied:(root/name.lstrip('/')).unlink(missing_ok=True)
@@ -479,7 +534,7 @@ def install(work,root,args):
     (root/'var/lib/systemd/random-seed').unlink(missing_ok=True)
     (work/'installed.json').write_text(json.dumps({'version':args.version,'rootfs':str(root),'base':'Ubuntu 24.04 noble minbase','only_desktop':'Mellipi','package_inputs':package_inputs},indent=2)+'\n')
 
-def configure_live(root,version):
+def configure_live(root,version,theme_id='forest'):
     for name in ('etc/abstract-release','etc/initramfs-tools/conf.d/abstract-live','usr/share/initramfs-tools/scripts/casper-bottom/99abstract-live','usr/bin/abstract-install','usr/share/applications/abstract-install.desktop','etc/skel/Desktop/abstract-install.desktop'):
         (root/name).unlink(missing_ok=True)
     write(root,'etc/hostname','mellipi-live\n')
@@ -487,16 +542,30 @@ def configure_live(root,version):
     write(root,'etc/casper.conf','export USERNAME="mellipi"\nexport USERFULLNAME="Mellipi live session"\nexport HOST="mellipi-live"\nexport BUILD_SYSTEM="Ubuntu"\nexport FLAVOUR="Mellipi"\n')
     write(root,'etc/initramfs-tools/conf.d/mellipi-live','export CASPER_GENERATE_UUID=1\n')
     write(root,'etc/mellipi-release',f'Mellipi {version}\nBase: Ubuntu 24.04 noble\n')
-    write(root,'etc/lightdm/lightdm.conf.d/50-abstract-session.conf','[Seat:*]\nuser-session=abstract\nautologin-session=abstract\nallow-guest=false\n')
+    write(root,'etc/lightdm/lightdm.conf.d/50-abstract-session.conf','[Seat:*]\nuser-session=mellipi-qt6\nautologin-session=mellipi-qt6\nallow-guest=false\n')
     write(root,'etc/X11/default-display-manager','/usr/sbin/lightdm\n')
     write(root,'etc/NetworkManager/conf.d/90-abstract-managed.conf','[ifupdown]\nmanaged=true\n[keyfile]\nunmanaged-devices=\n')
     write(root,'etc/default/grub','GRUB_DEFAULT=0\nGRUB_TIMEOUT=3\nGRUB_DISTRIBUTOR="Mellipi"\nGRUB_CMDLINE_LINUX_DEFAULT="quiet"\nGRUB_CMDLINE_LINUX=""\n')
     for link,target in [('etc/systemd/system/default.target','/lib/systemd/system/graphical.target'),('etc/systemd/system/display-manager.service','/lib/systemd/system/lightdm.service')]:
         path=root/link;path.parent.mkdir(parents=True,exist_ok=True);path.unlink(missing_ok=True);path.symlink_to(target)
-    theme = live_theme(root)
-    prefs={'pins':['mellipi-terminal.desktop','mellipi-files.desktop','org.xfce.mousepad.desktop','org.gnome.Epiphany.desktop'],'density':'compact','themePreset':theme['id'],'mode':theme['mode'],'darkLevel':theme['darkLevel'],'accent':theme['accent'],'backgroundColor':theme['background'],'wallpaper':'theme-'+theme['id'],'taskbarLength':'fit','taskbarFloating':True}
+    theme = live_theme(root,theme_id)
+    prefs={'pins':['mellipi-terminal.desktop','mellipi-files.desktop','mellipi-editor.desktop','mellipi-browser.desktop'],'density':'compact','themePreset':theme['id'],'mode':theme['mode'],'darkLevel':theme['darkLevel'],'accent':theme['accent'],'backgroundColor':theme['background'],'wallpaper':'theme-'+theme['id'],'taskbarLength':'fit','taskbarFloating':True}
+    greeter=root/'usr/share/themes/Mellipi-Greeter/gtk-3.0/gtk.css'
+    if greeter.is_file():
+        style=greeter.read_text()
+        palette=theme_controls(theme)
+        for role,value in dict(surface=palette['surface'],raised=palette['raised'],text=palette['text'],
+                               accent=palette['accent'],focus=palette['focus'],onaccent=palette['accent_text'],
+                               edge=palette['control_border']).items():
+            style=re.sub(r'(@define-color mellipi_'+role+r' )#[0-9a-fA-F]{6}',r'\g<1>'+value,style)
+        if theme['mode']=='light':
+            style=style.replace('gtk-contained-dark.css','gtk-contained.css')
+        write(root,'usr/share/themes/Mellipi-Greeter/gtk-3.0/gtk.css',style)
     write(root,'etc/skel/.config/abstract/settings.json',json.dumps(prefs)+'\n')
-    write(root,'etc/skel/.config/mimeapps.list','[Default Applications]\ninode/directory=mellipi-files.desktop;\n')
+    defaults=root/'etc/xdg/orbit-mimeapps.list'
+    mime=defaults.read_text() if defaults.is_file() else '[Default Applications]\ninode/directory=mellipi-files.desktop;\n'
+    mime+=''.join(f'{kind}=mellipi-browser.desktop;\n' for kind in ('text/html','x-scheme-handler/http','x-scheme-handler/https'))
+    write(root,'etc/skel/.config/mimeapps.list',mime)
     # This runs only from Casper at live boot; the installed user keeps normal lock defaults.
     hook='''#!/bin/sh
 PREREQ=""
@@ -566,6 +635,9 @@ if __name__=='__main__':sys.exit(main())
 def image(work,root,args):
     mounted=subprocess.check_output(['findmnt','-rn','-o','TARGET'],text=True).splitlines()
     assert not any(p==str(root) or p.startswith(str(root)+'/') for p in mounted),'Unmount the target rootfs before imaging.'
+    packages=audit_image_apps(root)
+    if not {'mellipi-shell','mellipi-desktop','mellipi-browser'}<=packages:
+        raise ValueError('Mellipi application packages are missing from the ISO root')
     calamares_override=apply_calamares_partition_module(root,args)
     target=work/'image';(target/'casper').mkdir(parents=True,exist_ok=True);(target/'boot/grub').mkdir(parents=True,exist_ok=True)
     users=[line.split(':')[0] for line in (root/'etc/passwd').read_text().splitlines() if 1000<=int(line.split(':')[2])<65534]
@@ -576,7 +648,7 @@ def image(work,root,args):
     other=list((root/'usr/share/xsessions').glob('*.desktop'))
     # The sole normal desktop is Mellipi. Its optional authenticated recovery
     # terminal is an Xorg escape hatch, not another desktop environment.
-    assert sessions==['abstract.desktop'] and sorted(p.name for p in other)==['mellipi-recovery.desktop'],(sessions,other)
+    assert sessions==['mellipi-qt6.desktop'] and sorted(p.name for p in other)==['mellipi-recovery.desktop'],(sessions,other)
     for p in (root/'etc/apt').rglob('*'):
         if p.is_file() and not p.is_symlink():assert b'10.0.2.2' not in p.read_bytes() and b'127.0.0.1' not in p.read_bytes(),p
     assert not any(root.rglob('id_ed25519')) and not any(root.rglob('id_rsa'))
@@ -641,7 +713,11 @@ menuentry "Power off" {{ halt }}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--workdir',type=Path,required=True);parser.add_argument('--core-deb',type=Path,required=True);parser.add_argument('--desktop-deb',type=Path,required=True);parser.add_argument('--keyring',type=Path,required=True);parser.add_argument('--version',default='0.1.9');parser.add_argument('--mirror',default='https://archive.ubuntu.com/ubuntu');parser.add_argument('--security-mirror',default='https://security.ubuntu.com/ubuntu');parser.add_argument('--phase',choices=('bootstrap','install','image','all'),default='all');parser.add_argument('--unsigned-efi',action='store_true',help='Build an explicitly unsigned development ISO; Secure Boot will reject it')
+    parser.add_argument('--browser-deb',type=Path,help='Mellipi Browser package, required when staging the ISO')
+    parser.add_argument('--theme',default='forest',help='Packaged theme shared by the live desktop and installer')
     parser.add_argument('--calamares-partition-module',type=Path);parser.add_argument('--calamares-partition-sha256');parser.add_argument('--calamares-partition-provenance',type=Path);args=parser.parse_args()
+    if args.phase in ('install','all') and not args.browser_deb:
+        parser.error('Staging the ISO requires --browser-deb')
     module_inputs=(args.calamares_partition_module,args.calamares_partition_sha256,args.calamares_partition_provenance)
     if (any(module_inputs) and not all(module_inputs)) or (args.phase in ('image','all') and not all(module_inputs)):
         parser.error('Image creation requires --calamares-partition-module, --calamares-partition-sha256 and --calamares-partition-provenance together')

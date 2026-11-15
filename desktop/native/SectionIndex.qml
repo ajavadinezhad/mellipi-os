@@ -9,6 +9,20 @@ Item {
     signal selected(int value)
     implicitWidth: Math.max(144,Math.min(184,Theme.fontSize(11)*8+56))
     implicitHeight: Math.max(320,Math.min(480,sections.length*(Math.max(Theme.extraCompact ? 26 : Theme.compact ? 32 : 38,Theme.fontSize(11)+(Theme.extraCompact ? 12 : 16))+2)+80))
+    readonly property color startTint: "#5b88c9"
+    readonly property color desktopTint: "#9474d8"
+    readonly property color deviceTint: "#397ebf"
+    readonly property color powerTint: "#b87427"
+    readonly property color accessTint: "#248a77"
+    readonly property color systemTint: "#ba6186"
+    readonly property var categoryInk: ({
+        "START": Theme.legibleInk(startTint, 3),
+        "DESKTOP": Theme.legibleInk(desktopTint, 3),
+        "DEVICES": Theme.legibleInk(deviceTint, 3),
+        "POWER": Theme.legibleInk(powerTint, 3),
+        "ACCESS": Theme.legibleInk(accessTint, 3),
+        "SYSTEM": Theme.legibleInk(systemTint, 3)
+    })
     function revealCurrent() {
         var selectedIndex=sections.findIndex(row => row.value===current);
         entries.currentIndex=selectedIndex;
@@ -45,7 +59,9 @@ Item {
                     visible: !!entry.modelData.icon
                     Layout.preferredWidth: 16;Layout.preferredHeight: 16
                     sourceSize: Qt.size(16,16)
-                    source: visible ? Theme.symbolicIconSource(entry.modelData.icon) : ""
+                    source: visible ? Theme.symbolicIconSource(entry.modelData.icon,
+                        sectionIndex.current===entry.modelData.value || Theme.highContrast ?
+                        Theme.accentInk : sectionIndex.categoryInk[entry.modelData.group] || Theme.muted) : ""
                 }
                 Text {
                     Layout.fillWidth: true;Layout.minimumWidth: 0

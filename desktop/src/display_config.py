@@ -35,8 +35,13 @@ def validated(rows,name,mode,scale,transform,x,y):
     if mode not in [m['value'] for m in row['modes']]:raise ValueError('Choose a supported display mode')
     if type(scale) not in (int,float) or not math.isfinite(scale) or scale not in SCALES:raise ValueError('Unsupported display scale')
     if transform not in TRANSFORMS:raise ValueError('Unsupported display rotation')
-    if any(type(v) is not int or abs(v)>32768 for v in (x,y)):raise ValueError('Display position must be between -32768 and 32768')
-    return dict(name=name,mode=mode,scale=float(scale),transform=transform,x=x,y=y)
+    # Settings sends QML Number as a QVariant double over its JSON bridge.
+    # Accept whole coordinates on the wire; keep watchdog and persisted values integral.
+    for value in (x,y):
+        if (type(value) not in (int,float) or not -32768<=value<=32768
+                or (type(value) is float and not value.is_integer())):
+            raise ValueError('Display position must be a whole number between -32768 and 32768')
+    return dict(name=name,mode=mode,scale=float(scale),transform=transform,x=int(x),y=int(y))
 
 def command(row):
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',row['name']):raise ValueError('Invalid display name')

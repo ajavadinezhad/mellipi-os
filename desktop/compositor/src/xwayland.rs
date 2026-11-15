@@ -172,8 +172,15 @@ impl OrbitCompositor {
         surface: &X11Surface,
         mut geometry: Rectangle<i32, Logical>,
     ) -> Rectangle<i32, Logical> {
-        if let Some(area) = self
-            .x11_area(surface, false)
+        let area = self.space.outputs()
+            .find(|output| self.space.output_geometry(output).is_some_and(|rect| rect.contains(geometry.loc)))
+            .and_then(|output| {
+                let mut area = layer_map_for_output(output).non_exclusive_zone();
+                area.loc += self.space.output_geometry(output)?.loc;
+                Some(self.x11_window(surface).map_or(area, |(_, window)| crate::decoration::client_area(&window, area)))
+            })
+            .or_else(|| self.x11_area(surface, false));
+        if let Some(area) = area
             .filter(|r| r.size.w > 0 && r.size.h > 0)
         {
             let mut min = surface.min_size().unwrap_or((1, 1).into());
@@ -231,10 +238,8 @@ impl OrbitCompositor {
         let motion_from=self.window_rect(id);
         let mut motion_to=None;
         if maximized {
-            self.xwayland
-                .restore
-                .entry(id)
-                .or_insert(surface.geometry());
+            let restore = self.forget_snap(id, &window).unwrap_or(surface.geometry());
+            self.xwayland.restore.entry(id).or_insert(restore);
             if let Some(geometry) = self.x11_area(surface, fullscreen) {
                 if fullscreen {
                     let _ = surface.set_fullscreen(true);
@@ -246,12 +251,13 @@ impl OrbitCompositor {
                 motion_to=Some(geometry);
             }
         } else {
+            let snapped_restore = self.forget_snap(id, &window);
             if fullscreen {
                 let _ = surface.set_fullscreen(false);
             } else {
                 let _ = surface.set_maximized(false);
             }
-            if let Some(geometry) = self.xwayland.restore.remove(&id) {
+            if let Some(geometry) = self.xwayland.restore.remove(&id).or(snapped_restore) {
                 let geometry = self.bounded_x11_geometry(surface, geometry);
                 let _ = surface.configure(geometry);
                 self.position_x11(surface, geometry);
@@ -271,7 +277,7 @@ impl OrbitCompositor {
         let location = self
             .space
             .element_location(&window)
-            .map(|loc| (self.current_workspace, loc))
+            .map(|loc| (self.workspace_at(loc), loc))
             .or_else(|| {
                 self.workspaces
                     .iter()
@@ -297,11 +303,13 @@ impl OrbitCompositor {
         self.window_motions.active.remove(&id);
         if let Some((workspace, location)) = self.xwayland.minimized.remove(&id) {
             let _ = surface.set_suspended(false);
-            if workspace == self.current_workspace {
-                self.space.map_element(window, location, true);
+            if workspace == self.workspace_at(location) {
+                self.space.map_element(window.clone(), location, true);
+                self.place_restored_window(id, &window);
                 self.start_window_open(id);
             } else {
-                self.workspaces[workspace].map_element(window, location, false);
+                self.workspaces[workspace].map_element(window.clone(), location, false);
+                self.place_restored_window(id, &window);
             }
         }
         self.request_redraw();
@@ -318,6 +326,7 @@ impl OrbitCompositor {
                 self.windows.retain(|(other, _)| *other != id);
                 self.xwayland.restore.remove(&id);
                 self.normal_geometry.remove(&id);
+                self.snapped_windows.remove(&id);
             self.window_motions.active.remove(&id);
             self.window_motions.pending_open.remove(&id);
             }
@@ -372,7 +381,8 @@ impl XwmHandler for OrbitCompositor {
         }
         geometry = self.bounded_x11_geometry(&surface, geometry);
         let _ = surface.configure(geometry);
-        self.space.map_element(window, geometry.loc, true);
+        self.space.map_element(window.clone(), geometry.loc, true);
+        self.place_new_window(id, &window);
         if let Some(focus) = surface.wl_surface().filter(|_| !self.protocols.is_locked()) {
             self.seat.get_keyboard().unwrap().set_focus(
                 self,
@@ -389,6 +399,9 @@ impl XwmHandler for OrbitCompositor {
         self.request_redraw();
     }
     fn unmapped_window(&mut self, _xwm: XwmId, surface: X11Surface) {
+        if let Some((id, window)) = self.x11_window(&surface) {
+            self.forget_snap(id, &window);
+        }
         self.remove_x11(&surface, false);
         if !surface.is_override_redirect() {
             let _ = surface.set_mapped(false);
@@ -407,6 +420,11 @@ impl XwmHandler for OrbitCompositor {
         h: Option<u32>,
         _reorder: Option<Reorder>,
     ) {
+        if let Some((id, _)) = self.x11_window(&surface) {
+            if self.snapped_windows.contains_key(&id) {
+                return;
+            }
+        }
         let mut geometry = surface.geometry();
         if let Some(x) = x {
             geometry.loc.x = x;
@@ -432,6 +450,9 @@ impl XwmHandler for OrbitCompositor {
         geometry: Rectangle<i32, Logical>,
         _above: Option<u32>,
     ) {
+        let geometry = self.x11_window(&surface)
+            .filter(|(id, _)| self.snapped_windows.contains_key(id))
+            .map_or(geometry, |_| surface.geometry());
         self.position_x11(&surface, geometry);
     }
     fn maximize_request(&mut self, _xwm: XwmId, surface: X11Surface) {
@@ -525,15 +546,28 @@ impl OrbitCompositor {
         let Some(start_data) = pointer.grab_start_data() else {
             return;
         };
-        let Some((_, window)) = self.x11_window(&surface) else {
+        let Some((id, window)) = self.x11_window(&surface) else {
             return;
         };
-        if self.space.element_location(&window).is_none() {
+        if self.space.element_location(&window).is_none() || surface.is_fullscreen() {
             return;
         }
+        let initial_rect = surface.geometry();
+        let drag = if resize.is_none() {
+            let mut drag = crate::window_snap::DragSnap::new(initial_rect, start_data.location);
+            if let Some(rect) = drag.motion(self, &window, pointer.current_location()) {
+                let _ = surface.configure(rect);
+                self.position_x11(&surface, rect);
+            }
+            Some(drag)
+        } else {
+            self.forget_snap(id, &window);
+            None
+        };
         let grab = grab::X11SurfaceGrab {
             start_data,
-            initial_rect: surface.geometry(),
+            initial_rect,
+            drag,
             window: surface,
             resize,
             button: match button {
