@@ -2195,8 +2195,8 @@
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 15692,
-      "sha256": "cd73056e33584ef4df8e9f1927772a9a07455d6aff06380b1090bb0b45a18ae0"
+      "bytes": 16640,
+      "sha256": "30db9bcd0fbfef2a570def4eb3237629757acc3bd347a52b9baf7477f89f0cc8"
     },
     "site-config.json": {
       "bytes": 807,
@@ -9152,7 +9152,7 @@
     },
     "themes.json": {
       "bytes": 4083,
-      "sha256": "01ff41141ef2a918917b576f96cb003bb043fc1c43fd5caa577e6625f694044c"
+      "sha256": "2bb58909dd85d496ea5f5c19e7d01bddc6e872f6f29b5c43c63f277cba9e509d"
     }
   }
 }
