@@ -13,12 +13,12 @@ os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
 from PyQt6.QtCore import (
     QDateTime, QDir, QEvent, QItemSelectionModel, QLocale, QModelIndex, QMimeData,
-    QRect, QSettings, QSignalBlocker, QSize, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl, pyqtSignal,
+    QPoint, QRect, QSettings, QSignalBlocker, QSize, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl, pyqtSignal,
 )
 from PyQt6.QtGui import QAction, QFileSystemModel, QDesktopServices, QDrag, QFontMetrics, QIcon, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMainWindow, QMenu, QProgressBar, QPushButton, QStackedWidget, QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QMainWindow, QMenu, QProgressBar, QPushButton, QScrollArea, QStackedWidget, QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 from gi.repository import Gio
 from qt_app import style_dialog, ThemedInput, AppIdentityBadge, BASE_STYLE, ThemeWatch, apply_titlebar, original_icon, themed_prompt, widget_palette
@@ -466,6 +466,110 @@ class FolderView(QTreeView):
             painter.end()
 
 
+class FileActionsSheet(QWidget):
+    """A scrollable action popup confined to its file window on every backend."""
+
+    def __init__(self, parent, anchor, actions):
+        super().__init__(parent)
+        self.anchor, self.actions = anchor, actions
+        self.panel = QFrame(self, objectName='fileActionsSheet')
+        layout = QVBoxLayout(self.panel)
+        layout.setContentsMargins(4, 4, 4, 4)
+        self.scroll = QScrollArea(self.panel, widgetResizable=True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.body = QWidget(objectName='fileActionsBody')
+        self.rows = QVBoxLayout(self.body)
+        self.rows.setContentsMargins(0, 0, 0, 0)
+        self.rows.setSpacing(2)
+        self.scroll.setWidget(self.body)
+        layout.addWidget(self.scroll)
+        self.buttons = []
+        self.hide()
+
+    def open(self):
+        while self.rows.count():
+            widget = self.rows.takeAt(0).widget()
+            widget.hide()
+            widget.deleteLater()
+        self.buttons.clear()
+        separator = False
+        for action in self.actions:
+            if action is None:
+                separator = bool(self.buttons)
+                continue
+            if not action.isVisible():
+                continue
+            if separator:
+                divider = QFrame(objectName='fileActionSeparator')
+                divider.setFixedHeight(1)
+                self.rows.addWidget(divider)
+                separator = False
+            button = QPushButton(action.icon(), action.text(), objectName='fileActionItem')
+            shortcut = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+            if shortcut:
+                button.setToolTip(f'{action.text()} ({shortcut})')
+            button.setEnabled(action.isEnabled())
+            button.setCheckable(action.isCheckable())
+            if action.isCheckable():
+                button.setChecked(action.isChecked())
+            button.installEventFilter(self)
+            button.clicked.connect(lambda _checked=False, action=action: self.trigger(action))
+            self.rows.addWidget(button)
+            self.buttons.append(button)
+        self.place()
+        self.show()
+        self.raise_()
+        self.scroll.verticalScrollBar().setValue(0)
+        self.focus_row(0)
+
+    def place(self):
+        viewport = self.parentWidget()
+        self.setGeometry(viewport.rect())
+        self.rows.activate()
+        anchor = self.anchor.mapTo(viewport, QPoint(self.anchor.width(), self.anchor.height()))
+        width = max(1, min(viewport.width() - 16, max(240, self.rows.sizeHint().width() + 24)))
+        top = max(0, min(anchor.y() + 4, viewport.height() - 72))
+        height = max(1, min(viewport.height() - top - 8, self.rows.sizeHint().height() + 8))
+        left = max(0, min(anchor.x() - width, viewport.width() - width - 8))
+        self.panel.setGeometry(left, top, width, height)
+
+    def focus_row(self, step, current=None):
+        options = [row for row in self.buttons if row.isEnabled()]
+        if options:
+            index = (options.index(current) + step) % len(options) if current in options else 0
+            button = options[index]
+            button.setFocus()
+            self.scroll.ensureWidgetVisible(button, 0, 2)
+
+    def dismiss(self):
+        self.hide()
+        self.anchor.setFocus()
+
+    def trigger(self, action):
+        self.dismiss()
+        if action.isEnabled():
+            action.trigger()
+
+    def mousePressEvent(self, event):
+        if not self.panel.geometry().contains(event.position().toPoint()):
+            self.dismiss()
+        event.accept()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Escape:
+                self.dismiss()
+                return True
+            if event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+                forward = event.key() == Qt.Key.Key_Down or (
+                    event.key() == Qt.Key.Key_Tab
+                    and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
+                self.focus_row(1 if forward else -1, watched)
+                return True
+        return super().eventFilter(watched, event)
+
+
 class Files(QMainWindow):
     def __init__(self, initial):
         super().__init__()
@@ -688,27 +792,22 @@ class Files(QMainWindow):
             action.setProperty('symbolicIcon', icon)
             action.triggered.connect(callback)
             self.archive_actions.append(action)
-        menu = QMenu(self)
-        menu.addActions(self.actions)
-        menu.addSeparator()
-        menu.addActions(self.archive_actions)
-        menu.addSeparator()
         bookmark = QAction('Bookmark this folder', self)
         bookmark.setProperty('symbolicIcon', 'bookmark')
         bookmark.setIconVisibleInMenu(True)
         bookmark.setShortcut(QKeySequence('Ctrl+D'))
         bookmark.triggered.connect(lambda: self.add_bookmark(self.folder))
         self.addAction(bookmark)
-        menu.addAction(bookmark)
-        menu.addAction(self.storage_action('Analyze Storage…', self.analyze_current_folder))
-        menu.aboutToShow.connect(self.archive_selection_changed)
+        storage = self.storage_action('Analyze Storage…', self.analyze_current_folder)
         menu_icon = QIcon.fromTheme('open-menu-symbolic', QIcon.fromTheme('open-menu'))
         actions_button = QPushButton(menu_icon, '⋯' if menu_icon.isNull() else '')
         actions_button.setObjectName('navigation')
         actions_button.setProperty('symbolicIcon', 'open-menu')
         actions_button.setAccessibleName('File actions')
         actions_button.setToolTip('File actions')
-        actions_button.setMenu(menu)
+        self.action_sheet = FileActionsSheet(central, actions_button,
+            [*self.actions, None, *self.archive_actions, None, bookmark, storage])
+        actions_button.clicked.connect(self.open_file_actions)
         top.addWidget(actions_button)
         for shortcut, callback in (('Ctrl+L', self.edit_location), ('Ctrl+F', self.show_search)):
             action = QAction(self)
@@ -725,6 +824,10 @@ class Files(QMainWindow):
         count = self.proxy.rowCount(self.view.rootIndex())
         noun = 'match' if self.proxy.query else 'item'
         self.item_count.setText(f'{count} {noun}' + ('' if count == 1 else 'es' if noun == 'match' else 's'))
+
+    def open_file_actions(self):
+        self.archive_selection_changed()
+        self.action_sheet.open()
 
     def show_search(self):
         self.search.show()
@@ -775,20 +878,22 @@ class Files(QMainWindow):
         while self.crumb_layout.count():
             item = self.crumb_layout.takeAt(0)
             if item.widget():
+                item.widget().hide()
                 item.widget().deleteLater()
         home = Path.home()
         base = home if self.folder.is_relative_to(home) else Path('/')
         paths = [self.folder]
         while paths[-1] != base:
             paths.append(paths[-1].parent)
-        metrics = self.breadcrumbs.fontMetrics()
         current_font = self.breadcrumbs.font()
+        current_font.setPixelSize(self.theme_watch.tokens['font_size'])
+        metrics = QFontMetrics(current_font)
         current_font.setWeight(current_font.Weight.DemiBold)
         current_metrics = QFontMetrics(current_font)
         budget = max(40, self.address.width() - 8)
         separator_width = metrics.horizontalAdvance('›') + 6
-        overflow_icon_size = max(16, min(24, metrics.height()))
-        overflow_button_width = overflow_icon_size + 18
+        overflow_icon_size = 16
+        overflow_button_width = 26
         overflow_width = overflow_button_width + separator_width
 
         def label_width(path):
@@ -798,11 +903,15 @@ class Files(QMainWindow):
 
         # Keep the current folder before making room for nearby ancestors.
         # Anything that doesn't fit remains reachable through the overflow menu.
-        reserve = overflow_width if len(paths) > 1 else 0
+        # At minimum width, the existing Up action is more useful than two
+        # ellipses. Reserve space for a readable fragment of the current name.
+        readable = min(label_width(paths[0]), current_metrics.horizontalAdvance('MMMM…') + 9)
+        collapse_ancestors = len(paths) > 1 and budget - overflow_width < readable
+        reserve = overflow_width if len(paths) > 1 and not collapse_ancestors else 0
         current_width = min(label_width(paths[0]), max(28, budget - reserve))
         used = current_width
         count = 1
-        for path in paths[1:4]:
+        for path in ([] if collapse_ancestors else paths[1:4]):
             required = used + separator_width + label_width(path)
             reserve = overflow_width if count + 1 < len(paths) else 0
             if required + reserve > budget:
@@ -810,9 +919,9 @@ class Files(QMainWindow):
             used = required
             count += 1
         visible = list(reversed(paths[:count]))
-        if len(paths) > count:
+        if len(paths) > count and not collapse_ancestors:
             more = QPushButton(phosphor_icon('regular', 'dots-three', self.theme_watch.tokens['text']), '')
-            more.setObjectName('crumb')
+            more.setObjectName('crumbOverflow')
             more.setAccessibleName('Show parent folders')
             more.setToolTip('Show parent folders')
             more.setIconSize(QSize(overflow_icon_size, overflow_icon_size))
@@ -823,26 +932,32 @@ class Files(QMainWindow):
                 action.triggered.connect(lambda checked=False, target=path: self.navigate(target))
             more.setMenu(menu)
             self.crumb_layout.addWidget(more)
+            more.show()
         for path in visible:
             if self.crumb_layout.count():
                 separator = QLabel('›')
                 separator.setObjectName('crumbSeparator')
                 self.crumb_layout.addWidget(separator)
+                separator.show()
             title = 'Home' if path == home else path.name or '/'
             is_current = path == self.folder
             width = current_width if is_current else label_width(path)
             display = title
             if is_current and label_width(path) > width:
-                display = current_metrics.elidedText(title, Qt.TextElideMode.ElideRight, max(12, width - 14))
+                display = current_metrics.elidedText(title, Qt.TextElideMode.ElideRight, max(12, width - 9))
             button = self.button(display.replace('&', '&&'), lambda checked=False, target=path: self.navigate(target))
             button.setAccessibleName(title)
             button.setFixedWidth(width)
             button.setObjectName('currentCrumb' if path == self.folder else 'crumb')
             button.setToolTip(str(path))
             self.crumb_layout.addWidget(button)
+            button.show()
         self.crumb_layout.addStretch()
 
     def eventFilter(self, watched, event):
+        if (event.type() == QEvent.Type.Resize and watched is self.centralWidget()
+                and hasattr(self, 'action_sheet') and self.action_sheet.isVisible()):
+            self.action_sheet.place()
         if (event.type() == QEvent.Type.Resize and hasattr(self, 'theme_watch')
                 and watched is self.view.viewport()):
             self.update_list_columns()
@@ -1127,10 +1242,18 @@ class Files(QMainWindow):
             QMenu::item { padding: %(padding)spx 20px %(padding)spx 8px; }
             QWidget#breadcrumbs { background: %(surface)s;
                 border-radius: %(radius)spx; }
-            QPushButton#navigation, QPushButton#crumb, QPushButton#currentCrumb {
+            QPushButton#navigation, QPushButton#crumb, QPushButton#crumbOverflow, QPushButton#currentCrumb {
                 border: 0; border-bottom: 2px solid transparent; padding: 3px 5px; background: transparent; }
+            QPushButton#crumbOverflow { padding: 2px; }
+            QPushButton#crumbOverflow::menu-indicator { image: none; width: 0; }
             QPushButton#crumb { color: %(muted)s; }
-            QPushButton#currentCrumb { font-weight: 600; }
+            QPushButton#currentCrumb { font-weight: 600; padding-left: 3px; padding-right: 3px; text-align: left; }
+            QFrame#fileActionsSheet, QWidget#fileActionsBody { background: %(surface)s; }
+            QFrame#fileActionsSheet { border: 1px solid %(control_border)s; border-radius: %(radius)spx; }
+            QFrame#fileActionSeparator { background: %(separator)s; }
+            QPushButton#fileActionItem { text-align: left; padding: %(padding)spx 8px; }
+            QPushButton#fileActionItem:hover, QPushButton#fileActionItem:focus { background: %(selected_surface)s; }
+            QPushButton#fileActionItem:checked { border-left: 2px solid %(focus)s; }
             QPushButton#navigation:hover:enabled, QPushButton#crumb:hover, QPushButton#currentCrumb:hover { background: %(hover)s; }
             QPushButton#navigation:focus, QPushButton#crumb:focus, QPushButton#currentCrumb:focus, QPushButton#windowControl:focus { border-bottom: 2px solid %(focus)s; }
             QPushButton#windowControl { background: transparent; border: 0; padding: 2px; }

@@ -32,14 +32,19 @@ ScrollView {
             title: "Save destination"
             Text {
                 id: destination;objectName: "screenshotDestination"
-                text: Screenshots.state.destination || "";Layout.fillWidth: true;Layout.margins: 6
-                color: Theme.accentInk;font.pixelSize: Theme.fontSize(11);font.underline: true;wrapMode: Text.WrapAnywhere;textFormat: Text.PlainText
+                text: Screenshots.state.destination || "";Layout.fillWidth: true;Layout.minimumWidth: 0;Layout.margins: 6
+                color: Theme.accentInk;font.pixelSize: Theme.fontSize(11);font.underline: true;elide: Text.ElideMiddle;textFormat: Text.PlainText
                 activeFocusOnTab: true
                 Accessible.role: Accessible.Link;Accessible.name: "Open screenshots folder: "+text
                 Accessible.onPressAction: panel.openDestination()
                 Keys.onReturnPressed: panel.openDestination()
                 Keys.onSpacePressed: panel.openDestination()
-                MouseArea { anchors.fill: parent;cursorShape: Qt.PointingHandCursor;onClicked: panel.openDestination() }
+                MouseArea {
+                    anchors.fill: parent;hoverEnabled: true;cursorShape: Qt.PointingHandCursor
+                    onClicked: panel.openDestination()
+                    onEntered: if(destination.truncated)Orbit.queueItemTooltip(destination,destination.text,destination.width/2,destination.height)
+                    onExited: Orbit.hideTooltip()
+                }
             }
         }
         Text { text: "Capturing…";visible: Screenshots.state.busy;Layout.fillWidth: true;color: Theme.muted;font.pixelSize: Theme.fontSize(11) }

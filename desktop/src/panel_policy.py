@@ -93,7 +93,7 @@ def taskbar_overlay_layout(panel,screen,edge,body,content_size=None):
         edge_gap = min(16, limit // 2)
         clamped = max(edge_gap, min(m[index], limit - edge_gap))
         m = (*m[:index], clamped, *m[index+1:])
-    return dict(result,margins=m)
+    return dict(result,margins=tuple(round(value) for value in m))
 
 
 def workspace_drop_target(targets,x,y):

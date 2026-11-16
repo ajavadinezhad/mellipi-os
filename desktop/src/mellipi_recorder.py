@@ -13,7 +13,7 @@ os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt6.QtCore import QFile, QSignalBlocker, QStandardPaths, Qt, QTimer, QUrl
+from PyQt6.QtCore import QEvent, QFile, QSignalBlocker, QStandardPaths, Qt, QTimer, QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtMultimedia import (QAudio, QAudioFormat, QAudioOutput, QAudioSource,
                                 QMediaDevices, QMediaPlayer)
@@ -114,6 +114,34 @@ def saved_recordings(directory):
     return [path for _, path in sorted(rows, reverse=True)]
 
 
+class RecordingStatus(QLabel):
+    """Include wrapped status height in the window's layout minimum."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWordWrap(True)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+
+    def update_required_height(self):
+        if self.width() > 0:
+            height = self.heightForWidth(self.width()) if self.text() else 0
+            if height != self.minimumHeight():
+                self.setMinimumHeight(height)
+
+    def setText(self, text):
+        super().setText(text)
+        self.update_required_height()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_required_height()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self.update_required_height()
+
+
 class Recorder(AppWindow):
     extra_style = """
         QFrame#captureMeter { background: %(raised)s; border-radius: %(radius)dpx; }
@@ -138,6 +166,7 @@ class Recorder(AppWindow):
         self.inputs = QComboBox()
         self.inputs.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.inputs.setMinimumContentsLength(14)
+        self.inputs.setPlaceholderText('No microphone')
         label.setBuddy(self.inputs)
         self.inputs.setAccessibleName('Recording input')
         input_row.addWidget(self.inputs, 1)
@@ -210,10 +239,8 @@ class Recorder(AppWindow):
         library_actions.addWidget(self.trash_button)
         self.content.addLayout(library_actions)
 
-        self.status = QLabel()
+        self.status = RecordingStatus()
         self.status.setObjectName('muted')
-        self.status.setWordWrap(True)
-        self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.content.addWidget(self.status)
 
         self.player = QMediaPlayer(self)

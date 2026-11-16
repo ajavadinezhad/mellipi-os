@@ -284,7 +284,7 @@ Item {
         id: footer;visible: !frame.appBar && frame.section!=="spaces";objectName: "spineFooter"
         x: spine.horizontal ? Math.max(3,spine.width-width-8) : 2
         y: spine.horizontal ? 0 : spine.height-height-6
-        width: spine.horizontal ? footerIcons.width+8+clockGroup.naturalWidth : frame.thickness-4
+        width: spine.horizontal ? footerIcons.width+10+clockGroup.naturalWidth : frame.thickness-4
         height: spine.horizontal ? frame.thickness : footerIcons.height+clockGroup.height+14
         Rectangle {visible: !spine.horizontal;width: parent.width;height: 1;color: Theme.separator}
         Grid {
@@ -334,9 +334,6 @@ Item {
                 }
             }
         }
-        FontMetrics {id: clockMetrics;font: clockLabel.font}
-        FontMetrics {id: dateMetrics;font: dateLabel.font}
-        FontMetrics {id: batteryMetrics;font: batteryLabel.font}
         Rectangle {
             anchors.fill: clockGroup
             anchors.margins: -2
@@ -352,10 +349,16 @@ Item {
             z: 1
             cursorShape: Qt.PointingHandCursor
             onClicked: Orbit.launch("mellipi-calendar.desktop")
+            onEntered: if(!clockGroup.showDateRow && dateLabel.text)
+                Orbit.queueItemTooltip(clockGroup,dateLabel.text,clockGroup.width/2,clockGroup.height)
+            onExited: Orbit.hideTooltip()
         }
         Column {
             id: clockGroup;x: spine.horizontal ? footerIcons.width+10 : (parent.width-width)/2;y: spine.horizontal ? Math.round((frame.thickness-height)/2) : footerIcons.y+footerIcons.height+6
-            readonly property int naturalWidth: Math.ceil(Math.max(clockMetrics.advanceWidth(clockLabel.text),dateLabel.visible ? dateMetrics.advanceWidth(dateLabel.text) : 0,batteryLabel.visible ? batteryMetrics.advanceWidth(batteryLabel.text) : 0))+8
+            readonly property int naturalWidth: Math.ceil(Math.max(clockLabel.implicitWidth,
+                showDateRow ? dateLabel.implicitWidth : 0))+8
+            readonly property bool showDateRow: !!dateLabel.text && (!spine.horizontal ||
+                clockLabel.implicitHeight+dateLabel.implicitHeight+spacing <= frame.thickness-4)
             readonly property string batteryText: Power.state.batteryPresent || System.values.batteryPresent
                 ? (Power.state.percentageAvailable ? Power.state.batteryPercent : System.values.batteryPercent)+"%" : ""
             readonly property string dateText: Orbit.appearance.clockDate ? Qt.formatDateTime(spine.clockNow,"MMM d") : ""
@@ -367,14 +370,14 @@ Item {
             Accessible.onPressAction: Orbit.launch("mellipi-calendar.desktop")
             Keys.onReturnPressed: Orbit.launch("mellipi-calendar.desktop")
             Keys.onSpacePressed: Orbit.launch("mellipi-calendar.desktop")
-            Text {id: clockLabel;width: parent.width;fontSizeMode: spine.horizontal ? Text.FixedSize : Text.HorizontalFit;minimumPixelSize: 8;text: spine.horizontal && !Orbit.appearance.clock24 ? spine.clockText+" "+Qt.formatDateTime(spine.clockNow,"AP") : spine.clockText;font.pixelSize: Theme.detailSize;font.weight: Font.DemiBold;color: Theme.text;horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight}
+            Text {id: clockLabel;objectName: "spineClockLabel";width: parent.width;fontSizeMode: spine.horizontal ? Text.FixedSize : Text.HorizontalFit;minimumPixelSize: 8;text: spine.horizontal && !Orbit.appearance.clock24 ? spine.clockText+" "+Qt.formatDateTime(spine.clockNow,"AP") : spine.clockText;font.pixelSize: Theme.detailSize;font.weight: Font.DemiBold;color: Theme.text;horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight}
             Text {width: parent.width;visible: !spine.horizontal && !Orbit.appearance.clock24;text: Qt.formatDateTime(spine.clockNow,"AP");font.pixelSize: Math.round(10*Theme.textScale);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
             Text {
                 id: dateLabel
                 width: parent.width
                 fontSizeMode: spine.horizontal ? Text.FixedSize : Text.HorizontalFit
                 minimumPixelSize: 8
-                visible: text.length > 0
+                visible: clockGroup.showDateRow
                 text: spine.horizontal ? [clockGroup.dateText,clockGroup.batteryText].filter(Boolean).join(" · ") : clockGroup.dateText
                 font.pixelSize: Math.round(10*Theme.textScale)
                 color: Theme.muted

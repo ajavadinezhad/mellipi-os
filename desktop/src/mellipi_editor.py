@@ -13,7 +13,7 @@ import uuid
 from PyQt6.QtCore import QIODevice, QLockFile, QSaveFile, QSize, Qt, QTimer, QUrl
 from PyQt6.QtGui import QFontDatabase, QIcon, QKeySequence, QShortcut, QTextCursor, QTextOption
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QHBoxLayout, QLabel, QLineEdit,
     QPlainTextEdit, QPushButton, QSizePolicy, QTabWidget, QVBoxLayout, QWidget,
 )
 
@@ -117,7 +117,7 @@ class Editor(AppWindow):
                          border: 1px solid %(control_border)s; padding: 8px; }
         QPlainTextEdit:focus { border-color: %(focus)s; }
         QTabWidget::pane { border: 0; }
-        QCheckBox { color: %(text)s; }
+        QPushButton#editorMatchCase:checked { border-color: %(focus)s; }
     '''
 
     def __init__(self, paths=(), recovery=None):
@@ -130,7 +130,7 @@ class Editor(AppWindow):
         self.timer.setInterval(700)
         self.timer.timeout.connect(self.flush_drafts)
 
-        self.tabs = QTabWidget(documentMode=True, tabsClosable=True, movable=True)
+        self.tabs = QTabWidget(documentMode=True, movable=True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideMiddle)
         self.tabs.setAccessibleName('Open documents')
         self.tabs.tabCloseRequested.connect(self.close_tab)
@@ -158,7 +158,7 @@ class Editor(AppWindow):
         self.query.setAccessibleName('Find text')
         self.query.setMaxLength(4096)
         self.query.returnPressed.connect(self.find_next)
-        self.case = QCheckBox('Match case')
+        self.case = QPushButton('Match case', objectName='editorMatchCase', checkable=True)
         find_row.addWidget(self.query, 1)
         self.find_actions = QWidget()
         find_actions = QHBoxLayout(self.find_actions)
@@ -296,6 +296,7 @@ class Editor(AppWindow):
         doc.textChanged.connect(lambda: self.queue_draft(doc))
         doc.cursorPositionChanged.connect(self.update_position)
         index = self.tabs.addTab(doc, doc.name)
+        self.add_tab_close_button(self.tabs, index)
         self.tabs.setCurrentIndex(index)
         self.refresh_tab(doc)
         self.update_document_fonts()

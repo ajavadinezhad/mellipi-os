@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (QSizePolicy, QApplication, QHBoxLayout, QLabel,
 import icon_theme
 from app_palette import adjust_contrast
 from file_chooser import FileChooser
-from qt_app import AppWindow, symbolic_icon
+from qt_app import AppWindow, ElidingLabel, symbolic_icon
 
 MPRIS = 'org.mpris.MediaPlayer2'
 PLAYER = MPRIS + '.Player'
@@ -191,7 +191,8 @@ class Media(AppWindow):
         self.audio_output.setVolume(.7)
         self.player.setAudioOutput(self.audio_output)
 
-        self.header.addWidget(self.tool('document-open', 'Open media', self.choose))
+        self.open_button = self.tool('document-open', 'Open media', self.choose)
+        self.header.addWidget(self.open_button)
         self.queue_toggle = self.tool('view-list', 'Show queue (Ctrl+L)', self.toggle_queue)
         self.queue_toggle.setCheckable(True)
         self.header.addWidget(self.queue_toggle)
@@ -209,18 +210,18 @@ class Media(AppWindow):
         self.stage_icon.setObjectName('mediaStageIcon')
         self.stage_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status.addWidget(self.stage_icon, alignment=Qt.AlignmentFlag.AlignHCenter)
-        self.message = QLabel('Open an audio or video file')
+        self.message = ElidingLabel('Open an audio or video file')
         self.message.setObjectName('mediaStageTitle')
         self.message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.message.setTextFormat(Qt.TextFormat.PlainText)
-        self.message.setWordWrap(True)
         status.addWidget(self.message)
-        self.stage_detail = QLabel()
+        self.stage_detail = ElidingLabel()
         self.stage_detail.setObjectName('mediaStageDetail')
         self.stage_detail.setTextFormat(Qt.TextFormat.PlainText)
         self.stage_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status.addWidget(self.stage_detail)
         self.stage_open = QPushButton('Open media…')
+        self.stage_open.setObjectName('emptyStageAction')
         self.stage_open.clicked.connect(self.choose)
         status.addWidget(self.stage_open, alignment=Qt.AlignmentFlag.AlignHCenter)
         status.addStretch()
@@ -245,10 +246,13 @@ class Media(AppWindow):
         queue_layout.addLayout(queue_actions)
         self.queue_view = QListWidget()
         self.queue_view.setAccessibleName('Playback queue')
+        self.queue_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.queue_view.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.queue_view.setUniformItemSizes(True)
         self.queue_view.currentRowChanged.connect(self.update_queue_actions)
         self.queue_view.itemActivated.connect(lambda item: self.load(self.queue_view.row(item)))
         queue_layout.addWidget(self.queue_view, 1)
-        self.content.addWidget(self.queue_panel)
+        self.content.addWidget(self.queue_panel, 1)
         self.queue_panel.hide()
 
         seek_controls = QHBoxLayout()
@@ -334,6 +338,8 @@ class Media(AppWindow):
     def apply_control_metrics(self):
         scale = self.theme['text_scale']
         self.queue_panel.setMaximumHeight(round(160 + 45 * max(0, scale - 1)))
+        queue_row_height = self.queue_view.fontMetrics().height() + 2 * self.theme['padding']
+        self.queue_view.setMinimumHeight(2 * (queue_row_height + 1) + 2 * self.queue_view.frameWidth())
         badge = round(42 * min(1.25, scale))
         self.stage_icon.setFixedSize(badge, badge)
         self.message.setStyleSheet(f"font-size: {round(self.theme['font_size'] * 1.25)}px;")
@@ -568,7 +574,7 @@ class Media(AppWindow):
             self.stage.setCurrentWidget(self.summary)
             self.message.setText('Could not play this file')
             self.stage_detail.setText(self.player.errorString() or 'Media playback is unavailable.')
-            self.stage_detail.setWordWrap(True)
+            self.open_button.hide()
             self.stage_open.show()
 
     def publish(self, *_):
@@ -592,6 +598,7 @@ class Media(AppWindow):
         self.timeline.setEnabled(self.player.isSeekable())
         self.repeat_button.setEnabled(bool(self.path))
         playable = self.player.error() == QMediaPlayer.Error.NoError
+        self.open_button.setVisible(bool(self.path) and playable)
         self.stage.setCurrentWidget(self.video if playable and self.player.hasVideo() else self.summary)
         if self.path and playable:
             self.title.setText(self.current_title())

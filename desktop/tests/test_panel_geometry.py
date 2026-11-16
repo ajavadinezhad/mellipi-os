@@ -43,6 +43,12 @@ class TaskbarPopoverGeometryTest(unittest.TestCase):
                                                content_size=(width,height))
                     self.assertEqual(origin,dict(x=buffer['x']+mask['x'],y=buffer['y']+mask['y']))
 
+    def test_qt_fractional_sizes_clamp_to_integer_layer_margins(self):
+        bar = dict(x=-640,y=69,width=64,height=364)
+        layout = taskbar_overlay_layout('',self.screen,'left',bar,(420.0,382.5))
+        self.assertEqual(layout['margins'],(76,14,0,0))
+        self.assertTrue(all(type(value) is int for value in layout['margins']))
+
     def test_roomy_panel_stays_aligned_and_launcher_center_unchanged(self):
         bar = dict(x=-632,y=31,width=624,height=52)
         params = ('notifications',self.screen,'top',bar)

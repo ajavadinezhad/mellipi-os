@@ -12,7 +12,7 @@ os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
 from PyQt6.QtCore import Qt, QEvent, QPointF, QThread, QTimer
-from PyQt6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PyQt6.QtGui import QColor, QFontMetrics, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QHeaderView, QLabel,
                              QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
                              QWidget)
@@ -202,6 +202,7 @@ class Monitor(AppWindow):
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.header().setStretchLastSection(False)
         self.themeChanged.connect(self.update_columns)
+        self.themeChanged.connect(self.fit_metrics)
         self.update_columns()
         self.tree.sortItems(2, Qt.SortOrder.DescendingOrder)
         self.tree.itemSelectionChanged.connect(self.update_action)
@@ -230,6 +231,7 @@ class Monitor(AppWindow):
         value.setObjectName(kind + 'Value')
         value.setWordWrap(True)
         value.setAccessibleName(label + ' usage')
+        value.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         layout.addWidget(name)
         layout.addWidget(value)
         trend = UsageTrend(self, label)
@@ -237,12 +239,44 @@ class Monitor(AppWindow):
         return frame, value, trend
 
     def update_columns(self):
+        if not hasattr(self, 'tree'):
+            return
         header = self.tree.header()
         metrics = header.fontMetrics()
-        for column, sample in ((1, '4194304'), (2, '1000.0%'), (3, '999.9 GiB')):
+        samples = ('4194304', '1000.0%', '999.9 GiB')
+        minima = [metrics.horizontalAdvance(self.tree.headerItem().text(i)) + (25 if i == 2 else 14)
+                  for i in range(1, 4)]
+        ideal = [max(minimum, metrics.horizontalAdvance(sample) + 16)
+                 for minimum, sample in zip(minima, samples)]
+        width = min(self.tree.viewport().width(), self.width() - 20)
+        name_space = max(metrics.horizontalAdvance('Process') + 16, round(width * .31))
+        spare = max(0, width - name_space - sum(minima))
+        growth = sum(i - m for i, m in zip(ideal, minima))
+        for column, minimum, desired in zip(range(1, 4), minima, ideal):
+            extra = min(desired - minimum, spare * (desired - minimum) // max(1, growth))
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
-            header.resizeSection(column, metrics.horizontalAdvance(sample) + 24)
+            header.resizeSection(column, minimum + extra)
             self.tree.headerItem().setTextAlignment(column, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+    def fit_metrics(self):
+        if not hasattr(self, 'memory_value'):
+            return
+        # Cards are equal in width; reserve two lines when a reading cannot fit.
+        label = self.memory_value
+        font = label.font()
+        font.setPixelSize(self.theme['font_size'])
+        metrics = QFontMetrics(font)
+        width = max(1, (self.width() - 24) // 2 - 24)
+        needed = metrics.boundingRect(0, 0, width, 1000, Qt.TextFlag.TextWordWrap.value,
+                                      label.text()).height()
+        height = max(metrics.lineSpacing(), needed)
+        label.setMinimumHeight(height)
+        self.cpu_value.setMinimumHeight(height)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit_metrics()
+        self.update_columns()
 
     def eligible(self):
         return self.isVisible() and not self.isMinimized()
@@ -260,6 +294,8 @@ class Monitor(AppWindow):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self.fit_metrics()
+        self.update_columns()
         self.update_polling()
 
     def hideEvent(self, event):
@@ -310,6 +346,7 @@ class Monitor(AppWindow):
         self.cpu_value.setText(f'{load:.0f}%' if load is not None else '—')
         used = max(0, mem - available)
         self.memory_value.setText(f'{size_label(used)} / {size_label(mem)}')
+        self.fit_metrics()
         self.cpu_trend.record(now, load)
         self.memory_trend.record(now, min(100, 100 * used / mem) if mem > 0 else None)
         selected = self.selected_process()

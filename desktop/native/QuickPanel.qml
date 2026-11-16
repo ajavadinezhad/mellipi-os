@@ -245,7 +245,7 @@ ColumnLayout {
         }
         Text {
             visible:!level.available;Layout.fillWidth:true;text:level.unavailable;textFormat:Text.PlainText
-            color:Theme.muted;font.pixelSize:Theme.fontSize(10);wrapMode:Text.Wrap;maximumLineCount:2;elide:Text.ElideRight
+            color:Theme.muted;font.pixelSize:Theme.fontSize(10);wrapMode:Text.Wrap
         }
     }
 }

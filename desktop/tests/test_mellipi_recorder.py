@@ -11,6 +11,7 @@ from PyQt6.QtMultimedia import QMediaPlayer
 from PyQt6.QtWidgets import QApplication
 
 from mellipi_recorder import Recorder, Recording, level, saved_recordings
+from preferences import Preferences
 
 
 class RecordingTest(unittest.TestCase):
@@ -129,3 +130,18 @@ class RecordingLibraryTest(unittest.TestCase):
         self.assertTrue(self.newer.exists())
         self.assertEqual(self.window.selected_recording(), self.newer)
         self.assertIn('Could not', self.window.status.text())
+
+    def test_long_status_keeps_recording_actions_below_list_at_large_text(self):
+        preferences = Preferences(self.root / 'appearance.json')
+        preferences.apply_theme('cobalt')
+        preferences.update({'highContrast': True, 'textScale': 1.5, 'density': 'extra'})
+        self.window.theme_watch.path = preferences.path
+        self.window.theme_watch.reload()
+        self.window.status.setText('Could not save recording. Check the name and folder permissions.')
+        self.window.resize(430, 390)
+        self.window.show()
+        for _ in range(4):
+            self.app.processEvents()
+        self.assertGreater(self.window.status.height(), self.window.status.fontMetrics().height())
+        self.assertFalse(self.window.library.geometry().intersects(self.window.rename_button.geometry()))
+        self.assertFalse(self.window.library.geometry().intersects(self.window.trash_button.geometry()))

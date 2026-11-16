@@ -10,7 +10,7 @@ os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 from PyQt6.QtCore import QSize, QSignalBlocker, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QShortcut, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
-    QApplication, QBoxLayout, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QBoxLayout, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
     QProgressBar, QPushButton, QSizePolicy, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -93,25 +93,23 @@ class SoftwareWindow(AppWindow):
         self.search_button.clicked.connect(self.start_search)
         toolbar.addWidget(self.search_button)
         layout.addLayout(toolbar)
-        filters = QHBoxLayout()
-        filters.addWidget(self.source)
+        self.filters = QGridLayout()
+        self.filters_are_stacked = None
         self.installed_button = QPushButton('Installed only')
         self.installed_button.setObjectName('installedFilter')
         self.installed_button.setCheckable(True)
         self.installed_button.setToolTip('View what is already installed on this computer')
         self.installed_button.toggled.connect(self.change_view)
-        filters.addWidget(self.installed_button)
-        self.category = QComboBox()
+        self.category = QComboBox(self)
         self.category.setAccessibleName('Browse system apps by category')
         self.category.setToolTip('Browse apps from the local system package catalog')
         self.category.addItem('Categories', '')
         for key, name in BROWSE_CATEGORIES.items():
             self.category.addItem(name, key)
-        self.category.setVisible(executable(APPSTREAM_CLI))
+        self.category_available = executable(APPSTREAM_CLI)
+        self.category.setVisible(self.category_available)
         self.category.currentIndexChanged.connect(self.change_category)
-        filters.addWidget(self.category)
-        filters.addStretch(1)
-        layout.addLayout(filters)
+        layout.addLayout(self.filters)
         self.search_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
         self.search_shortcut.activated.connect(self.query.setFocus)
 
@@ -216,6 +214,27 @@ class SoftwareWindow(AppWindow):
         # Use actual font metrics, so large text gets the narrower layout
         # earlier without guessing from the physical screen resolution.
         wide = self.width() >= max(600, self.fontMetrics().horizontalAdvance('Mellipi Software') * 5)
+        combo_controls = (self.source, self.category) if self.category_available else (self.source,)
+        combo_widths = []
+        for combo in combo_controls:
+            # The themed dropdown reserves both input padding and a separate arrow column.
+            label_width = max(combo.fontMetrics().horizontalAdvance(combo.itemText(i)) for i in range(combo.count()))
+            width = label_width + 64
+            combo.setMinimumWidth(width)
+            combo_widths.append(width)
+        stacked = sum(combo_widths) + self.installed_button.sizeHint().width() + 42 > self.width()
+        if self.filters_are_stacked is not stacked:
+            self.filters_are_stacked = stacked
+            for control in (self.source, self.installed_button, self.category):
+                self.filters.removeWidget(control)
+            self.filters.addWidget(self.source, 0, 0)
+            self.filters.addWidget(self.category, 0, 1 if stacked else 2)
+            self.filters.addWidget(self.installed_button, 1 if stacked else 0, 0 if stacked else 1,
+                                   alignment=Qt.AlignmentFlag.AlignLeft)
+            self.filters.setColumnStretch(3, 1)
+            first, last = (self.category, self.installed_button) if stacked else (self.installed_button, self.category)
+            self.setTabOrder(self.source, first)
+            self.setTabOrder(first, last)
         direction = QBoxLayout.Direction.LeftToRight if wide else QBoxLayout.Direction.TopToBottom
         self.detail_layout.setDirection(direction)
         self.source_layout.setDirection(direction)

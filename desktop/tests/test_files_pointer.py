@@ -61,3 +61,31 @@ class FilesPointerTests(unittest.TestCase):
                 first_window.close()
                 second_window.close()
                 self.application.processEvents()
+
+    def test_file_actions_are_owner_bounded_and_keyboard_traversable(self):
+        with TemporaryDirectory() as directory:
+            window = Files(Path(directory))
+            try:
+                window.resize(494, 240)
+                window.show()
+                QTest.qWait(60)
+                window.open_file_actions()
+                QTest.qWait(30)
+                overlay = window.action_sheet
+                rows = [row for row in overlay.buttons if row.isEnabled()]
+                self.assertIs(self.application.focusWidget(), rows[0])
+                self.assertTrue(window.centralWidget().rect().contains(overlay.panel.geometry()))
+                self.assertGreater(overlay.scroll.verticalScrollBar().maximum(), 0)
+                QTest.keyClick(rows[0], Qt.Key.Key_Backtab)
+                self.assertIs(self.application.focusWidget(), rows[-1])
+                QTest.keyClick(rows[-1], Qt.Key.Key_Tab)
+                self.assertIs(self.application.focusWidget(), rows[0])
+                window.resize(530, 230)
+                QTest.qWait(30)
+                self.assertTrue(window.centralWidget().rect().contains(overlay.panel.geometry()))
+                QTest.keyClick(rows[0], Qt.Key.Key_Escape)
+                self.assertFalse(overlay.isVisible())
+                self.assertIs(self.application.focusWidget(), overlay.anchor)
+            finally:
+                window.close()
+                self.application.processEvents()

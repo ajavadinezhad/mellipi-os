@@ -102,6 +102,7 @@ class TerminalWindow(Gtk.Window):
         self.add(content)
         self._search_terminal = None
         self._search_matched = False
+        self._search_retry = None
         self.search_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.NONE)
         self.search_bar = Gtk.Grid(column_spacing=6, row_spacing=4)
         self.search_bar.get_style_context().add_class('terminal-search')
@@ -226,6 +227,7 @@ class TerminalWindow(Gtk.Window):
                 border: 0; box-shadow: none; border-radius: %(radius)dpx;
             }
             menu, messagedialog { background: %(surface)s; color: %(text)s; }
+            messagedialog label, messagedialog button { font-size: %(label_size)dpx; }
             messagedialog .title { color: %(accent_ink)s; }
             messagedialog button {
                 background: %(selected_surface)s; color: %(accent_ink)s;
@@ -262,6 +264,10 @@ class TerminalWindow(Gtk.Window):
             .terminal-search entry:focus, .terminal-search button:focus { border-color: %(focus)s; }
             .terminal-search button:hover { background: %(hover)s; }
             .terminal-search entry selection { background: %(accent)s; color: %(accent_text)s; }
+            .terminal-search check { background: %(surface)s; color: %(text)s;
+                                     border: 1px solid %(search_border)s; border-radius: %(radius)dpx; }
+            .terminal-search check:checked { background: %(accent)s; color: %(accent_text)s; }
+            .terminal-search checkbutton:focus check { border-color: %(focus)s; }
         ''' % dict(palette, padding=pad, radius=radius, identity_bg=identity_bg, header_height=header_height,
                    label_size=round(14*prefs['textScale']), search_height=max(28, round(22*prefs['textScale'])),
                    search_border=palette['control_border'])).encode())
@@ -314,6 +320,7 @@ class TerminalWindow(Gtk.Window):
         tab = Gtk.Box(spacing=6)
         label = Gtk.Label(xalign=0)
         label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        label.set_width_chars(6)
         label.set_max_width_chars(24)
         close = Gtk.Button.new_from_icon_name('window-close-symbolic', Gtk.IconSize.MENU)
         page.mellipi_close_button = close
@@ -329,6 +336,7 @@ class TerminalWindow(Gtk.Window):
             close.get_accessible().set_name(f'Close {name} tab')
 
         terminal.connect('notify::current-directory-uri', update_tab)
+        terminal.connect('contents-changed', self.retry_search_on_output)
         update_tab()
         tab.pack_start(label, True, True, 0)
         tab.pack_start(close, False, False, 0)
@@ -475,6 +483,20 @@ class TerminalWindow(Gtk.Window):
         self._search_matched = found
         self.search_status.set_text('' if found else 'No match')
         return found
+
+    def retry_search_on_output(self, terminal):
+        # Coalesce streaming output and preserve the selected match. Only a
+        # search showing "No match" can gain a first result here.
+        if terminal is not self._search_terminal or self._search_matched or self._search_retry is not None:
+            return
+
+        def retry():
+            self._search_retry = None
+            if terminal is self._search_terminal and not self._search_matched:
+                self.find_match(False)
+            return GLib.SOURCE_REMOVE
+
+        self._search_retry = GLib.timeout_add(120, retry)
 
     def search_key_pressed(self, _entry, event):
         if event.keyval == Gdk.KEY_Escape:

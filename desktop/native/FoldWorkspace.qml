@@ -92,7 +92,7 @@ Item {
             Rectangle {width: 5;height: 5;rotation: 45;color: Theme.accent}
             Text {text: fold.windowCount;color: Theme.muted;font.pixelSize: Theme.fontSize(10);Layout.rightMargin: 4}
             Item {Layout.fillWidth: true}
-            Text {text: fold.view==="work" ? "Saved locally" : "Enter to open · Right-click for actions";color: Theme.faint;font.pixelSize: Theme.fontSize(10);elide: Text.ElideRight;Layout.maximumWidth: fold.narrow ? 120 : 200}
+            Text {text: fold.view==="work" ? "Saved locally" : Theme.textScale>1.25 ? "Enter · Right-click" : "Enter to open · Right-click for actions";color: Theme.faint;font.pixelSize: Theme.fontSize(10);elide: Text.ElideRight;Layout.maximumWidth: fold.narrow ? 120 : 200}
         }
     }
 }

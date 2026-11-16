@@ -1,15 +1,37 @@
 """Shared, live Mellipi appearance for Qt Widgets applications."""
 from pathlib import Path
 from functools import lru_cache
+from html import escape
 
-from PyQt6.QtCore import QFileSystemWatcher, QPoint, Qt, pyqtSignal, QObject
+from PyQt6.QtCore import QFileSystemWatcher, QPoint, QSize, QTemporaryDir, Qt, pyqtSignal, QObject
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPalette
-from PyQt6.QtWidgets import QApplication, QAbstractButton, QDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QAbstractButton, QDialog, QDialogButtonBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QPushButton, QSizePolicy, QTabBar, QToolButton, QVBoxLayout, QWidget
 
 from app_palette import HEADER_HEIGHTS, colors, identity_appearance
 from installed_launcher import user_environment
 from preferences import Preferences
 from qt_titlebar import TitleBar
+
+
+@lru_cache(maxsize=1)
+def _stepper_icon_directory():
+    return QTemporaryDir()
+
+
+def _stepper_icon(direction, color):
+    # Qt stylesheets require a URL for subcontrol images.
+    directory = _stepper_icon_directory()
+    if not directory.isValid():
+        return ''
+    ink = QColor(color).name()
+    target = Path(directory.path()) / f'{direction}-{ink[1:]}.svg'
+    if not target.exists():
+        points = '2,5 5,2 8,5' if direction == 'up' else '2,2 5,5 8,2'
+        try:
+            target.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="7" viewBox="0 0 10 7"><polyline points="{points}" fill="none" stroke="{ink}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+        except OSError:
+            return ''
+    return target.as_posix()
 
 
 class ThemeWatch(QObject):
@@ -44,6 +66,10 @@ class ThemeWatch(QObject):
                            input_edge=palette['control_border'] if prefs['highContrast'] else palette['border'],
                            radius={'square': 0, 'soft': 4, 'rounded': 8}[prefs['corners']],
                            padding={'comfortable': 8, 'compact': 6, 'extra': 4}[prefs['density']])
+        self.tokens.update(step_up=_stepper_icon('up', palette['text']),
+                           step_down=_stepper_icon('down', palette['text']),
+                           step_up_disabled=_stepper_icon('up', palette['faint']),
+                           step_down_disabled=_stepper_icon('down', palette['faint']))
         if self.tokens != self.signature:
             self.signature = self.tokens
             self.changed.emit()
@@ -154,6 +180,25 @@ BASE_STYLE = '''
     QComboBox { padding-right: 28px; }
     QComboBox::drop-down {
         subcontrol-origin: padding; subcontrol-position: top right; width: 24px; }
+    QAbstractSpinBox { padding-right: 25px; }
+    QAbstractSpinBox::up-button, QAbstractSpinBox::down-button, QDateTimeEdit::drop-down {
+        subcontrol-origin: padding; width: 22px; background: transparent;
+        border-left: 1px solid %(separator)s;
+    }
+    QAbstractSpinBox::up-button { subcontrol-position: top right; }
+    QAbstractSpinBox::down-button { subcontrol-position: bottom right; }
+    QDateTimeEdit::drop-down { subcontrol-position: top right; }
+    QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover,
+    QDateTimeEdit::drop-down:hover { background: %(hover)s; }
+    QAbstractSpinBox::up-arrow { image: url("%(step_up)s"); width: 10px; height: 7px; }
+    QAbstractSpinBox::down-arrow, QDateTimeEdit::down-arrow {
+        image: url("%(step_down)s"); width: 10px; height: 7px;
+    }
+    QAbstractSpinBox::up-arrow:disabled, QAbstractSpinBox::up-arrow:off {
+        image: url("%(step_up_disabled)s");
+    }
+    QAbstractSpinBox::down-arrow:disabled, QAbstractSpinBox::down-arrow:off,
+    QDateTimeEdit::down-arrow:disabled { image: url("%(step_down_disabled)s"); }
     QComboBox QAbstractItemView {
         background: %(raised)s; color: %(text)s; border: 1px solid %(input_edge)s;
         border-radius: %(radius)dpx; padding: 3px; outline: 0;
@@ -174,6 +219,9 @@ BASE_STYLE = '''
         border-bottom: 2px solid transparent; }
     QTabBar::tab:selected { background: %(selected_surface)s; color: %(text)s; border-bottom-color: %(focus)s; }
     QTabBar::tab:focus { border-bottom-color: %(focus)s; }
+    QToolButton#mellipiTabClose { background: transparent; border: 1px solid transparent; padding: 1px; }
+    QToolButton#mellipiTabClose:hover { background: %(hover)s; }
+    QToolButton#mellipiTabClose:focus { border-color: %(focus)s; }
     QAbstractItemView:focus { border: 1px solid %(focus)s; }
     QAbstractItemView { background: %(surface)s; color: %(text)s;
         alternate-background-color: %(raised)s; border: %(outline_width)dpx solid %(control_border)s;
@@ -228,7 +276,31 @@ class ThemedInput:
 
     @classmethod
     def getText(cls, parent, title, label, *, text=''):
-        return cls._ask(parent, title, label, lambda d: d.setTextValue(text), lambda d: d.textValue())
+        dialog = style_dialog(QDialog(parent), parent)
+        dialog.setWindowTitle(title)
+        layout = QVBoxLayout(dialog)
+        prompt = QLabel(label, dialog)
+        layout.addWidget(prompt)
+        field = QLineEdit(text, dialog)
+        prompt.setBuddy(field)
+        layout.addWidget(field)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setProperty('mellipiPrimary', True)
+        layout.addWidget(buttons)
+        dialog.ensurePolished()
+        field.ensurePolished()
+        available = parent.screen().availableGeometry().width()
+        ideal = max(300, field.fontMetrics().horizontalAdvance(text) + 48)
+        dialog.resize(max(1, min(ideal, max(300, parent.width() - 32), available - 32)), dialog.sizeHint().height())
+        field.selectAll()
+        field.setFocus()
+        try:
+            accepted = exec_owned_dialog(dialog) == QDialog.DialogCode.Accepted
+            return field.text() if accepted else None, accepted
+        finally:
+            dialog.deleteLater()
 
     @classmethod
     def getMultiLineText(cls, parent, title, label):
@@ -336,6 +408,34 @@ class AppIdentityBadge(QLabel):
         self.setStyleSheet(f'background: {badge}; border-radius: {tokens["radius"]}px;')
 
 
+class ElidingLabel(QLabel):
+    """A plain-text, single-line label that keeps the full accessible name."""
+
+    def __init__(self, text=''):
+        super().__init__(text)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setToolTip(self._tooltip(text))
+
+    @staticmethod
+    def _tooltip(text):
+        return f'<span>{escape(text)}</span>' if text else ''
+
+    def setText(self, text):
+        super().setText(text)
+        self.setToolTip(self._tooltip(text))
+
+    def paintEvent(self, event):
+        body = self.contentsRect()
+        body.adjust(self.margin(), self.margin(), -self.margin(), -self.margin())
+        if body.isEmpty():
+            return
+        painter = QPainter(self)
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        painter.drawText(body, self.alignment().value | Qt.TextFlag.TextSingleLine.value,
+                         self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, body.width()))
+
+
 class AppWindow(QMainWindow):
     themeChanged = pyqtSignal()
     extra_style = ''
@@ -353,7 +453,7 @@ class AppWindow(QMainWindow):
         self.identity_name = title
         self.identity_badge = AppIdentityBadge(self)
         self.header.addWidget(self.identity_badge)
-        self.title = QLabel(title)
+        self.title = ElidingLabel(title)
         self.title.setObjectName('windowTitle')
         self.header.addWidget(self.title, 1)
         self.titlebar = TitleBar(self, self.header)
@@ -406,3 +506,28 @@ class AppWindow(QMainWindow):
             name = button.property('mellipiSymbolicIcon')
             if name:
                 button.setIcon(symbolic_icon(name, self.theme['accent_ink']))
+            if button.objectName() == 'mellipiTabClose':
+                self.style_tab_close_button(button)
+
+    def style_tab_close_button(self, button):
+        side = round(22 * self.theme['text_scale'])
+        glyph = round(13 * self.theme['text_scale'])
+        button.setFixedSize(side, side)
+        button.setIconSize(QSize(glyph, glyph))
+        button.setIcon(symbolic_icon('window-close', self.theme['accent_ink']))
+
+    def add_tab_close_button(self, tabs, index):
+        page = tabs.widget(index)
+        bar = tabs.tabBar()
+        button = QToolButton(bar, objectName='mellipiTabClose')
+        button.setAccessibleName('Close tab')
+        button.setToolTip('Close tab')
+        self.style_tab_close_button(button)
+
+        def request_close():
+            current = tabs.indexOf(page)
+            if current >= 0:
+                tabs.tabCloseRequested.emit(current)
+
+        button.clicked.connect(request_close)
+        bar.setTabButton(index, QTabBar.ButtonPosition.RightSide, button)

@@ -38,8 +38,14 @@ QtObject {
     readonly property bool foldPanel: foldStyle && (renderedPanel === "launcher" || renderedPanel === "overview")
     property int panelWidth: ({launcher:workspacePanelWidth,overview:workspacePanelWidth,ai:workspacePanelWidth,settings:420,"system-settings":600,capture:520,quick:350,music:350,usage:350,notifications:380,tray:310,bluetooth:380,battery:380,screenshot:380,"window-capture":500,"window-placement":270,"session-exit":460,switcher:620})[shell.renderedPanel] || 560
     readonly property bool panelRight: !foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
-    readonly property int panelBodyWidth: Math.max(1,Math.min(sw-(foldStyle ? (systemSheet || horizontalBar ? 32 : Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0)) : 24),panelWidth,760))
-    readonly property int panelBodyHeight: Math.max(1,Math.min(sh-(foldStyle ? (systemSheet ? 74 : horizontalBar ? Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0) : 32) : foldPanel ? (Theme.compact ? 144 : 172) : 100),panelHeight,620))
+    // Keep centered overlays centered on the output while protecting both
+    // sides equally. A side taskbar or either top strip stays clickable.
+    readonly property int taskbarReserve: Theme.barThickness+(Orbit.appearance.taskbarFloating ? 16 : 0)
+    readonly property bool keepPanelCentered: foldStyle && centeredPanel
+    readonly property int centeredHorizontalMargin: 2*(10+(horizontalBar ? 0 : taskbarReserve))
+    readonly property int centeredVerticalMargin: 2*(8+Math.max(46,horizontalBar ? taskbarReserve : 0))
+    readonly property int panelBodyWidth: Math.max(1,Math.min(sw-(keepPanelCentered ? centeredHorizontalMargin : foldStyle ? (systemSheet || horizontalBar ? 32 : taskbarReserve+28) : 24),panelWidth,760))
+    readonly property int panelBodyHeight: Math.max(1,Math.min(sh-(keepPanelCentered ? centeredVerticalMargin : foldStyle ? (systemSheet ? 74 : horizontalBar ? taskbarReserve+28 : 32) : foldPanel ? (Theme.compact ? 144 : 172) : 100),panelHeight,620))
     onPanelBodyWidthChanged: queuePanelGeometry()
     onPanelBodyHeightChanged: queuePanelGeometry()
     property int panelHeight: {

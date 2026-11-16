@@ -1375,7 +1375,7 @@ class Bridge(QObject):
     def panelContentSize(self):
         window=getattr(self,'panelWindow',None)
         size=window.property('orbitPanelContentSize') if window else None
-        if size is not None and size.width()>0 and size.height()>0:return size.width(),size.height()
+        if size is not None and size.width()>0 and size.height()>0:return round(size.width()),round(size.height())
         return None
     @Slot(str)
     def positionPanel(self,name):

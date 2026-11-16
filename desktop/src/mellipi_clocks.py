@@ -68,12 +68,14 @@ class ClockPage(QWidget):
         self.state = ClockState()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.refresh)
-        layout = QVBoxLayout(self)
+        layout = self.clock_layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         self.tabs = QTabWidget()
         self.tabs.setAccessibleName('Clock tools')
         layout.addWidget(self.tabs, 1)
 
+        self.tab_layouts = []
+        self.display_layout = None
         timer, self.timer_label = self._tab('Timer', 'Timer remaining')
         row = QHBoxLayout()
         self.minutes = QSpinBox()
@@ -114,6 +116,19 @@ class ClockPage(QWidget):
         self.tabs.currentChanged.connect(self.refresh)
         self.refresh()
 
+    def fit_display(self, font_size, compact):
+        if self.display_layout == (font_size, compact):
+            return
+        self.display_layout = (font_size, compact)
+        outer_margin, tab_margin = (2, 4) if compact else (8, 9)
+        self.clock_layout.setContentsMargins(outer_margin, outer_margin, outer_margin, outer_margin)
+        for tab in self.tab_layouts:
+            tab.setContentsMargins(tab_margin, tab_margin, tab_margin, tab_margin)
+            tab.setSpacing(3 if compact else 6)
+        for label, multiplier in ((self.timer_label, 3), (self.alarm_label, 2), (self.stopwatch_label, 3)):
+            size = round(font_size * (multiplier * .72 if compact else multiplier))
+            label.setStyleSheet(f'font-size: {size}px;')
+
     @staticmethod
     def _next_minute():
         now = QDateTime.currentDateTime()
@@ -122,6 +137,7 @@ class ClockPage(QWidget):
     def _tab(self, title, accessible):
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        self.tab_layouts.append(layout)
         layout.addStretch(1)
         label = QLabel()
         label.setObjectName('clockValue')

@@ -33,6 +33,15 @@ class ExpressionField(QLineEdit):
         super().keyPressEvent(event)
 
 
+class FeedbackLabel(QLabel):
+    def setText(self, text):
+        super().setText(text)
+        self.setVisible(bool(text))
+
+    def clear(self):
+        self.setText('')
+
+
 class Calculator(AppWindow):
     extra_style = """
         QLineEdit#expression { padding: 12px; }
@@ -70,13 +79,14 @@ class Calculator(AppWindow):
         self.field.returnPressed.connect(self.evaluate)
         self.controls.addWidget(self.field)
 
-        self.feedback = QLabel()
+        self.feedback = FeedbackLabel()
         self.feedback.setObjectName('calculationFeedback')
         self.feedback.setTextFormat(Qt.TextFormat.PlainText)
         self.feedback.setWordWrap(True)
-        self.feedback.setMinimumHeight(32)
+        self.feedback.hide()
         self.controls.addWidget(self.feedback)
-        grid = QGridLayout()
+        self.compact_keypad = None
+        grid = self.keypad_grid = QGridLayout()
         grid.setSpacing(6)
         for column in range(4):
             grid.setColumnStretch(column, 1)
@@ -236,6 +246,17 @@ class Calculator(AppWindow):
         self.last_expression = ''
         self.history_selection_changed()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'keypad_grid'):
+            compact = self.height() < 380
+            if self.compact_keypad is compact:
+                return
+            self.compact_keypad = compact
+            self.keypad_grid.setVerticalSpacing(3 if compact else 6)
+            self.controls.setSpacing(4 if compact else 6)
+            self.refresh_display()
+
     def refresh_display(self):
         scale = self.theme['text_scale']
         font = QFont(self.field.font())
@@ -245,9 +266,9 @@ class Calculator(AppWindow):
         height_font = QFont(font)
         height_font.setPixelSize(round(36 * scale))
         # Reserve the display height so evaluating never shifts the number pad.
-        self.field.setMinimumHeight(max(56, QFontMetrics(height_font).height() + 26))
+        self.field.setMinimumHeight(max(56, QFontMetrics(height_font).height() + (10 if self.height() < 380 else 26)))
         ink = self.theme['accent_ink'] if self.showing_result else self.theme['text']
-        self.field.setStyleSheet(f'font-size: {font.pixelSize()}px; font-weight: {font.weight()}; color: {ink};')
+        self.field.setStyleSheet(f'padding: {4 if self.height() < 380 else 12}px; font-size: {font.pixelSize()}px; font-weight: {font.weight()}; color: {ink};')
 
     def refresh_type(self):
         self.refresh_display()

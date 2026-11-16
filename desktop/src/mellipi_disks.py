@@ -119,6 +119,9 @@ class DriveDetails(QDialog):
                 field.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse |
                                               Qt.TextInteractionFlag.TextSelectableByKeyboard)
                 field.setAccessibleName(name)
+                # A wrapped cell must have at least one full line at the active text scale.
+                for cell in (key, field):
+                    cell.setMinimumHeight(round(owner.theme['font_size'] * 1.45))
                 grid.addWidget(key, index, 0, Qt.AlignmentFlag.AlignTop)
                 grid.addWidget(field, index, 1, Qt.AlignmentFlag.AlignTop)
             groups.addLayout(grid)
@@ -139,9 +142,10 @@ class DriveDetails(QDialog):
         result.setObjectName(style)
         result.setTextFormat(Qt.TextFormat.PlainText)
         result.setWordWrap(True)
-        result.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        if style == 'muted':
-            result.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        policy = result.sizePolicy()
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Preferred if style == 'muted' else QSizePolicy.Policy.Ignored)
+        policy.setVerticalPolicy(QSizePolicy.Policy.Minimum)
+        result.setSizePolicy(policy)
         return result
 
 

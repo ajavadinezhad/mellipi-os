@@ -366,7 +366,10 @@ ColumnLayout {
         Keys.onUpPressed: {if(currentIndex<=0){search.forceActiveFocus();event.accepted=true;}else event.accepted=false;}
         delegate: Rectangle {
             id: result;objectName: "unifiedResult";required property var modelData;required property int index
-            width: resultsList.width;height: Math.max(Theme.extraCompact ? 44 : Theme.compact ? 56 : 64, Theme.labelSize + Theme.detailSize + 18);radius: Theme.corner(5)
+            readonly property int rowInset: Theme.extraCompact ? 6 : Theme.compact ? 9 : 12
+            width: resultsList.width
+            height: Math.max(Theme.extraCompact ? 44 : Theme.compact ? 56 : 64, Math.ceil(resultContent.implicitHeight)+2*rowInset)
+            radius: Theme.corner(5)
             color: resultsList.currentIndex===index ? Theme.selectedSurface : hit.containsMouse ? Theme.hover : "transparent"
             border.color: Theme.focusColor
             border.width: resultsList.activeFocus && resultsList.currentIndex===index ? 1 : 0
@@ -378,7 +381,7 @@ ColumnLayout {
                 onClicked: mouse => {resultsList.currentIndex=index;if(mouse.button===Qt.RightButton){if(modelData.kind!=="action" && modelData.kind!=="calculation")Orbit.openPanelContext(hit,modelData.kind==="task" ? "app" : modelData.kind,modelData.id,mouse.x,mouse.y);}else launcher.activate(modelData);}
             }
             RowLayout {
-                anchors.fill: parent;anchors.margins: Theme.extraCompact ? 6 : Theme.compact ? 9 : 12;spacing: Theme.extraCompact ? 7 : 10
+                id: resultContent;anchors.fill: parent;anchors.margins: result.rowInset;spacing: Theme.extraCompact ? 7 : 10
                 Rectangle {
                     readonly property string icon: modelData.icon || "application-x-executable"
                     readonly property bool systemGlyph: modelData.kind==="action" ||

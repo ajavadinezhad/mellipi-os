@@ -20,7 +20,7 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QShortcut, Q
 from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCalendarWidget, QCheckBox, QDateEdit,
                               QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-                              QStackedWidget, QScrollArea, QTimeEdit, QToolButton, QVBoxLayout, QWidget)
+                              QStackedWidget, QSizePolicy, QScrollArea, QTimeEdit, QToolButton, QVBoxLayout, QWidget)
 
 from file_chooser import FileChooser
 from installed_launcher import user_environment
@@ -470,6 +470,7 @@ class Calendar(AppWindow):
         self.store = EventStore(Path(user_environment()['ORBIT_DATA'])/'calendar-events.json')
         self.marked = []
         self.month = QCalendarWidget()
+        self.month.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.month.setAccessibleName('Choose a day')
         for control_name, icon, description in (
             ('qt_calendar_prevmonth', 'go-previous', 'Previous month'),
@@ -613,9 +614,7 @@ class Calendar(AppWindow):
             self.day_layout.setDirection(direction)
         font_size = self.theme['font_size']
         glyph = max(16, min(24, font_size + 2))
-        for label, scale in ((self.clock_page.timer_label, 3), (self.clock_page.alarm_label, 2),
-                             (self.clock_page.stopwatch_label, 3)):
-            label.setStyleSheet(f'font-size: {font_size * scale}px;')
+        self.clock_page.fit_display(font_size, self.height() < 380)
         for button in self.action_buttons:
             button.setIconSize(QSize(glyph, glyph))
             button.setMinimumSize(glyph + 18, glyph + 14)

@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication, QTabBar, QWidget
 
 from mellipi_browser import Browser
 
@@ -81,3 +81,20 @@ class ReopenTabTests(TestCase):
         browser.reopen_tab()
         self.assertIsNone(browser.tabs.currentWidget().view)
         self.assertEqual(browser.status.text(), 'No closed tabs to reopen.')
+
+    def test_narrow_address_reflows_and_themed_close_tracks_tab_after_reorder(self):
+        browser = self.make_browser()
+        browser.resize(470, 350)
+        QTest.qWait(60)
+        self.assertTrue(browser.narrow_toolbar)
+        self.assertGreater(browser.address.width(), browser.width() * .8)
+        first = browser.tabs.currentWidget()
+        second = browser.add_tab()
+        bar = browser.tabs.tabBar()
+        bar.moveTab(1, 0)
+        close = bar.tabButton(0, QTabBar.ButtonPosition.RightSide)
+        self.assertEqual(close.objectName(), 'mellipiTabClose')
+        self.assertFalse(close.icon().isNull())
+        close.click()
+        self.assertEqual(browser.tabs.indexOf(second), -1)
+        self.assertIs(browser.tabs.currentWidget(), first)

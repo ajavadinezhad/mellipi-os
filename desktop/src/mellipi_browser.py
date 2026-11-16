@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlencode
 
-from PyQt6.QtCore import QLocale, QMimeDatabase, QProcess, QSize, QUrl, Qt
+from PyQt6.QtCore import QLocale, QMimeDatabase, QProcess, QSize, QTimer, QUrl, Qt
 from PyQt6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
 from PyQt6.sip import isdeleted
 from PyQt6.QtWidgets import (
@@ -259,6 +259,9 @@ class Browser(AppWindow):
         self.actions.setSpacing(4)
         self.toolbar_buttons = []
         self.narrow_toolbar = None
+        self.toolbar_resize = QTimer(self)
+        self.toolbar_resize.setSingleShot(True)
+        self.toolbar_resize.timeout.connect(self.update_toolbar_layout)
         self.back = self.button(self.navigation, 'go-previous', 'Back (Alt+Left)', lambda: self.current_action('Back'))
         self.forward = self.button(self.navigation, 'go-next', 'Forward (Alt+Right)', lambda: self.current_action('Forward'))
         self.reload = self.button(self.navigation, 'view-refresh', 'Reload (Ctrl+R)', self.toggle_loading)
@@ -301,7 +304,6 @@ class Browser(AppWindow):
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.setMovable(True)
-        self.tabs.setTabsClosable(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.tab_switched)
@@ -353,7 +355,7 @@ class Browser(AppWindow):
         ):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(action)
-        self.themeChanged.connect(self.update_toolbar_layout)
+        self.themeChanged.connect(lambda: self.toolbar_resize.start(0))
         self.themeChanged.connect(self.apply_page_theme)
         self.add_tab()
         self.refresh_icons()
@@ -375,8 +377,8 @@ class Browser(AppWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, 'toolbar'):
-            self.update_toolbar_layout()
+        if hasattr(self, 'toolbar_resize'):
+            self.toolbar_resize.start(0)
 
     def update_toolbar_layout(self):
         scale = self.theme['text_scale']
@@ -394,7 +396,8 @@ class Browser(AppWindow):
                 self.find_result.setMinimumWidth(width)
         required = (self.navigation.sizeHint().width() + self.actions.sizeHint().width()
                     + 2 * self.toolbar.horizontalSpacing() + round(280 * scale))
-        narrow = max(0, self.centralWidget().contentsRect().width() - 16) < required
+        # During resizeEvent the child layout can still report its old width.
+        narrow = max(0, self.contentsRect().width() - 16) < required
         if narrow == self.narrow_toolbar:
             return
         self.narrow_toolbar = narrow
@@ -552,6 +555,7 @@ class Browser(AppWindow):
         caption.setObjectName('muted')
         tab.layout_.addWidget(caption, 1)
         index = self.tabs.addTab(tab, caption.text())
+        self.add_tab_close_button(self.tabs, index)
         if foreground:
             self.show_tabs()
             self.tabs.setCurrentIndex(index)
