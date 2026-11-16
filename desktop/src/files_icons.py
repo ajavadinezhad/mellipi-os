@@ -1,4 +1,4 @@
-"""Phosphor glyphs for Files, painted with the active theme and file colors."""
+"""Phosphor glyphs for Files, painted with the active theme."""
 from functools import lru_cache
 from pathlib import Path
 
@@ -21,15 +21,15 @@ PLACES = {
     'folder': ('folder', '#edb35f'), 'bookmark': ('folder', '#a395ff'),
 }
 GROUPS = (
-    ('file-image', '#ed90b1', 'png jpg jpeg gif svg webp heic avif bmp tiff ico'),
-    ('file-audio', '#ad9bff', 'mp3 wav flac ogg m4a opus aac'),
-    ('file-video', '#ef9b83', 'mp4 mkv webm mov avi mpeg'),
-    ('file-zip', '#edb35f', 'zip tar gz xz bz2 zst 7z rar deb'),
-    ('file-code', '#73c9ac', 'py js ts html css sh rs c cpp json yaml yml toml'),
-    ('file-pdf', '#f09a97', 'pdf'),
-    ('file-text', '#7eb8ff', 'txt md log odt doc docx rtf csv'),
+    ('file-image', 'png jpg jpeg gif svg webp heic avif bmp tiff ico'),
+    ('file-audio', 'mp3 wav flac ogg m4a opus aac'),
+    ('file-video', 'mp4 mkv webm mov avi mpeg'),
+    ('file-zip', 'zip tar gz xz bz2 zst 7z rar deb'),
+    ('file-code', 'py js ts html css sh rs c cpp json yaml yml toml'),
+    ('file-pdf', 'pdf'),
+    ('file-text', 'txt md log odt doc docx rtf csv'),
 )
-FILE_TYPES = {suffix: (name, tint) for name, tint, suffixes in GROUPS for suffix in suffixes.split()}
+FILE_TYPES = {suffix: glyph for glyph, suffixes in GROUPS for suffix in suffixes.split()}
 
 
 @lru_cache(maxsize=64)
@@ -72,7 +72,7 @@ def place_icon(name, palette):
     return icon('duotone', glyph, palette['accent_ink'], palette['accent'], semantic_tint=False)
 
 
-def file_icon(filename, folder, ink, selected):
-    glyph, tint = (PLACES['folder'] if folder else
-                   FILE_TYPES.get(Path(filename).suffix[1:].casefold(), ('file', '#a1afc7')))
-    return icon('duotone', glyph, ink, tint, selected)
+def file_icon(filename, folder, ink, accent, selected):
+    glyph = 'folder' if folder else FILE_TYPES.get(Path(filename).suffix[1:].casefold(), 'file')
+    result = icon('duotone', glyph, ink, accent, selected, semantic_tint=False)
+    return result if not result.isNull() else icon('duotone', 'file', ink, accent, selected, semantic_tint=False)

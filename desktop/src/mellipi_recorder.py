@@ -476,7 +476,22 @@ class Recorder(AppWindow):
         path = self.selected_recording()
         if path is None or self.recording is not None:
             return
+        from file_transfers import identity
+        try:
+            original = identity(path)
+        except OSError:
+            self.refresh_library()
+            self.status.setText('This recording is no longer available.')
+            return
         if not themed_prompt(self, 'Move recording to Trash?', path.name, 'Move to Trash', 'Cancel'):
+            return
+        try:
+            current = identity(path)
+        except OSError:
+            current = None
+        if current != original:
+            self.refresh_library()
+            self.status.setText('This recording changed. Select it again before moving it to Trash.')
             return
         self.set_recording(None)
         if not QFile(str(path)).moveToTrash():

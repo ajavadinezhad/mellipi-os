@@ -7,6 +7,17 @@ ColumnLayout {
     spacing:10
     function collapseProfiles(){if(profilesLoader.item)profilesLoader.item.collapse();}
     SettingsGroup {
+        title: "Desktop sounds"
+        SettingRow {
+            label: "Event sounds"
+            SettingToggle {
+                objectName: "eventSoundsToggle";label: "Play desktop event sounds"
+                checked: Orbit.appearance.eventSounds !== false
+                onToggled: Orbit.setPreference("eventSounds",checked)
+            }
+        }
+    }
+    SettingsGroup {
         title: "Microphone"
         AudioDevicePicker {
             objectName: "inputDevicePicker";accessibleLabel: "Microphone";devices: System.values.audioInputs || []

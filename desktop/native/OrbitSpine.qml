@@ -104,7 +104,7 @@ Item {
     }
     Rectangle {visible: !frame.fixedTop && frame.inset===0 && Orbit.appearance.taskbarLength!=="fit";x: spine.edge==="right" ? spine.width-3 : 0;y: Theme.corner(12);width: 3;height: spine.horizontal ? spine.height-2*Theme.corner(12) : 32;color: Theme.accentInk}
     IconButton {
-        id: home;visible: !frame.fixedTop;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 28 : Theme.compact ? 32 : 38;padding: 2;iconName: "fold";phosphor: true;relief: true;bare: true;glyphSize: spine.utilityIconSize
+        id: home;visible: !frame.fixedTop;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 28 : Theme.compact ? 32 : 38;padding: 2;iconName: "fold";phosphor: true;bare: true;glyphSize: spine.utilityIconSize
         hint: "Apps, windows and actions · Super";accessibleLabel: "Open Mellipi apps, windows and actions"
         onClicked: spine.openPanel("launcher")
     }
@@ -231,8 +231,8 @@ Item {
                         color: Theme.accentInk; font.pixelSize: Math.round(10*Theme.textScale)
                     }
                 }
-                MouseArea {id: hit;anchors.fill: parent;hoverEnabled: true;acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onClicked: mouse => {if(mouse.button===Qt.RightButton){var p=Orbit.itemScreenPoint(task,mouse.x,mouse.y);Orbit.openDockContext(modelData.id,p.x,p.y);}else Orbit.openTaskbarGroup(task,modelData.id);}
+                MouseArea {id: hit;anchors.fill: parent;hoverEnabled: true;acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                    onClicked: mouse => {if(mouse.button===Qt.RightButton){var p=Orbit.itemScreenPoint(task,mouse.x,mouse.y);Orbit.openDockContext(modelData.id,p.x,p.y);}else if(mouse.button===Qt.MiddleButton)Orbit.launchAnother(modelData.id);else Orbit.openTaskbarGroup(task,modelData.id); }
                     onEntered: spine.taskTooltip(task,modelData.name)
                     onExited: Orbit.hideTooltip()
                 }
@@ -316,7 +316,7 @@ Item {
                 IconButton {
                     id:control;required property var modelData
                     objectName:"spine"+modelData.item
-                    phosphor:true;relief:true;bare:true;glyphSize:spine.utilityIconSize
+                    phosphor:true;bare:true;glyphSize:spine.utilityIconSize
                     width:footerIcons.buttonWidth;height:footerIcons.buttonHeight;padding:2
                     glyphColor:modelData.key==="window-placement" && !Orbit.windowPlacementEnabled ? Theme.muted : Theme.accentInk
                     accent:Orbit.panel===modelData.key
@@ -370,7 +370,7 @@ Item {
             Accessible.onPressAction: Orbit.launch("mellipi-calendar.desktop")
             Keys.onReturnPressed: Orbit.launch("mellipi-calendar.desktop")
             Keys.onSpacePressed: Orbit.launch("mellipi-calendar.desktop")
-            Text {id: clockLabel;objectName: "spineClockLabel";width: parent.width;fontSizeMode: spine.horizontal ? Text.FixedSize : Text.HorizontalFit;minimumPixelSize: 8;text: spine.horizontal && !Orbit.appearance.clock24 ? spine.clockText+" "+Qt.formatDateTime(spine.clockNow,"AP") : spine.clockText;font.pixelSize: Theme.detailSize;font.weight: Font.DemiBold;color: Theme.text;horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight}
+            Text {id: clockLabel;objectName: "spineClockLabel";width: parent.width;fontSizeMode: spine.horizontal ? Text.FixedSize : Text.HorizontalFit;minimumPixelSize: 8;text: spine.horizontal && !Orbit.appearance.clock24 ? spine.clockText+" "+Qt.formatDateTime(spine.clockNow,"AP") : spine.clockText;font.pixelSize: Theme.detailSize;font.weight: Font.DemiBold;color: Theme.accentInk;horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight}
             Text {width: parent.width;visible: !spine.horizontal && !Orbit.appearance.clock24;text: Qt.formatDateTime(spine.clockNow,"AP");font.pixelSize: Math.round(10*Theme.textScale);color: Theme.muted;horizontalAlignment: Text.AlignHCenter}
             Text {
                 id: dateLabel

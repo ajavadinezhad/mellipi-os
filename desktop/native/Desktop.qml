@@ -439,6 +439,25 @@ QtObject {
         Timer { interval: 4500; running: notification.visible; onTriggered: {Orbit.clearNotice();System.hideNotification();} }
     }
 
+    property Window launchFeedbackSurface: Window {
+        id: busyPointer
+        objectName: "launchFeedbackSurface";title: "Mellipi — Launch feedback"
+        visible: Orbit.surfacesReady && Orbit.launchFeedback.x !== undefined
+        x: Orbit.launchFeedback.x || 0;y: Orbit.launchFeedback.y || 0
+        width: 26;height: 26;color: "transparent"
+        flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
+        Rectangle {
+            anchors.centerIn: parent;width: 22;height: 22;radius: 11
+            color: Theme.surface;border.width: 1;border.color: Theme.controlBorder
+            Item {
+                id: progressMark
+                anchors.fill: parent
+                Rectangle {width: 4;height: 4;radius: 2;color: Theme.accentInk;anchors.horizontalCenter: parent.horizontalCenter;y: 3}
+                Rectangle {width: 4;height: 4;radius: 2;color: Theme.accentInk;opacity: .45;anchors.verticalCenter: parent.verticalCenter;x: 3}
+                RotationAnimator on rotation {from: 0;to: 360;duration: 900;loops: Animation.Infinite;running: busyPointer.visible && !Theme.reducedMotion}
+            }
+        }
+    }
     property Window tooltipSurface: Window {
         objectName: "tooltipSurface";title: "Mellipi — Tooltip";visible: Orbit.surfacesReady && Orbit.tooltip.text !== undefined
         x: Orbit.tooltip.x || 0;y: Orbit.tooltip.y || 0

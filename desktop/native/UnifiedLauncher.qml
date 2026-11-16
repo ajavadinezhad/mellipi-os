@@ -193,6 +193,13 @@ ColumnLayout {
                    row.icon!==old.icon || row.category!==old.category;
         }))results=rows;
     }
+    function activateFromKeyboard(row, event) {
+        if (row && (event.modifiers & Qt.ControlModifier) && (row.kind==="app" || row.kind==="task")) {
+            Orbit.launchAnother(row.id);event.accepted=true;
+        } else {
+            activate(row);event.accepted=true;
+        }
+    }
     function activate(row){if(!row)return;if(showLayouts)return;if(row.kind==="calculation")Orbit.copyCalculation(row.id);else if(row.kind==="action")Orbit.activateSystemAction(row.id);else if(row.kind==="task")Orbit.activateDock(row.id,false);else if(row.kind==="window")Orbit.focusWindow(row.id);else Orbit.launch(row.id);}
     function openResultMenu(index) {
         var row=results[index];if(!row || row.kind==="action" || row.kind==="calculation")return false;
@@ -220,6 +227,12 @@ ColumnLayout {
                 source: Theme.symbolicIconSource("start-search", Theme.accentInk)
             }
             onTextChanged: launcher.query=text
+            Keys.onReturnPressed: event => {
+                if (!(event.modifiers & Qt.ControlModifier)) {event.accepted=false;return;}
+                launcher.flushRebuild();
+                if (!launcher.showLayouts && launcher.results.length)
+                    launcher.activateFromKeyboard(launcher.results[0],event);
+            }
             onAccepted: {launcher.flushRebuild(); if(!launcher.showLayouts && launcher.results.length)launcher.activate(launcher.results[0]);}
             Keys.onDownPressed: {launcher.flushRebuild(); if(!launcher.showLayouts && resultsList.count){resultsList.currentIndex=0;resultsList.forceActiveFocus();}}
         }
@@ -361,8 +374,8 @@ ColumnLayout {
         }
         onCountChanged: currentIndex=count ? Math.max(0,Math.min(currentIndex,count-1)) : -1
         Keys.onPressed:event=>{if(event.key===Qt.Key_Menu || (event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))){event.accepted=launcher.openResultMenu(currentIndex);}}
-        Keys.onReturnPressed: launcher.activate(launcher.results[currentIndex])
-        Keys.onEnterPressed: launcher.activate(launcher.results[currentIndex])
+        Keys.onReturnPressed: event => launcher.activateFromKeyboard(launcher.results[currentIndex],event)
+        Keys.onEnterPressed: event => launcher.activateFromKeyboard(launcher.results[currentIndex],event)
         Keys.onSpacePressed: launcher.activate(launcher.results[currentIndex])
         Keys.onUpPressed: {if(currentIndex<=0){search.forceActiveFocus();event.accepted=true;}else event.accepted=false;}
         delegate: Rectangle {

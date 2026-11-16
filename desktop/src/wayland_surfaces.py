@@ -38,7 +38,7 @@ def configure(window,name,compact,dock_align="center",spine=False,panel_position
         anchors(surface,2|side);layer(surface,2);zone(surface,-1);keyboard(surface,0)
         margins(surface,ctypes.byref(Margins(12 if side==4 else 0,0,12 if side==8 else 0,10)))
     elif name in ('contextSurface','screenshotSelectionSurface'):anchors(surface,15);layer(surface,3);zone(surface,-1);keyboard(surface,1)
-    elif name=='tooltipSurface':anchors(surface,1|4);layer(surface,3);zone(surface,-1);keyboard(surface,0)
+    elif name in ('tooltipSurface','launchFeedbackSurface'):anchors(surface,1|4);layer(surface,3);zone(surface,-1);keyboard(surface,0)
     elif name=='overlaySurface':anchors(surface,0);layer(surface,3);zone(surface,-1);keyboard(surface,2)
     else:anchors(surface,1|8);layer(surface,3);zone(surface,-1);keyboard(surface,0);margins(surface,ctypes.byref(Margins(0,42,14,0)))
 

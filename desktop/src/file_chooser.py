@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt6.QtCore import QIdentityProxyModel, QSize, QStandardPaths, Qt, QUrl
 from PyQt6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFileDialog, QLineEdit, QListView, QStyledItemDelegate, QToolButton, QTreeView
 
-from files_icons import PLACES, file_icon, icon
+from files_icons import file_icon, icon, place_icon
 from qt_app import BASE_STYLE, ThemeWatch, exec_owned_dialog, widget_palette
 
 
@@ -18,7 +18,7 @@ class ChooserIcons(QIdentityProxyModel):
             source = self.sourceModel()
             item = self.mapToSource(index)
             tokens = self.parent_dialog.theme_watch.tokens
-            art = file_icon(source.fileName(item), source.isDir(item), tokens['text'], tokens['text'])
+            art = file_icon(source.fileName(item), source.isDir(item), tokens['accent_ink'], tokens['accent'], tokens['text'])
             if not art.isNull():
                 return art
         return super().data(index, role)
@@ -33,9 +33,7 @@ class PlaceIcons(QStyledItemDelegate):
             return
         path = urls[index.row()].toLocalFile()
         role = dialog.place_roles.get(path, 'folder')
-        glyph, tint = PLACES[role]
-        tokens = dialog.theme_watch.tokens
-        art = icon('duotone', glyph, tokens['text'], tint, tokens['text'])
+        art = place_icon(role, dialog.theme_watch.tokens)
         if not art.isNull():
             option.icon = art
             option.decorationSize = QSize(18, 18)

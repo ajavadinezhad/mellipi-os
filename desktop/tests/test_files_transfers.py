@@ -6,7 +6,7 @@ import unittest
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 
-from file_transfers import Cancelled, CancelToken, Transfer
+from file_transfers import Cancelled, CancelToken, Transfer, unique_name
 from mellipi_files import Files, rename_no_replace
 
 
@@ -14,6 +14,18 @@ class FilesTransferTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.application = QApplication.instance() or QApplication([])
+
+    def test_keep_both_preserves_utf8_and_extension_at_name_limit(self):
+        with TemporaryDirectory() as directory:
+            original = Path(directory) / (('é' * 125) + '.txt')
+            original.write_bytes(b'first')
+            first = unique_name(original)
+            first.write_bytes(b'copy')
+            second = unique_name(original)
+            self.assertTrue(first.name.endswith(' (copy).txt'))
+            self.assertTrue(second.name.endswith(' (copy 2).txt'))
+            self.assertLessEqual(len(second.name.encode('utf-8')), 255)
+            self.assertEqual(original.read_bytes(), b'first')
 
     def wait_for(self, condition):
         for _ in range(150):

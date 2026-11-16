@@ -1213,7 +1213,7 @@ class Files(QMainWindow):
             if isinstance(control, QPushButton) and control.objectName() == 'navigation':
                 control.setText('')
         apply_titlebar(self.titlebar, palette)
-        self.model.file_inks = palette['text'], palette['text']
+        self.model.file_inks = palette['accent_ink'], palette['accent'], palette['text']
         self.view.viewport().update()
         density = preferences.values['density']
         for button in self.titlebar.findChildren(QPushButton):

@@ -209,6 +209,10 @@ def serve(bridge):
                 text=("A long tooltip is shown here to exercise wrapping at a display edge. "
                       "The entire hint should stay readable when large text is enabled. End of tooltip.")
                 bridge.queueTooltip(text,r.right()-2,r.top()+140 if data=='qa-panel-long-tip' else r.bottom()-2)
+            elif data.startswith('qa-launch-another:') and os.environ.get('ORBIT_QA')=='1' and os.environ.get('ORBIT_NESTED')=='1':
+                bridge.launchAnother(data.removeprefix('qa-launch-another:'))
+            elif data=='qa-launch-cue' and os.environ.get('ORBIT_QA')=='1' and os.environ.get('ORBIT_NESTED')=='1':
+                connection.write(json.dumps(bridge.launchFeedback).encode());connection.flush()
             elif data=='qa-close-tip' and os.environ.get('ORBIT_QA')=='1':bridge.hideTooltip()
             elif data=='qa-menu' and os.environ.get('ORBIT_QA')=='1':
                 r=bridge.app.primaryScreen().geometry();bridge.openContext('desktop','',r.x()+30,r.y()+50)

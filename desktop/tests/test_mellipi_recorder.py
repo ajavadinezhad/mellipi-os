@@ -131,6 +131,19 @@ class RecordingLibraryTest(unittest.TestCase):
         self.assertEqual(self.window.selected_recording(), self.newer)
         self.assertIn('Could not', self.window.status.text())
 
+    def test_trash_refuses_a_replacement_while_confirmation_is_open(self):
+        self.window.library.setCurrentRow(0)
+        def replace(*args):
+            replacement = self.root / 'replacement.wav'
+            replacement.write_bytes(b'new file')
+            replacement.replace(self.newer)
+            return True
+        with patch('mellipi_recorder.themed_prompt', side_effect=replace), patch('mellipi_recorder.QFile') as file:
+            self.window.trash_selected()
+            file.assert_not_called()
+        self.assertEqual(self.newer.read_bytes(), b'new file')
+        self.assertIn('changed', self.window.status.text())
+
     def test_long_status_keeps_recording_actions_below_list_at_large_text(self):
         preferences = Preferences(self.root / 'appearance.json')
         preferences.apply_theme('cobalt')

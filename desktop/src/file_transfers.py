@@ -47,12 +47,30 @@ class CancelToken:
 def identity(path):
     row=Path(path).lstat();return row.st_dev,row.st_ino,row.st_mode,row.st_size,row.st_mtime_ns
 
+def filename_prefix(text, budget):
+    parts=[]
+    for character in text:
+        size=len(os.fsencode(character))
+        if size>budget:break
+        parts.append(character)
+        budget-=size
+    return ''.join(parts)
+
+
 def unique_name(destination):
     destination=Path(destination)
     suffix=destination.suffix if not destination.is_dir() else ''
     stem=destination.name[:-len(suffix)] if suffix else destination.name
+    try:limit=os.pathconf(destination.parent,'PC_NAME_MAX')
+    except (OSError,ValueError):limit=255
+    if limit<=0:limit=255
     for number in range(1,10001):
-        candidate=destination.with_name(f'{stem} (copy{(" "+str(number)) if number>1 else ""}){suffix}')
+        marker=f' (copy{(" "+str(number)) if number>1 else ""})'
+        budget=limit-len(os.fsencode(marker))
+        if budget<1:raise ValueError('The destination does not allow a copy name')
+        ending=filename_prefix(suffix,budget-1)
+        head=filename_prefix(stem,budget-len(os.fsencode(ending)))
+        candidate=destination.with_name(head+marker+ending)
         if not os.path.lexists(candidate):return candidate
     raise ValueError('Too many copies with the same name')
 

@@ -20,44 +20,14 @@ from window_controls import PATHS as WINDOW_CONTROL_PATHS, glyph_svg
 def native_session():return bool(os.environ.get('ORBIT_NATIVE_CONTROL'))
 def wayland_session():return native_session() or bool(os.environ.get('SWAYSOCK'))
 
-def taskbar_relief_svg(source, color, size, high_contrast=False):
-    """A cached two-layer bevel, legible even for 16 px taskbar symbols."""
-    _, _, body = source.partition('>')
-    body = body.rsplit('</svg>', 1)[0]
-    base = color.name()
-    if high_contrast:
-        # Keep the same flat, opaque glyph and add depth outside its face.
-        shadow = (color.darker(175) if color.lightness() >= 128 else color.lighter(170)).name()
-        return (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 256 256">'
-            f'<g transform="translate(5 13)" opacity=".8" fill="{shadow}">'
-            f'{body.replace("currentColor", shadow)}</g>'
-            f'<g fill="{base}">{body.replace("currentColor", base)}</g></svg>'
-        )
-    light = color.lighter(148).name()
-    shade = color.darker(170).name()
-    face_shade = color.darker(117).name()
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 256 256">'
-        '<defs><linearGradient id="face" x1="0%" y1="0%" x2="35%" y2="100%">'
-        f'<stop offset="0" stop-color="{light}"/>'
-        f'<stop offset=".32" stop-color="{base}"/><stop offset=".65" stop-color="{base}"/>'
-        f'<stop offset="1" stop-color="{face_shade}"/></linearGradient></defs>'
-        '<g transform="translate(8 4) scale(.94)">'
-        f'<g transform="translate(7 14)" opacity=".88" fill="{shade}">'
-        f'{body.replace("currentColor", shade)}</g>'
-        f'<g fill="url(#face)">{body.replace("currentColor", "url(#face)")}</g></g></svg>'
-    )
-
-
 class Icons(QQuickImageProvider):
     def __init__(self): super().__init__(QQuickImageProvider.Image if QT5 else QQuickImageProvider.ImageType.Image)
     def requestImage(self,ident,*sizes):
         requested=sizes[-1]
         tint=None
-        if ident.startswith(('phosphor/', 'phosphor-relief/', 'phosphor-relief-hc/')):
+        if ident.startswith('phosphor/'):
             from files_icons import asset
-            treatment, ink, name = ident.split('/', 2)
+            _, ink, name = ident.split('/', 2)
             glyph = {
                 'camera':'camera','volume':'speaker-high','mute':'speaker-slash','bell':'bell',
                 'chevron-up':'caret-up','chevron-down':'caret-down','chevron-left':'caret-left',
@@ -75,11 +45,8 @@ class Icons(QQuickImageProvider):
             color=QColor('#'+ink)
             if glyph and color.isValid() and (svg:=asset('regular',glyph)):
                 side=max(16,min(96,requested.width() if requested.width()>0 else 24))
-                if treatment.startswith('phosphor-relief'):
-                    svg = taskbar_relief_svg(svg, color, side, treatment.endswith('-hc'))
-                else:
-                    svg = svg.replace('currentColor', color.name()).replace(
-                        '<svg ', f'<svg width="{side}" height="{side}" ', 1)
+                svg = svg.replace('currentColor', color.name()).replace(
+                    '<svg ', f'<svg width="{side}" height="{side}" ', 1)
                 picture=QImage.fromData(svg.encode(),b'SVG')
                 if not picture.isNull():
                     if LAYER_SHELL:return picture,picture.size()
@@ -147,6 +114,7 @@ class Icons(QQuickImageProvider):
 
 class Bridge(QObject):
     changed=Signal(); windowsChanged=Signal(); noticeChanged=Signal(); panelChanged=Signal(); aiChanged=Signal(); settingsChanged=Signal(); shortcutsChanged=Signal();geometryChanged=Signal();frameChanged=Signal();dockLayoutChanged=Signal();launcherChanged=Signal();interactionChanged=Signal()
+    launchFeedbackChanged=Signal()
     dockAppsChanged=Signal();systemActionsChanged=Signal();taskbarFocusRequested=Signal();taskbarMenuFocusRequested=Signal(str)
     desktopSnapshot=Signal(object); shortcutUpdate=Signal(str); aiEvent=Signal(object)
     completed=Signal(object); hotkey=Signal(str); hardwareKey=Signal(str); actionRequested=Signal(str); quitRequested=Signal()
@@ -160,6 +128,14 @@ class Bridge(QObject):
         self.tooltipWindow=None;self.contextWindow=None
         self._pendingTooltip=None;self._tooltipAnchorSignals=[];self._tooltipLifecycleConnected=False
         self.tooltipTimer=QTimer(self);self.tooltipTimer.setSingleShot(True);self.tooltipTimer.setInterval(400);self.tooltipTimer.timeout.connect(self.publishTooltip)
+        from launch_feedback import EventSounds, LaunchCue
+        self._launchCue=LaunchCue()
+        self._launchFeedback={}
+        self._launchCueWindow=None
+        self._launchPointerPending=False
+        self._launchPool=None
+        self._eventSounds=EventSounds(ROOT/'native'/'sounds')
+        self._launchTimer=QTimer(self);self._launchTimer.setInterval(90);self._launchTimer.timeout.connect(self.updateLaunchFeedback)
         self._iconCache={}; self.desktopSnapshot.connect(self.applyWindowState); self.shortcutUpdate.connect(self.updateShortcuts)
         self._apps=desktop.applications();self._dockApps=desktop.dock_groups(self._apps,[],self.preferences.values['pins']); self._windows=[]; self._desktops=[]; self._objects=[]; self._workspaces=[]; self._links=[]
         from app_usage import AppUsage
@@ -282,6 +258,8 @@ class Bridge(QObject):
     def switchDesktopOn(self,ident,output):
         if not any(row['name']==output for row in self.outputs):return
         def switch():
+            current=self._outputWorkspaces.get(output,next((d['id'] for d in self._desktops if d.get('active')),None))
+            if current!=ident:self.playEventSound('workspace')
             self.displays.setTransientName(output)
             if native_session():
                 self.windowTask('__workspace__','switch',lambda:self.windowActions.client.request('workspace',workspace=ident+1,output=output));return
@@ -653,8 +631,8 @@ class Bridge(QObject):
     def notify(self,text): self._notice=text; self.noticeChanged.emit()
     @Slot()
     def clearNotice(self): self._notice=''; self.noticeChanged.emit()
-    def asyncTask(self,fn,done=None,on_error=None):
-        try:future=self.pool.submit(fn)
+    def asyncTask(self,fn,done=None,on_error=None,executor=None):
+        try:future=(executor or self.pool).submit(fn)
         except RuntimeError:return # A queued device/catalog event may outlive teardown.
         def finished(f):
             try:
@@ -909,6 +887,7 @@ class Bridge(QObject):
             app=next((a for a in self._apps if a['id']==ident),None)
             if app:
                 if not group or not group['windows']:add('Open '+app['name'],'launch',ident)
+                else:add('Open another window','launch-another',ident)
                 add('Unpin from taskbar' if ident in self.preferences.values['pins'] else 'Pin to taskbar','pin',ident)
                 add('Add to desktop','desktop-shortcut',ident)
             if group and len(group['windows'])==1:
@@ -1200,6 +1179,7 @@ class Bridge(QObject):
         elif action=='dock':self.activateDock(value,False)
         elif action=='dock-all':self.activateDock(value,True)
         elif action=='launch':self.launch(value)
+        elif action=='launch-another':self.launchAnother(value)
         elif action=='focus':self.focusWindow(value)
         elif action=='copy':self.copy(value)
         elif action=='open':self.openObject(value)
@@ -1547,6 +1527,50 @@ class Bridge(QObject):
     def refreshAppCatalog(self):
         catalog=getattr(self,'appCatalog',None)
         if catalog:catalog.refreshOnOpen()
+    launchFeedback=Property('QVariantMap',lambda s:s._launchFeedback,notify=launchFeedbackChanged)
+
+    def playEventSound(self,name):
+        if self.appearance.get('eventSounds',True) and not os.environ.get('ORBIT_NESTED'):
+            self._eventSounds.play(name)
+
+    def updateLaunchFeedback(self):
+        if not self._launchCue.visible():
+            if not self._launchCue.requests:self._launchTimer.stop()
+            if self._launchFeedback:
+                self._launchFeedback={};self.launchFeedbackChanged.emit()
+            return
+        if native_session() and self.windowActions:
+            if self._launchPointerPending:return
+            self._launchPointerPending=True
+            def receive(data=None):
+                self._launchPointerPending=False
+                if data and data.get('pointer'):self.positionLaunchFeedback(data['pointer'])
+            self.asyncTask(self.windowActions.client.status,receive,lambda _error:receive())
+        elif not wayland_session():
+            point=QCursor.pos();self.positionLaunchFeedback({'x':point.x(),'y':point.y()})
+
+    def positionLaunchFeedback(self,point):
+        if not self._launchCue.visible() or not self._launchCueWindow:return
+        x,y=round(point['x']),round(point['y'])
+        screen=next((q for q in self.app.screens() if q.geometry().contains(x,y)),None)
+        if screen is None:return
+        box=screen.geometry()
+        left=x+15 if x+41<=box.right() else x-36
+        top=y+14 if y+40<=box.bottom() else y-34
+        left=max(box.left(),left);top=max(box.top(),top)
+        state=dict(x=left,y=top)
+        if state==self._launchFeedback and self._launchCueWindow.screen() is screen:return
+        if LAYER_SHELL and wayland_session():
+            from wayland_surfaces import position_tooltip
+            if self._launchCueWindow.screen() is not screen:self._launchCueWindow.setScreen(screen)
+            position_tooltip(self._launchCueWindow,left-box.x(),top-box.y())
+        self._launchFeedback=state;self.launchFeedbackChanged.emit()
+
+    @Slot(str)
+    def launchAnother(self,ident):
+        if ident=='orbit-settings':self.showPanel(self._settingsDestination)
+        else:self.launchApplication(ident,new_window=True)
+
     @Slot(str)
     def launch(self,ident):
         self.launchApplication(ident)
@@ -1557,18 +1581,18 @@ class Bridge(QObject):
             if len(group['windows'])==1 and group['windows'][0].get('minimized') and self.windowActions:
                 target=group['windows'][0]['id'];self.windowTask(target,'restore',lambda:self.windowActions.restore(int(target)),settled=finished);return
             if not allow_new:return self.notify('This app already has windows. Open another window in the app, then choose it in the layout.')
-        self.launchApplication(ident,keep_open=True,finished=finished)
-    def launchApplication(self,ident,keep_open=False,finished=None,file_uri=None):
+        self.launchApplication(ident,keep_open=True,finished=finished,new_window=bool(group and allow_new))
+    def launchApplication(self,ident,keep_open=False,finished=None,file_uri=None,new_window=False):
         app=next((a for a in self._apps if a['id']==ident),None)
         if not app:
             if finished:finished()
             return
         pending=getattr(self,'_pendingAppLaunches',None)
-        if pending is None:self._pendingAppLaunches=pending=set()
-        if ident in pending or len(pending)>=8:
+        if pending is None:self._pendingAppLaunches=pending={}
+        if (not new_window and ident in pending.values()) or len(pending)>=8:
             if finished:
-                QTimer.singleShot(100,lambda:self.launchApplication(ident,keep_open,finished,file_uri))
-            elif ident not in pending:self.notify('Wait for the application activation to finish')
+                QTimer.singleShot(100,lambda:self.launchApplication(ident,keep_open,finished,file_uri,new_window))
+            elif len(pending)>=8:self.notify('Wait for the application activation to finish')
             return
         import subprocess
         from app_catalog import launch_result
@@ -1584,21 +1608,30 @@ class Bridge(QObject):
         try:
             # Keep application processes independent of shell recovery. gio parses
             # desktop field codes and returns when activation is accepted.
-            process=subprocess.Popen(['gio','launch',desktop.application_launch_path(app,environment),*([file_uri] if file_uri else [])],env=environment,cwd=Path.home(),start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            path=desktop.application_launch_path(app,environment)
+            command=['/usr/bin/python3',str(SOURCE_ROOT/'launch_desktop_action.py'),path] if new_window and not file_uri else ['gio','launch',path,*([file_uri] if file_uri else [])]
+            process=subprocess.Popen(command,env=environment,cwd=Path.home(),start_new_session=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         except OSError as error:
-            self.notify('Could not start '+app['name']+': '+str(error)[:120])
+            self.playEventSound('error');self.notify('Could not start '+app['name']+': '+str(error)[:120])
             if finished:finished()
             return
-        pending.add(ident)
+        token=uuid.uuid4().hex
+        pending[token]=ident
+        baseline=next((g['windows'] for g in self._dockApps if g['id']==ident),[])
+        self._launchCue.begin(token,ident,[row['id'] for row in baseline])
+        self._launchTimer.start()
         def accepted(_):
-            pending.discard(ident)
+            pending.pop(token,None)
+            self.playEventSound('launch')
             self.recordAppInteraction(ident,'launch')
             if finished:finished()
             if self.panel=='launcher' and not keep_open:self.dismiss()
         def rejected(error):
-            pending.discard(ident);self.notify('Could not start '+app['name']+': '+str(error)[:160])
+            pending.pop(token,None);self._launchCue.cancel(token);self.updateLaunchFeedback()
+            self.playEventSound('error');self.notify('Could not start '+app['name']+': '+str(error)[:160])
             if finished:finished()
-        self.asyncTask(lambda:launch_result(process),accepted,rejected)
+        if self._launchPool is None:self._launchPool=ThreadPoolExecutor(max_workers=2,thread_name_prefix="mellipi-launch")
+        self.asyncTask(lambda:launch_result(process),accepted,rejected,executor=self._launchPool)
     @Slot(object)
     def removableDeviceArrived(self,device):
         if not isinstance(device,dict) or not getattr(self,'systemServices',None):return
@@ -1661,6 +1694,7 @@ class Bridge(QObject):
         current=next((d['id'] for d in self._desktops if d['active']),ident)
         if native_session() and getattr(self,'_workspaceIntent',None) is not None:current=self._workspaceIntent
         if ident==current and not self._outputWorkspaces:return
+        if ident!=current:self.playEventSound('workspace')
         if native_session():
             self._workspaceIntent=ident
             serial=getattr(self,'_workspaceIntentSerial',0)+1;self._workspaceIntentSerial=serial
@@ -1725,6 +1759,8 @@ class Bridge(QObject):
         if state['windows']!=self._windows or state['desktops']!=self._desktops or output_workspaces!=self._outputWorkspaces:
             self._outputWorkspaces=output_workspaces
             self._windows=state['windows']; self._desktops=state['desktops']; self._dockApps=desktop.dock_groups(self._apps,self._windows,self.preferences.values['pins']); self.windowsChanged.emit()
+            self._launchCue.observe(self._dockApps)
+            if not self._launchCue.requests:self.updateLaunchFeedback()
             if self.windowActions:
                 for window in self._windows:
                     frame=window.get('frame',{});area=window.get('workarea',{})
@@ -1940,6 +1976,7 @@ def main():
     windows={name:next(surface for surface in native_surfaces if surface.objectName()==name) for name in ('desktopSurface','topbarSurface','dockSurface','overlaySurface','systemStripsSurface')}
     for surface in native_surfaces:
         if bridge.currentScreen():surface.setScreen(bridge.currentScreen())
+    bridge._launchCueWindow=root.findChild(QObject,'launchFeedbackSurface')
     bridge.tooltipWindow=root.findChild(QObject,'tooltipSurface');bridge.contextWindow=root.findChild(QObject,'contextSurface')
     bridge.dockWindow=windows['dockSurface'];bridge.topbarWindow=windows['topbarSurface']
     bridge.panelWindow=windows['overlaySurface']; bridge.desktopWindow=windows['desktopSurface']
@@ -1949,6 +1986,7 @@ def main():
         configure(root.findChild(QObject,'dockReserveSurface'),'dockReserveSurface',bridge.compact,spine=bridge.appearance['shellLayout']=='fold',panel_position=panel_edge(bridge.appearance),floating=bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(bridge.appearance))
         configure(root.findChild(QObject,'noticeSurface'),'noticeSurface',bridge.compact)
         configure(bridge.tooltipWindow,'tooltipSurface',bridge.compact)
+        configure(bridge._launchCueWindow,'launchFeedbackSurface',bridge.compact)
         configure(bridge.contextWindow,'contextSurface',bridge.compact)
         configure(root.findChild(QObject,'screenshotSelectionSurface'),'screenshotSelectionSurface',bridge.compact)
     bridge._surfacesReady=True;bridge.settingsChanged.emit();bridge.applyWindowTheme()
@@ -2067,13 +2105,14 @@ def main():
         if args.screenshot: QTimer.singleShot(1700,capture)
     print('Mellipi native shell ready · Ctrl Alt Space · Ctrl Alt Q to quit',flush=True)
     result=app.exec()
-    bridge.tooltipTimer.stop()
+    bridge.tooltipTimer.stop();bridge._launchTimer.stop();bridge._eventSounds.close()
     if events: events.close()
     signal_notifier.setEnabled(False); signal.set_wakeup_fd(previous_wakeup); os.close(signal_read); os.close(signal_write)
     if getattr(bridge,'settingsHost',None):bridge.settingsHost.close()
     bridge.sessionExit.close();bridge.appCatalog.close()
     bridge.displays.close()
     secondary.close();hardware.close();inputs.close();idle.close();displayControls.close();shortcuts.close();network.close();powerProfiles.close()
+    if bridge._launchPool:bridge._launchPool.shutdown(wait=True,cancel_futures=True)
     bridge.pool.shutdown(wait=True,cancel_futures=True)
     bridge.closeWindowTasks()
     usage.close()

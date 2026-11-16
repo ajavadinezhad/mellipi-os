@@ -5,7 +5,6 @@ OrbitButton {
     id: button
     property string iconName: ""
     property bool phosphor: false
-    property bool relief: false
     property int glyphSize: 16
     property color glyphColor: Theme.accentInk
     property string accessibleLabel: hint
@@ -26,8 +25,8 @@ OrbitButton {
             x: button.text ? Math.max(0,(parent.width-parent.implicitWidth)/2) : Math.round((parent.width-width)/2)
             anchors.verticalCenter: parent.verticalCenter
             fillMode: Image.PreserveAspectFit
-            sourceSize: button.relief ? Qt.size(Math.max(32, width*2),Math.max(32, height*2)) : Qt.size(24,24)
-            source: !button.iconName ? "" : button.phosphor ? Theme.phosphorIconSource(button.iconName, ink, button.relief && button.enabled) : Theme.symbolicIconSource(button.iconName, ink)
+            sourceSize: button.phosphor ? Qt.size(Math.max(32, width*2),Math.max(32, height*2)) : Qt.size(24,24)
+            source: !button.iconName ? "" : button.phosphor ? Theme.phosphorIconSource(button.iconName, ink) : Theme.symbolicIconSource(button.iconName, ink)
             readonly property color ink: !button.enabled ? Theme.disabled : button.accent && !button.bare ? button.primaryInk : button.glyphColor
         }
         Rectangle {

@@ -9,7 +9,7 @@ DEFAULTS={'compact':True,'accent':'#a9d9c3','profile':'economy','mode':'dark','p
 PRESETS=[{'name':'Sage','color':'#a9d9c3'},{'name':'Blue','color':'#a8c9ff'},{'name':'Violet','color':'#c8b6ff'},{'name':'Rose','color':'#f3b6c6'},{'name':'Amber','color':'#edcd98'},{'name':'Coral','color':'#ffb59e'}]
 LOCK_KEYS=frozenset(('idleLockEnabled','idleLockMinutes','displayOffMinutes','lockBeforeSleep'))
 DEFAULTS.update(idleLockEnabled=True,idleLockMinutes=10,displayOffMinutes=0,lockBeforeSleep=True)
-DEFAULTS.update(taskbarIconScale=100,desktopIconScale=100)
+DEFAULTS.update(taskbarIconScale=100,desktopIconScale=100,eventSounds=True)
 DEFAULTS.update(cursorAccent=True,density='compact',textScale=1.0,highContrast=False,themeContrast={},themePreset='custom')
 DEFAULTS.update(windowSnap=True,windowPlacementEnabled=True,windowPlacement='auto',appPlacements={},independentWorkspaces=False)
 THEME_PREFERENCES=('custom',*THEME_IDS)
@@ -66,7 +66,7 @@ class Preferences:
         if key in ('idleLockEnabled','lockBeforeSleep') and type(value) is bool:return value
         if key=='idleLockMinutes' and type(value) is int and 1<=value<=120:return value
         if key=='displayOffMinutes' and type(value) is int and 0<=value<=120:return value
-        if key in ('cursorAccent','taskbarFloating','topbarConnected','compact','workspaceMotion','clock24','clockDate','reducedMotion','matchWindows','matchApps','aiEnabled','desktopIcons') and isinstance(value,bool): return value
+        if key in ('eventSounds','cursorAccent','taskbarFloating','topbarConnected','compact','workspaceMotion','clock24','clockDate','reducedMotion','matchWindows','matchApps','aiEnabled','desktopIcons') and isinstance(value,bool): return value
         if key=='taskbarLength' and value in ('full','fit'):return value
         if key=='shellLayout' and value=='fold':return value
         if key=='panelPosition' and value in ('left','right','top','bottom'):return 'bottom' if value=='top' else value
