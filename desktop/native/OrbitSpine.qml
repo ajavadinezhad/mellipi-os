@@ -6,13 +6,18 @@ Item {
     property string outputName: ""
     property string clockText: ""
     property date clockNow: new Date()
-    readonly property bool horizontal: Orbit.appearance.panelPosition==="top" || Orbit.appearance.panelPosition==="bottom"
-    readonly property int thickness: Theme.barThickness
-    readonly property real inset: Orbit.appearance.taskbarFloating ? 8 : 0
-    readonly property bool fit: Orbit.appearance.taskbarLength==="fit"
-    readonly property real availableLength: Math.max(0,(horizontal ? width : height)-2*inset)
-    readonly property real footerLength: horizontal ? footer.width+10 : footer.height+(Theme.compact ? 8 : 12)
+    property string section: "combined"
+    readonly property bool fixedTop: section==="spaces" || section==="utilities"
+    readonly property bool appBar: section==="apps"
+    readonly property bool horizontal: fixedTop || Orbit.appearance.panelPosition==="top" || Orbit.appearance.panelPosition==="bottom"
+    readonly property int startInset: appBar && !horizontal && !Orbit.isWayland ? 46 : 0
+    readonly property int thickness: fixedTop ? height : Theme.barThickness
+    readonly property real inset: !fixedTop && Orbit.appearance.taskbarFloating ? 8 : 0
+    readonly property bool fit: !fixedTop && Orbit.appearance.taskbarLength==="fit"
+    readonly property real availableLength: Math.max(0,(horizontal ? width : height)-2*inset-startInset)
+    readonly property real footerLength: appBar ? 0 : horizontal ? footer.width+10 : footer.height+(Theme.compact ? 8 : 12)
     readonly property real bodyLength: fit ? Math.min(availableLength,Math.ceil(spine.taskStart+spine.preferredTaskLength+8+footerLength)) : availableLength
+    readonly property real utilityLeadingSpace: section==="utilities" ? footer.x : 0
     property string requestedFocus: ""
     function focusTaskbar(name) {
         requestedFocus=name || "";
@@ -29,13 +34,19 @@ Item {
         }
         home.forceActiveFocus(Qt.TabFocusReason);
     }
+    readonly property var workspaceDropTargets: section!=="spaces" ? [] : spine.spaces.map((space,index) => {
+        const left=spine.x+workspaceColumn.x+index*(30+spaceList.spacing)-spaceList.contentX;
+        const x=Math.max(spine.x+workspaceColumn.x,left);
+        const right=Math.min(spine.x+workspaceColumn.x+spaceList.width,left+30);
+        return {id:space.id,x:x,y:spine.y+workspaceColumn.y+spaceList.y,width:Math.max(0,right-x),height:spaceList.height};
+    })
     readonly property rect bodyGeometry: Qt.rect(spine.x,spine.y,spine.width,spine.height)
     Item {
 
     id: spine
     objectName: "orbitSpine"
     x: frame.horizontal ? Math.floor((frame.width-frame.bodyLength)/2) : frame.inset
-    y: frame.horizontal ? frame.inset : Math.floor((frame.height-frame.bodyLength)/2)
+    y: frame.horizontal ? frame.inset : frame.startInset+Math.floor((frame.height-frame.startInset-frame.bodyLength)/2)
     width: frame.horizontal ? frame.bodyLength : frame.thickness
     height: frame.horizontal ? frame.thickness : frame.bodyLength
     implicitWidth: horizontal ? 640 : 64
@@ -43,7 +54,7 @@ Item {
     property string outputName: frame.outputName
     property string clockText: frame.clockText
     property date clockNow: frame.clockNow
-    readonly property string edge: Orbit.appearance.panelPosition || "left"
+    readonly property string edge: frame.fixedTop ? "top" : Orbit.appearance.panelPosition || "left"
     readonly property bool horizontal: frame.horizontal
     readonly property var spaces: Orbit.desktops.filter(s => !outputName || !s.output || s.output===outputName)
     readonly property int verticalSpaceHeight: Math.min(spaces.length,frame.availableLength<500 ? 2 : 4)*(Theme.compact ? 28 : 33)
@@ -53,11 +64,11 @@ Item {
     readonly property real iconScale: (Orbit.appearance.taskbarIconScale || 100)/100
     readonly property int appIconSize: Math.round((Theme.extraCompact ? 20 : Theme.compact ? 24 : 28)*iconScale)
     readonly property int utilityIconSize: Math.round(16*iconScale)
-    readonly property int taskStart: horizontal ? workspaceColumn.x+workspaceColumn.width+10 : workspaceColumn.y+workspaceColumn.height+24
+    readonly property int taskStart: frame.appBar ? (horizontal ? 52 : home.y+home.height+9) : horizontal ? workspaceColumn.x+workspaceColumn.width+10 : workspaceColumn.y+workspaceColumn.height+24
     readonly property int taskSlotWidth: horizontal ? Math.max(appIconSize+10, Theme.extraCompact ? 34 : Theme.compact ? 40 : 46) : width-10
     readonly property int taskSlotHeight: horizontal ? frame.thickness-12 : Math.max(appIconSize+8, Theme.extraCompact ? 30 : Theme.compact ? 35 : 41)
     readonly property int taskSpacing: 2
-    readonly property int taskLaneLength: Math.max(0,(horizontal ? footer.x : footer.y)-taskStart-8)
+    readonly property int taskLaneLength: Math.max(0,(frame.appBar ? (horizontal ? width : height) : (horizontal ? footer.x : footer.y))-taskStart-8)
     readonly property int taskSlotLength: horizontal ? taskSlotWidth : taskSlotHeight
     readonly property int overflowLength: horizontal ? 30 : 25
     readonly property int preferredTaskLength: Math.max(0,Math.min(tasks.length,10)*(taskSlotLength+taskSpacing)-taskSpacing)
@@ -75,7 +86,7 @@ Item {
     function switchSpace(ident) {if(outputName)Orbit.switchDesktopOn(ident,outputName);else Orbit.switchDesktop(ident);}
     function taskTooltip(item,text) {Orbit.queueItemTooltip(item,text,horizontal ? item.width/2 : edge==="right" ? 0 : item.width,horizontal ? edge==="bottom" ? 0 : item.height : item.height/2);}
 
-    readonly property bool outlined: frame.inset > 0 || Orbit.appearance.taskbarLength === "fit"
+    readonly property bool outlined: frame.fixedTop || frame.inset > 0 || Orbit.appearance.taskbarLength === "fit"
     readonly property color edgeInk: Theme.highContrast ? Theme.controlBorder
         : Theme.legibleInk(Theme.separator, 1.8, [Theme.luminance(Theme.background)], true)
     Rectangle {
@@ -91,9 +102,9 @@ Item {
         y: spine.horizontal ? spine.edge==="top" ? spine.height-1 : 0 : Theme.corner(12)
         width: spine.horizontal ? spine.width-2*Theme.corner(12) : 1;height: spine.horizontal ? 1 : spine.height-2*Theme.corner(12);color: spine.edgeInk
     }
-    Rectangle {visible: frame.inset===0 && Orbit.appearance.taskbarLength!=="fit";x: spine.edge==="right" ? spine.width-3 : 0;y: Theme.corner(12);width: 3;height: spine.horizontal ? spine.height-2*Theme.corner(12) : 32;color: Theme.accentInk}
+    Rectangle {visible: !frame.fixedTop && frame.inset===0 && Orbit.appearance.taskbarLength!=="fit";x: spine.edge==="right" ? spine.width-3 : 0;y: Theme.corner(12);width: 3;height: spine.horizontal ? spine.height-2*Theme.corner(12) : 32;color: Theme.accentInk}
     IconButton {
-        id: home;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 28 : Theme.compact ? 32 : 38;padding: 2;iconName: "fold";phosphor: true;relief: true;bare: true;glyphSize: spine.utilityIconSize
+        id: home;visible: !frame.fixedTop;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 28 : Theme.compact ? 32 : 38;padding: 2;iconName: "fold";phosphor: true;relief: true;bare: true;glyphSize: spine.utilityIconSize
         hint: "Apps, windows and actions · Super";accessibleLabel: "Open Mellipi apps, windows and actions"
         onClicked: spine.openPanel("launcher")
     }
@@ -101,8 +112,9 @@ Item {
 
     Item {
         id: workspaceColumn
-        x: spine.horizontal ? 60 : 8;y: spine.horizontal ? 2 : Theme.compact ? 52 : 60
-        width: spine.horizontal ? Math.max(30,Math.min(spine.spaces.length,4)*33-3) : spine.width-16
+        visible: !frame.appBar && frame.section!=="utilities"
+        x: frame.fixedTop ? 5 : spine.horizontal ? 60 : 8;y: spine.horizontal ? 2 : Theme.compact ? 52 : 60
+        width: spine.horizontal ? Math.max(0,Math.min(spine.width-(frame.fixedTop ? 10 : 0),Math.min(spine.spaces.length,4)*33-3)) : spine.width-16
         height: spine.horizontal ? frame.thickness-4 : spine.verticalSpaceHeight
 
         ListView {
@@ -167,10 +179,11 @@ Item {
             }
         }
     }
-    Rectangle {x: spine.horizontal ? spine.taskStart-9 : 14;y: spine.horizontal ? 16 : workspaceColumn.y+workspaceColumn.height+12;width: spine.horizontal ? 1 : 36;height: spine.horizontal ? 32 : 1;color: Theme.separator}
+    Rectangle {visible: !frame.fixedTop && !frame.appBar;x: spine.horizontal ? spine.taskStart-9 : 14;y: spine.horizontal ? 16 : workspaceColumn.y+workspaceColumn.height+12;width: spine.horizontal ? 1 : 36;height: spine.horizontal ? 32 : 1;color: Theme.separator}
 
     Flow {
         id: taskColumn
+        visible: !frame.fixedTop
         x: spine.horizontal ? spine.taskStart : 5;y: spine.horizontal ? (Theme.extraCompact ? 3 : 4) : spine.taskStart
         width: spine.horizontal ? spine.taskLaneLength : parent.width-10
         height: spine.horizontal ? frame.thickness-8 : spine.taskLaneLength
@@ -233,12 +246,17 @@ Item {
                     Drag.hotSpot.x:width/2;Drag.hotSpot.y:height/2
                 }
                 DragHandler {
+                    property point releasePoint
                     enabled: !!dragProxy.windowId
+                    onTranslationChanged: if(active)releasePoint=centroid.position
                     target:dragProxy
                     onActiveChanged: {
-                        if(active)dragProxy.Drag.active=true;
+                        if(active){releasePoint=centroid.position;dragProxy.Drag.active=true;}
                         else if(dragProxy.Drag.active) {
-                            dragProxy.Drag.drop();
+                            if(frame.appBar) {
+                                dragProxy.Drag.cancel();
+                                Orbit.dropTaskOnWorkspace(task,dragProxy.windowId,Math.round(releasePoint.x),Math.round(releasePoint.y));
+                            } else dragProxy.Drag.drop();
                             dragProxy.x=0;dragProxy.y=0;
                         }
                     }
@@ -263,8 +281,8 @@ Item {
         }
     }
     Item {
-        id: footer;objectName: "spineFooter"
-        x: spine.horizontal ? spine.width-width-8 : 2
+        id: footer;visible: !frame.appBar && frame.section!=="spaces";objectName: "spineFooter"
+        x: spine.horizontal ? Math.max(3,spine.width-width-8) : 2
         y: spine.horizontal ? 0 : spine.height-height-6
         width: spine.horizontal ? footerIcons.width+8+clockGroup.naturalWidth : frame.thickness-4
         height: spine.horizontal ? frame.thickness : footerIcons.height+clockGroup.height+14
@@ -284,7 +302,7 @@ Item {
                 {key:"usage",item:"Usage",glyph:"usage",hint:"System Monitor"}
             ].concat(Orbit.nativePlacementSupported===true ? [{key:"window-placement",item:"AutoSnap",glyph:"start-spaces",hint:"Auto-snap · "+(Orbit.windowPlacementEnabled ? "On" : "Off")}] : [])
             readonly property int capacity: spine.horizontal ?
-                Math.max(3,Math.floor((frame.availableLength-spine.taskStart-clockGroup.naturalWidth-88)/buttonWidth)) :
+                Math.max(3,Math.floor((frame.availableLength-(frame.fixedTop ? 22 : spine.taskStart+88)-clockGroup.naturalWidth)/buttonWidth)) :
                 Math.max(3,across*Math.floor((frame.availableLength-spine.taskStart-clockGroup.height-88)/buttonHeight))
             readonly property int shownSecondary: Math.max(0,Math.min(secondary.length,capacity-primary.length-
                 (secondary.length+primary.length>capacity ? 1 : 0)))

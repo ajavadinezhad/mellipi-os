@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Complete Qt5 shell on native compositor under a disposable Sway parent.
+"""Complete Qt6 shell on native compositor under a disposable Sway parent.
 
 No physical input, monitor, locking, app close, power or session actions. Only the
 owned QWidget fixture is manipulated. Uses private settings, data, bus, Pictures.
@@ -48,7 +48,7 @@ def check_auto_snap(client,parent_env,settings):
     center_x,center_y=bounds['width']//2,bounds['height']//2
     qa.wait(lambda:client.status().get('window_placement')=='auto')
     button=qa.wait(lambda:qa.control('qa-shell-item:spineAutoSnap'))
-    assert button['x']>center_x and button['y']>center_y,button
+    assert button['x']>center_x and button['y']<center_y,button
     with closing(VirtualPointer(parent_env)) as pointer:
         pointer.move(origin_x+center_x,origin_y+center_y,parent['width'],parent['height'])
         time.sleep(.12)
@@ -64,7 +64,7 @@ def check_auto_snap(client,parent_env,settings):
         click(button)
         def anchored():
             panel=qa.control('qa-shell-item:windowPlacementPanel')
-            return panel and panel['y']+panel['height']<=button['y']
+            return panel and panel['y']>=button['y']+button['height']
         qa.wait(anchored)
         assert not qa.control('qa-shell-item:windowPlacementOptions')
         for layout in ('off','auto','off'):
@@ -78,7 +78,7 @@ def check_auto_snap(client,parent_env,settings):
         assert json.loads(settings.read_text())['windowPlacementEnabled'] is False
         click(button)
         qa.wait(lambda:qa.control('status')['panel']!='window-placement')
-    print('PASS bottom-right Auto-snap opens beside its icon and toggles automatic placement',flush=True)
+    print('PASS top-right Auto-snap opens beside its icon and toggles automatic placement',flush=True)
 
 def measure(root):
     def sample():
@@ -97,7 +97,7 @@ def measure(root):
             except (OSError,StopIteration,ValueError):pass
         return {pid:rows[pid][1] for pid in owned if pid in rows},pss
     before,_=sample();began=time.monotonic();time.sleep(2);after,pss=sample();elapsed=time.monotonic()-began
-    metrics=dict(scope='Native supervisor, private bus, compositor, Qt5 shell, Rust core and owned helpers; excludes disposable fixture and parent Sway',pss_MiB=round(pss/1024,1),cpu_percent_one_core=round(sum(max(0,ticks-before.get(pid,ticks)) for pid,ticks in after.items())/os.sysconf('SC_CLK_TCK')/elapsed*100,2),sample_seconds=round(elapsed,2),processes=len(after),hardware_validated=False)
+    metrics=dict(scope='Native supervisor, private bus, compositor, Qt6 shell, Rust core and owned helpers; excludes disposable fixture and parent Sway',pss_MiB=round(pss/1024,1),cpu_percent_one_core=round(sum(max(0,ticks-before.get(pid,ticks)) for pid,ticks in after.items())/os.sysconf('SC_CLK_TCK')/elapsed*100,2),sample_seconds=round(elapsed,2),processes=len(after),hardware_validated=False)
     Path('/tmp/orbit-native-shell-metrics.json').write_text(json.dumps(metrics,indent=2));print('MEASURE '+json.dumps(metrics),flush=True)
 
 def main(auto_snap_only=False):
@@ -115,13 +115,13 @@ def main(auto_snap_only=False):
             env=dict(parent_env,QT_LINUX_ACCESSIBILITY_ALWAYS_ON='1',XDG_DATA_HOME=str(apps.parent),ORBIT_SETTINGS_FILE=str(settings),ORBIT_DATA=str(directory/'native-data'),ORBIT_FOLD_DIR=str(directory),ORBIT_QA='1',XDG_CONFIG_HOME=str(config),PULSE_SERVER='unix:'+str(directory/'no-audio'))
             native=subprocess.Popen([str(ROOT/'run-native-session.sh'),'--nested'],cwd=ROOT,env=env,stdout=log,stderr=log,start_new_session=True)
             _,child=qa.wait(lambda:process(settings),40)
-            assert not child.get('SWAYSOCK') and child.get('ORBIT_QT')=='5'
+            assert not child.get('SWAYSOCK') and child.get('ORBIT_QT')=='6'
             for key in ('SWAYSOCK','WAYLAND_DISPLAY','DISPLAY','XDG_RUNTIME_DIR','DBUS_SESSION_BUS_ADDRESS','ORBIT_NATIVE_CONTROL'):
                 os.environ.pop(key,None)
                 if key in child:os.environ[key]=child[key]
             status=qa.wait(lambda:qa.control('status'),20);assert not status['qml_errors'],status['qml_errors']
             client=NativeCompositor(child['ORBIT_NATIVE_CONTROL']);assert client.status()['capabilities']['native_workspace_slide']
-            print('PASS native Qt5 shell ready with isolated bus and no Sway IPC',flush=True)
+            print('PASS native Qt6 shell ready with isolated bus and no Sway IPC',flush=True)
             check_auto_snap(client,parent_env,settings)
             if auto_snap_only:return
             qa.control('launcher')
@@ -133,7 +133,7 @@ def main(auto_snap_only=False):
             print('PASS launcher body is centered on the native output',flush=True)
             accessible=subprocess.run(['/usr/bin/python3',str(ROOT/'tools/qa-atspi-private.py')],env=dict(child),capture_output=True,text=True,timeout=15)
             if accessible.returncode:raise AssertionError('Private AT-SPI tree check: '+accessible.stderr[-600:]+accessible.stdout[-600:])
-            print('PASS Qt5 shell exports its launcher through real AT-SPI',flush=True)
+            print('PASS Qt6 shell exports its launcher through real AT-SPI',flush=True)
             qa.control('qa-system-action:focus-taskbar')
             qa.wait(lambda:(qa.control('qa-shell-item:spineHome') or {}).get('activeFocus'))
             print('PASS Focus taskbar gives keyboard focus to its first control',flush=True)

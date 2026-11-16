@@ -69,7 +69,7 @@ class Preferences:
         if key in ('cursorAccent','taskbarFloating','topbarConnected','compact','workspaceMotion','clock24','clockDate','reducedMotion','matchWindows','matchApps','aiEnabled','desktopIcons') and isinstance(value,bool): return value
         if key=='taskbarLength' and value in ('full','fit'):return value
         if key=='shellLayout' and value=='fold':return value
-        if key=='panelPosition' and value in ('left','right','top','bottom'):return value
+        if key=='panelPosition' and value in ('left','right','top','bottom'):return 'bottom' if value=='top' else value
         if key=='darkLevel' and value in ('normal','black'):return value
         if key=='launcherSort' and value in ('frequent','recent','name'):return value
         if key=='frameStyle' and value in ('auto','normal','pixel'):return value

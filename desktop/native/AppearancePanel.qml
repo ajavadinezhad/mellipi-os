@@ -81,9 +81,9 @@ ScrollView {
                 SettingsSegments {
                     objectName:"taskbarPositionSegments"
                     Layout.fillWidth:true;Layout.margins:4
-                    segmentWidth:Math.max(42,Math.floor((view.availableWidth-22)/4))
+                    segmentWidth:Math.max(42,Math.floor((view.availableWidth-22)/3))
                     value:Orbit.appearance.panelPosition || "left"
-                    options:[{label:"Top",value:"top"},{label:"Bottom",value:"bottom"},{label:"Left",value:"left"},{label:"Right",value:"right"}]
+                    options:[{label:"Left",value:"left"},{label:"Bottom",value:"bottom"},{label:"Right",value:"right"}]
                     onSelected:value=>Orbit.setPreference("panelPosition",value)
                 }
                 SettingRow {label:"Taskbar length";SettingsSegments {objectName:"taskbarLengthSegments";value:Orbit.appearance.taskbarLength || "full";segmentWidth:80;options:[{label:"Full edge",value:"full"},{label:"Fit contents",value:"fit"}];onSelected:value=>Orbit.setPreference("taskbarLength",value)}}

@@ -43,4 +43,6 @@ class MellipiRenameTests(unittest.TestCase):
         for path in (ROOT/'native').iterdir():
             if path.suffix not in ('.qml','.svg'):continue
             self.assertIsNone(re.search(r'\b(?:Abstract|ABSTRACT)\b',path.read_text()),str(path))
-        self.assertIn('Mellipi',(ROOT/'native/lock-textbox-render.h').read_text())
+        # The lock panel uses a lock icon and signed-in name without a product label.
+        lock_renderer=(ROOT/'native/lock-textbox-render.h').read_text()
+        self.assertIsNone(re.search(r'"(?:Abstract|Orbit)\b',lock_renderer))

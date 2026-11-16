@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Four-edge taskbar QA on disposable native output. Never physical input/session."""
+"""Split-panel and three-edge taskbar QA on disposable native output. Never physical input/session."""
 import importlib.util,json,os,sys,subprocess,tempfile,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];SOURCE_ROOT=ROOT/'src' if (ROOT/'src').is_dir() else ROOT;sys.path.insert(0,str(SOURCE_ROOT))
 spec=importlib.util.spec_from_file_location('native_shell_qa',ROOT/'tools/qa-native-shell.py');base=importlib.util.module_from_spec(spec);spec.loader.exec_module(base);qa=base.qa
 from native_compositor import NativeCompositor
-from panel_policy import panel_rect,panel_body_origin,panel_thickness
+from panel_policy import TOP_STRIP_HEIGHT,panel_rect,panel_body_origin,panel_thickness
 
 def main():
     parent=native=None;checks=[]
@@ -26,7 +26,7 @@ def main():
                 if key in child:os.environ[key]=child[key]
             client=NativeCompositor(child['ORBIT_NATIVE_CONTROL']);qa.wait(lambda:qa.control('status'),20)
             output=client.snapshot()['outputs'][0]['rect'];before={w['id'] for w in client.snapshot()['windows']}
-            cases=[(edge,density) for density in ('comfortable','compact','extra') for edge in ('left','right','top','bottom')]
+            cases=[(edge,density) for density in ('comfortable','compact','extra') for edge in ('left','right','bottom')]
             for edge,density in cases:
                 length='fit';floating=True
                 qa.control('qa-taskbar-style:fit:1:rounded');qa.control('qa-density:'+density)
@@ -35,22 +35,26 @@ def main():
                 expected=panel_rect(output,appearance);reserve=panel_thickness(appearance)+16
                 def ready():
                     state=qa.control('status');bar=state['topbar_native'];area=client.snapshot()['outputs'][0]['workarea']
-                    target=dict(output)
+                    target=dict(output,y=output["y"]+TOP_STRIP_HEIGHT,height=output["height"]-TOP_STRIP_HEIGHT)
                     if edge=='left':target.update(x=output['x']+reserve,width=output['width']-reserve)
                     elif edge=='right':target.update(width=output['width']-reserve)
-                    elif edge=='top':target.update(y=output['y']+reserve,height=output['height']-reserve)
-                    else:target.update(height=output['height']-reserve)
-                    return state if bar['width']==expected['width'] and bar['height']==expected['height'] and area==target else None
+                    else:target.update(height=target['height']-reserve)
+                    return state if bar['width']==expected['width'] and bar['height']==expected['height']-(TOP_STRIP_HEIGHT if edge in ('left','right') else 0) and area==target else None
                 try:state=qa.wait(ready,10)
                 except AssertionError:
                     print('EDGE DEBUG',edge,qa.control('status'),client.snapshot()['outputs'],flush=True);raise
                 assert base.process(settings)[0]==initial_pid,('Shell restarted during taskbar reorientation',edge,initial_pid,base.process(settings)[0])
                 assert not state['qml_errors'],state['qml_errors']
-                for name in ('spineHome','spineCapture','spineControls','spineSound','spineUsage','spineNotifications'):
+                home=qa.wait(lambda:qa.control('qa-shell-item:spineHome'),5)
+                assert expected['x']<=home['x']<expected['x']+expected['width'],(edge,home,expected)
+                assert output['y']+TOP_STRIP_HEIGHT<=home['y']<expected['y']+expected['height'],(edge,home,expected)
+                spaces=qa.wait(lambda:qa.control('qa-shell-item:spineWorkspaceList'),5)
+                assert spaces['x']<output['x']+output['width']/2 and spaces['y']<output['y']+TOP_STRIP_HEIGHT
+                for name in ('spineCapture','spineControls','spineSound','spineUsage','spineNotifications'):
                     item=qa.wait(lambda:qa.control('qa-shell-item:'+name),5)
-                    assert item['x']>=expected['x'] and item['y']>=expected['y'],(edge,name,item,expected)
-                    assert item['x']+item['width']<=expected['x']+expected['width']+.5 and item['y']+item['height']<=expected['y']+expected['height']+.5,(edge,name,item,expected)
-                time.sleep(.2)
+                    assert item['x']>=output['x']+output['width']/2 and item['x']+item['width']<=output['x']+output['width'],(edge,name,item)
+                    assert output['y']<=item['y'] and item['y']+item['height']<=output['y']+TOP_STRIP_HEIGHT,(edge,name,item)
+                top=dict(output,height=TOP_STRIP_HEIGHT)
                 for panel in ('quick','music','notifications','usage','tray','screenshot'):
                     qa.control(panel)
                     try:qa.wait(lambda:qa.control('status')['panel']==panel,5)
@@ -58,9 +62,8 @@ def main():
                         print('PANEL DEBUG',edge,length,floating,panel,qa.control('status'),flush=True);raise
                     def aligned():
                         body=qa.control('qa-shell-item:panelBody')
-                        spine=qa.control('qa-shell-item:orbitSpine')
-                        if not body or not spine:return False
-                        origin=panel_body_origin(panel,body['width'],body['height'],output,edge,spine)
+                        if not body:return False
+                        origin=panel_body_origin(panel,body['width'],body['height'],output,'top',top)
                         return abs(body['x']-origin['x'])<=1 and abs(body['y']-origin['y'])<=1
                     qa.wait(aligned,5)
                     assert not qa.control('status')['qml_errors'],qa.control('status')['qml_errors']

@@ -1,7 +1,7 @@
 """KDE LayerShellQt's public Qt5 API, using the distro's matching ABI."""
 import ctypes,ctypes.util,os
 from pathlib import Path
-from panel_policy import SPINE_FOOTER_PANELS,CENTERED_PANELS,panel_edge,overlay_layout,taskbar_overlay_layout
+from panel_policy import TOP_STRIP_HEIGHT,SPINE_FOOTER_PANELS,CENTERED_PANELS,panel_edge,overlay_layout,taskbar_overlay_layout
 if os.environ.get("ORBIT_QT") == "6":
     from PyQt6 import sip
 else:
@@ -22,9 +22,11 @@ class Margins(ctypes.Structure):_fields_=[('left',ctypes.c_int),('top',ctypes.c_
 margins=fn('_ZN12LayerShellQt6Window10setMarginsERK8QMargins',[ctypes.c_void_p,ctypes.POINTER(Margins)])
 
 def configure(window,name,compact,dock_align="center",spine=False,panel_position="left",floating=False,thickness=64):
-    name={'secondaryDesktopSurface':'desktopSurface','secondaryTopbarSurface':'topbarSurface','secondaryDockSurface':'dockSurface','secondaryDockReserveSurface':'dockReserveSurface'}.get(name,name)
+    name={'secondaryDesktopSurface':'desktopSurface','secondaryTopbarSurface':'topbarSurface','secondaryDockSurface':'dockSurface','secondaryDockReserveSurface':'dockReserveSurface','secondarySystemStripsSurface':'systemStripsSurface'}.get(name,name)
     surface=get(sip.unwrapinstance(window));output(surface,sip.unwrapinstance(window.screen()))
     if name=='desktopSurface':anchors(surface,15);layer(surface,1);zone(surface,-1);keyboard(surface,1 if window.property('desktopEditing') else 2 if window.property('desktopIconsEnabled') else 0)
+    elif name=='systemStripsSurface':
+        anchors(surface,13);layer(surface,2);zone(surface,TOP_STRIP_HEIGHT);keyboard(surface,0)
     elif name=='topbarSurface':
         edge=panel_edge(panel_position)
         anchors(surface,{'left':7,'right':11,'top':13,'bottom':14}[edge] if spine else 13)

@@ -13,6 +13,7 @@ def keyboard_mode(panel):
 
 PANEL_EDGES=('left','right','top','bottom')
 PANEL_THICKNESS=64
+TOP_STRIP_HEIGHT=46
 
 def panel_edge(appearance):
     value=appearance.get('panelPosition','left') if isinstance(appearance,dict) else appearance
@@ -27,6 +28,13 @@ def panel_rect(screen,edge,thickness=PANEL_THICKNESS):
     if edge in ('left','right'):
         return dict(x=x if edge=='left' else x+width-thickness,y=y,width=thickness,height=height)
     return dict(x=x,y=y if edge=='top' else y+height-thickness,width=width,height=thickness)
+
+def taskbar_surface_rect(screen,appearance,*,fixed_top):
+    rect=panel_rect(screen,appearance)
+    if fixed_top and panel_edge(appearance) in ('left','right'):
+        rect.update(y=rect['y']+TOP_STRIP_HEIGHT,height=max(1,rect['height']-TOP_STRIP_HEIGHT))
+    return rect
+
 
 def panel_available_size(screen,edge):
     vertical=panel_edge(edge) in ('left','right');extra=(panel_thickness(edge)-64+(16 if edge.get('taskbarFloating') else 0)) if isinstance(edge,dict) else 0
@@ -57,8 +65,8 @@ def panel_body_origin(panel,width,height,screen,edge,body=None,*,content_size=No
     return dict(x=x,y=y)
 
 
-def taskbar_body_rect(screen,appearance):
-    surface=panel_rect(screen,appearance);edge=panel_edge(appearance)
+def taskbar_body_rect(screen,appearance,*,fixed_top=False):
+    surface=taskbar_surface_rect(screen,appearance,fixed_top=fixed_top);edge=panel_edge(appearance)
     vertical=edge in ('left','right');margin=8 if appearance.get('taskbarFloating') else 0
     available=surface['height'] if vertical else surface['width']
     length=max(1,available-2*margin)
@@ -86,3 +94,8 @@ def taskbar_overlay_layout(panel,screen,edge,body,content_size=None):
         clamped = max(edge_gap, min(m[index], limit - edge_gap))
         m = (*m[:index], clamped, *m[index+1:])
     return dict(result,margins=m)
+
+
+def workspace_drop_target(targets,x,y):
+    return next((row['id'] for row in targets
+                 if row['x']<=x<row['x']+row['width'] and row['y']<=y<row['y']+row['height']),None)

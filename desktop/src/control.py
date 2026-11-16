@@ -164,7 +164,7 @@ def serve(bridge):
                     bridge.setPreference('taskbarLength',parts[0]);bridge.setPreference('taskbarFloating',parts[1]=='1');bridge.setPreference('corners',parts[2])
             elif data.startswith('qa-taskbar-position:') and os.environ.get('ORBIT_QA')=='1' and os.environ.get('ORBIT_NESTED')=='1':
                 position=data.removeprefix('qa-taskbar-position:')
-                if position in ('left','right','top','bottom'):bridge.setPreference('panelPosition',position)
+                if position in ('left','right','bottom'):bridge.setPreference('panelPosition',position)
             elif data.startswith('qa-settings-') and os.environ.get('ORBIT_QA')=='1' and os.environ.get('ORBIT_NESTED')=='1':
                 action=data.removeprefix('qa-settings-')
                 if action=='dismiss':bridge.dismiss()

@@ -1,7 +1,11 @@
 """Floating taskbar popovers stay on their logical output."""
+import tempfile
 import unittest
+from pathlib import Path
 
-from panel_policy import panel_body_origin, panel_mask_origin, taskbar_overlay_layout
+from preferences import Preferences
+
+from panel_policy import panel_body_origin, panel_mask_origin, taskbar_overlay_layout, workspace_drop_target
 
 
 class TaskbarPopoverGeometryTest(unittest.TestCase):
@@ -55,3 +59,24 @@ class TaskbarPopoverGeometryTest(unittest.TestCase):
                                  dict(x=-520,y=128))
                 self.assertEqual(panel_mask_origin(600,400,400,200,'session-exit',edge),
                                  dict(x=100,y=100))
+
+
+class TaskbarPreferenceMigrationTest(unittest.TestCase):
+    def test_saved_top_taskbar_migrates_to_bottom(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = Path(directory) / "settings.json"
+            settings.write_text('{"panelPosition":"top","taskbarFloating":true}')
+            preferences = Preferences(settings)
+            self.assertEqual(preferences.appearance()["panelPosition"], "bottom")
+            self.assertTrue(preferences.appearance()["taskbarFloating"])
+
+
+class WorkspaceDropTargetTest(unittest.TestCase):
+    def test_clipped_spaces_and_gap_are_not_workspace_targets(self):
+        targets = [dict(id=0,x=12,y=8,width=0,height=30),
+                   dict(id=1,x=12,y=8,width=19,height=30),
+                   dict(id=2,x=34,y=8,width=30,height=30)]
+        self.assertEqual(workspace_drop_target(targets,12,15),1)
+        self.assertEqual(workspace_drop_target(targets,34,15),2)
+        self.assertIsNone(workspace_drop_target(targets,32,15))
+        self.assertIsNone(workspace_drop_target(targets,39,46))

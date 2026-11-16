@@ -10,7 +10,7 @@ from qt_compat import *
 import core
 import desktop
 from preferences import Preferences, PRESETS
-from panel_policy import SPINE_FOOTER_PANELS,CENTERED_PANELS,panel_edge,panel_rect,panel_body_origin,panel_mask_origin,panel_available_size,taskbar_body_rect,panel_thickness
+from panel_policy import TOP_STRIP_HEIGHT,SPINE_FOOTER_PANELS,CENTERED_PANELS,panel_edge,panel_rect,panel_body_origin,panel_mask_origin,panel_available_size,taskbar_surface_rect,taskbar_body_rect,panel_thickness,workspace_drop_target
 from x11_events import DesktopEvents
 from storage import LazyRustStore, PythonStore
 
@@ -951,16 +951,37 @@ class Bridge(QObject):
             origin=Bridge.overlayOrigin(self,window.width(),window.height(),screen)
             left,top=origin['x'],origin['y']
         elif name in ('topbarSurface','secondaryTopbarSurface') and self.appearance.get('shellLayout')=='fold':
-            rect=panel_rect(screen,self.appearance);left,top=rect['x'],rect['y']
+            rect=taskbar_surface_rect(screen,self.appearance,fixed_top=self.isWayland);left,top=rect['x'],rect['y']
         elif name in ('dockSurface','secondaryDockSurface'):
             alignment=self.appearance['dockAlign']
             left+=(12 if alignment=='left' else screen['width']-window.width()-12 if alignment=='right' else (screen['width']-window.width())/2)
             top+=screen['height']-window.height()-10
         return dict(x=round(left+point.x()),y=round(top+point.y()))
     @Slot(str,'QVariantMap',result='QVariantMap')
-    def panelSurfaceRect(self,edge,screen):return panel_rect(screen,dict(self.appearance,panelPosition=edge))
+    def panelSurfaceRect(self,edge,screen):return taskbar_surface_rect(screen,dict(self.appearance,panelPosition=edge),fixed_top=self.isWayland)
     @Slot(str,int,int,'QVariantMap',str,result='QVariantMap')
-    def panelPopupOrigin(self,panel,width,height,screen,edge):return panel_body_origin(panel,width,height,screen,edge,Bridge.taskbarBodyRect(self,screen))
+    def panelPopupOrigin(self,panel,width,height,screen,edge):
+        edge=self.popupPanelEdge(panel)
+        return panel_body_origin(panel,width,height,screen,edge,self.popupAnchorRect(panel,screen))
+
+    @Slot(str,result=str)
+    def popupPanelEdge(self,panel):
+        return 'top' if panel in SPINE_FOOTER_PANELS else panel_edge(self.appearance)
+
+    def popupAnchorRect(self,panel,screen):
+        if panel in SPINE_FOOTER_PANELS:
+            return dict(x=screen['x'],y=screen['y'],width=screen['width'],height=TOP_STRIP_HEIGHT)
+        return self.taskbarBodyRect(screen)
+
+    @Slot(QObject)
+    def syncSystemStripsMask(self,window):
+        if not isinstance(window,QQuickWindow):return
+        rectangles=(window.property(key) for key in ('workspaceRegion','utilityRegion'))
+        region=QRegion()
+        for rect in rectangles:
+            if rect and rect.width()>0 and rect.height()>0:
+                region|=QRegion(round(rect.x()),round(rect.y()),round(rect.width()),round(rect.height()))
+        if not region.isEmpty():window.setMask(region)
     @Slot('QVariantMap',result='QVariantMap')
     def taskbarBodyRect(self,screen):
         for window in getattr(self,'shellWindows',()):
@@ -971,9 +992,9 @@ class Bridge(QObject):
             if (geometry.x(),geometry.y(),geometry.width(),geometry.height()) != tuple(screen[key] for key in ('x','y','width','height')):continue
             body=window.property('orbitTaskbarBody')
             if body and body.width()>0 and body.height()>0:
-                frame=panel_rect(screen,self.appearance)
+                frame=taskbar_surface_rect(screen,self.appearance,fixed_top=self.isWayland)
                 return dict(x=frame['x']+round(body.x()),y=frame['y']+round(body.y()),width=round(body.width()),height=round(body.height()))
-        return taskbar_body_rect(screen,self.appearance)
+        return taskbar_body_rect(screen,self.appearance,fixed_top=self.isWayland)
 
     @Slot(QObject)
     def syncTaskbarMask(self,window):
@@ -984,6 +1005,22 @@ class Bridge(QObject):
         else:
             window.setMask(QRegion())
         if window is self.topbarWindow and self.panel:self.positionPanel(self.panel)
+
+    @Slot(QObject,str,int,int)
+    def dropTaskOnWorkspace(self,item,ident,x,y):
+        if not ident:return
+        point=self.itemScreenPoint(item,x,y)
+        if not point:return
+        for window in self.shellWindows:
+            if window.objectName() not in ('systemStripsSurface','secondarySystemStripsSurface') or not window.isVisible():continue
+            screen=window.screen()
+            if screen is None:continue
+            geometry=screen.geometry()
+            targets=window.property('workspaceDropTargets')
+            if hasattr(targets,'toVariant'):targets=targets.toVariant()
+            target=workspace_drop_target(targets or [],point['x']-geometry.x(),point['y']-geometry.y())
+            if target is not None:
+                self.moveWindow(ident,target+1);return
 
     @Slot(str,int,int,int,int,str,result='QVariantMap')
     def panelBodyMask(self,panel,bw,bh,width,height,edge):return panel_mask_origin(bw,bh,width,height,panel,edge)
@@ -1000,7 +1037,7 @@ class Bridge(QObject):
         screen=screen or self.screenMap()
         if getattr(self,'_panel','') in CENTERED_PANELS:return dict(x=screen['x']+(screen['width']-width)/2,y=screen['y']+(screen['height']-height)/2)
         spine=self.appearance.get('shellLayout')=='fold';right=getattr(self,'_panelPlacement',False)
-        if spine:return panel_body_origin(getattr(self,'_panel',''),width,height,screen,panel_edge(self.appearance),Bridge.taskbarBodyRect(self,screen),content_size=self.panelContentSize())
+        if spine:return panel_body_origin(getattr(self,'_panel',''),width,height,screen,self.popupPanelEdge(self._panel),self.popupAnchorRect(self._panel,screen),content_size=self.panelContentSize())
         return dict(x=screen['x']+(76 if spine else screen['width']-width-12 if right else (screen['width']-width)/2),y=screen['y']+((screen['height']-height-16 if getattr(self,'_panelBottom',False) else 16) if spine else 42 if right else (screen['height']-height)/2))
     def panelTooltipOrigin(self):
         window=self.panelWindow;origin=Bridge.overlayOrigin(self,window.width(),window.height())
@@ -1062,7 +1099,7 @@ class Bridge(QObject):
         if self._context:self._context={**self._context,'placement':'above'};self.interactionChanged.emit()
     def showTaskbarMenu(self,item,items,opener):
         if not items:return
-        edge=panel_edge(self.appearance)
+        edge='top' if self.itemSurfaceName(item) in ('systemStripsSurface','secondarySystemStripsSurface') else panel_edge(self.appearance)
         width,height=item.width(),item.height()
         x=width if edge=='left' else 0 if edge=='right' else width/2
         y=height if edge=='top' else 0 if edge=='bottom' else height/2
@@ -1304,7 +1341,7 @@ class Bridge(QObject):
                 # Only the inner body and matching input region change size.
                 centered=self._panel in CENTERED_PANELS
                 if spine:
-                    mask=panel_mask_origin(window.width(),window.height(),width,height,self._panel,panel_edge(self.appearance));x,y=mask['x'],mask['y']
+                    mask=panel_mask_origin(window.width(),window.height(),width,height,self._panel,self.popupPanelEdge(self._panel));x,y=mask['x'],mask['y']
                 else:
                     x=(window.width()-width+1)//2 if centered else window.width()-width if right else (window.width()-width+1)//2
                     y=(window.height()-height+1)//2 if centered else 0 if right else (window.height()-height+1)//2
@@ -1328,7 +1365,7 @@ class Bridge(QObject):
         edge=panel_edge(self.appearance);right=0
         if spine:
             reserve=panel_thickness(self.appearance)+(16 if self.appearance.get('taskbarFloating') else 0)
-            left=reserve if edge=='left' else 0;right=reserve if edge=='right' else 0;bar=reserve if edge=='top' else 0;bottom=reserve if edge=='bottom' else 0
+            left=reserve if edge=='left' else 0;right=reserve if edge=='right' else 0;bar=TOP_STRIP_HEIGHT;bottom=reserve if edge=='bottom' else 0
         key=(menu,screen['width'],screen['height'],bar,bottom,left,right,bool(self._panel))
         if self._contextSurfaceMode==key:return
         from wayland_surfaces import get,keyboard,layer,sip
@@ -1345,7 +1382,7 @@ class Bridge(QObject):
         if LAYER_SHELL and wayland_session() and self.panelWindow:
             from wayland_surfaces import position_overlay
             self._panelBottom=self.appearance.get('shellLayout')=='fold' and name in SPINE_FOOTER_PANELS
-            position_overlay(self.panelWindow,name,self.appearance.get('shellLayout')=='fold',panel_position=panel_edge(self.appearance),screen_geometry=self.screenMap(),bar_geometry=self.taskbarBodyRect(self.screenMap()),content_size=self.panelContentSize())
+            position_overlay(self.panelWindow,name,self.appearance.get('shellLayout')=='fold',panel_position=self.popupPanelEdge(name),screen_geometry=self.screenMap(),bar_geometry=self.popupAnchorRect(name,self.screenMap()),content_size=self.panelContentSize())
             self._panelPlacement=self.appearance.get('shellLayout')!='fold' and name in SPINE_FOOTER_PANELS
             self.syncContextSurface()
     @Slot(str)
@@ -1880,7 +1917,7 @@ def main():
     for surface in native_surfaces:QQmlEngine.setObjectOwnership(surface,(QQmlEngine.CppOwnership if QT5 else QQmlEngine.ObjectOwnership.CppOwnership))
     engine._orbitSurfaceRefs=native_surfaces;bridge._qmlSurfaceRefs=native_surfaces;bridge.shellWindows=native_surfaces
     bridge.settingsChanged.connect(bridge.applyShellCursor)
-    windows={name:next(surface for surface in native_surfaces if surface.objectName()==name) for name in ('desktopSurface','topbarSurface','dockSurface','overlaySurface')}
+    windows={name:next(surface for surface in native_surfaces if surface.objectName()==name) for name in ('desktopSurface','topbarSurface','dockSurface','overlaySurface','systemStripsSurface')}
     for surface in native_surfaces:
         if bridge.currentScreen():surface.setScreen(bridge.currentScreen())
     bridge.tooltipWindow=root.findChild(QObject,'tooltipSurface');bridge.contextWindow=root.findChild(QObject,'contextSurface')
@@ -1898,6 +1935,7 @@ def main():
     if bridge.windowActions:QTimer.singleShot(250,lambda:bridge.windowTask('__layout__','reflow',bridge.windowActions.reflow_maximized))
     for name,kind,reserve in [('desktopSurface','DESKTOP',0),('topbarSurface','DOCK',38),('dockSurface','DOCK',-88)]:
         configure_x11(windows[name],kind,(64 if panel_edge(bridge.appearance)=='top' else -64 if panel_edge(bridge.appearance)=='bottom' else 0) if name=='topbarSurface' and bridge.appearance['shellLayout']=='fold' else 0 if bridge.appearance['shellLayout']=='fold' else (30 if bridge.compact else 38) if reserve>0 else (-62 if bridge.compact else -76) if reserve<0 else 0,left=64 if name=='topbarSurface' and bridge.appearance['shellLayout']=='fold' and panel_edge(bridge.appearance)=='left' else 0,right=64 if name=='topbarSurface' and bridge.appearance['shellLayout']=='fold' and panel_edge(bridge.appearance)=='right' else 0)
+    configure_x11(windows['systemStripsSurface'],'DOCK',TOP_STRIP_HEIGHT)
     def update_struts(force=False):
         # LayerShellQt commits anchor changes immediately. Do not commit a new
         # edge against the old vertical/horizontal zero-size request; the
@@ -1937,7 +1975,7 @@ def main():
                 # Qt5 can preserve the last compositor-configured dimensions even
                 # after recreation. Set the intended native buffer size explicitly.
                 windows['dockSurface'].resize(bridge.dockGeometry['surfaceWidth'],bridge.dockGeometry.get('surfaceHeight',66))
-                rect=panel_rect(geometry,bridge.appearance);windows['topbarSurface'].resize(rect['width'],rect['height']) if bridge.appearance['shellLayout']=='fold' else windows['topbarSurface'].resize(geometry['width'],38)
+                rect=taskbar_surface_rect(geometry,bridge.appearance,fixed_top=True);windows['topbarSurface'].resize(rect['width'],rect['height']) if bridge.appearance['shellLayout']=='fold' else windows['topbarSurface'].resize(geometry['width'],38)
                 windows['desktopSurface'].resize(geometry['width'],geometry['height'])
                 from wayland_surfaces import configure
                 for surface in surfaces:configure(surface,surface.objectName(),bridge.compact,bridge.appearance['dockAlign'],bridge.appearance['shellLayout']=='fold',panel_position=panel_edge(bridge.appearance),floating=bridge.appearance.get('taskbarFloating',False),thickness=panel_thickness(bridge.appearance))
@@ -1984,7 +2022,7 @@ def main():
         if args.screenshot:
             image=windows['desktopSurface'].grabWindow()
             painter=QPainter(image)
-            for name in ('topbarSurface','dockSurface','overlaySurface'):
+            for name in ('topbarSurface','dockSurface','systemStripsSurface','overlaySurface'):
                 window=windows[name]
                 if window.isVisible(): painter.drawImage(window.x()-windows['desktopSurface'].x(),window.y()-windows['desktopSurface'].y(),window.grabWindow())
             painter.end(); image.save(args.screenshot)

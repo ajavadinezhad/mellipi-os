@@ -30,7 +30,7 @@ QtObject {
     readonly property bool horizontalBar: panelEdge==="top" || panelEdge==="bottom"
     readonly property var taskbarRect: {var style=Orbit.appearance;return Orbit.panelSurfaceRect(panelEdge,Orbit.screenGeometry)}
     readonly property bool centeredPanel: Orbit.centeredPanels.indexOf(renderedPanel)>=0
-    readonly property bool bottomSheet: foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
+    readonly property bool systemSheet: foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
     readonly property int panelPadding: Theme.extraCompact ? 12 : Theme.compact ? 16 : 20
     readonly property int panelGap: Theme.extraCompact ? 6 : Theme.compact ? 10 : 14
     readonly property bool exitReview: renderedPanel === "session-exit"
@@ -38,8 +38,8 @@ QtObject {
     readonly property bool foldPanel: foldStyle && (renderedPanel === "launcher" || renderedPanel === "overview")
     property int panelWidth: ({launcher:workspacePanelWidth,overview:workspacePanelWidth,ai:workspacePanelWidth,settings:420,"system-settings":600,capture:520,quick:350,music:350,usage:350,notifications:380,tray:310,bluetooth:380,battery:380,screenshot:380,"window-capture":500,"window-placement":270,"session-exit":460,switcher:620})[shell.renderedPanel] || 560
     readonly property bool panelRight: !foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
-    readonly property int panelBodyWidth: Math.max(1,Math.min(sw-(foldStyle ? horizontalBar ? 32 : Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0) : 24),panelWidth,760))
-    readonly property int panelBodyHeight: Math.max(1,Math.min(sh-(foldStyle ? horizontalBar ? Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0) : 32 : foldPanel ? (Theme.compact ? 144 : 172) : 100),panelHeight,620))
+    readonly property int panelBodyWidth: Math.max(1,Math.min(sw-(foldStyle ? (systemSheet || horizontalBar ? 32 : Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0)) : 24),panelWidth,760))
+    readonly property int panelBodyHeight: Math.max(1,Math.min(sh-(foldStyle ? (systemSheet ? 74 : horizontalBar ? Theme.barThickness+28+(Orbit.appearance.taskbarFloating ? 16 : 0) : 32) : foldPanel ? (Theme.compact ? 144 : 172) : 100),panelHeight,620))
     onPanelBodyWidthChanged: queuePanelGeometry()
     onPanelBodyHeightChanged: queuePanelGeometry()
     property int panelHeight: {
@@ -122,12 +122,19 @@ QtObject {
         MouseArea { anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; onDoubleClicked: Orbit.showPanel("launcher"); onClicked: mouse => { if(mouse.button === Qt.LeftButton){Orbit.dismiss();Orbit.closeContext();}else if(mouse.button === Qt.RightButton) {Orbit.openContext("desktop","",shell.sx+mouse.x,shell.sy+mouse.y);} } }
 
         DesktopIcons {
-            anchors.fill: parent;anchors.leftMargin: shell.foldStyle && shell.panelEdge==="left" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.rightMargin: shell.foldStyle && shell.panelEdge==="right" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.topMargin: shell.foldStyle ? shell.panelEdge==="top" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16 : Theme.compact ? 44 : 52;anchors.bottomMargin: shell.foldStyle ? shell.panelEdge==="bottom" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16 : Theme.compact ? 76 : 90
+            anchors.fill: parent;anchors.leftMargin: shell.foldStyle && shell.panelEdge==="left" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.rightMargin: shell.foldStyle && shell.panelEdge==="right" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.topMargin: shell.foldStyle ? 62 : Theme.compact ? 44 : 52;anchors.bottomMargin: shell.foldStyle ? shell.panelEdge==="bottom" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16 : Theme.compact ? 76 : 90
             visible: Orbit.appearance.desktopIcons;controller: DesktopFiles;originX: shell.sx;originY: shell.sy;outputId: Orbit.selectedOutput
             onContextRequested: (path,x,y) => Orbit.openContext(path ? "desktop-file" : "desktop",path,x,y)
             onInteracted: {Orbit.dismiss();Orbit.closeContext();}
             onEditFocusRequested: (outputId,active) => Orbit.setDesktopEditing(outputId,active)
         }
+    }
+
+    property Window systemStrips: TopStrips {
+        geometry: Orbit.screenGeometry
+        orbitOutputName: Orbit.selectedOutput
+        clockNow: shell.clockNow
+        ready: Orbit.surfacesReady && shell.foldStyle
     }
 
     property Window topbarWindow: Window {
@@ -156,7 +163,7 @@ QtObject {
         property rect orbitTaskbarBody: spine.visible ? spine.bodyGeometry : Qt.rect(0,0,0,0)
         function syncBarMask() {Orbit.syncTaskbarMask(top);}
         onOrbitTaskbarBodyChanged: Qt.callLater(syncBarMask)
-        OrbitSpine {id: spine;Keys.onEscapePressed: top.leaveKeyboardMode();anchors.fill: parent;visible: shell.foldStyle;clockText: ClockFormat.shortTime(shell.clockNow,Orbit.appearance.clock24);clockNow: shell.clockNow;outputName: Orbit.selectedOutput}
+        OrbitSpine {id: spine;section: "apps";Keys.onEscapePressed: top.leaveKeyboardMode();anchors.fill: parent;visible: shell.foldStyle;clockText: ClockFormat.shortTime(shell.clockNow,Orbit.appearance.clock24);clockNow: shell.clockNow;outputName: Orbit.selectedOutput}
         Item {
             visible: !shell.foldStyle
             width: parent.width;height: Theme.compact ? 30 : 38
@@ -353,7 +360,7 @@ QtObject {
                 id: surface
                 objectName: "panelBody"
                 width: shell.panelBodyWidth;height: shell.panelBodyHeight
-                readonly property var bodyMask: Orbit.panelBodyMask(shell.renderedPanel,parent.width,parent.height,width,height,shell.panelEdge)
+                readonly property var bodyMask: Orbit.panelBodyMask(shell.renderedPanel,parent.width,parent.height,width,height,Orbit.popupPanelEdge(shell.renderedPanel))
                 x: Orbit.isWayland ? bodyMask.x : 0
                 y: Orbit.isWayland ? bodyMask.y : 0
                 radius: shell.foldStyle ? Theme.corner(6) : Theme.radius; color: shell.foldStyle ? "transparent" : Theme.background; border.color: Theme.border; border.width: shell.foldStyle ? 0 : 1

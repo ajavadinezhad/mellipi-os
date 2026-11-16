@@ -27,13 +27,20 @@ QtObject {
         DesktopBackground {anchors.fill: parent}
         MouseArea {anchors.fill: parent;acceptedButtons: Qt.LeftButton | Qt.RightButton;onClicked: mouse => {if(mouse.button===Qt.RightButton){Orbit.openContextOn("desktop","",output.geometry.x+mouse.x,output.geometry.y+mouse.y,output.screenName);}else Orbit.dismiss();}onDoubleClicked: Orbit.showPanelOn("launcher",output.screenName)}
         DesktopIcons {
-            anchors.fill: parent;anchors.leftMargin: output.panelEdge==="left" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.rightMargin: output.panelEdge==="right" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.topMargin: output.panelEdge==="top" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.bottomMargin: output.panelEdge==="bottom" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16
+            anchors.fill: parent;anchors.leftMargin: output.panelEdge==="left" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.rightMargin: output.panelEdge==="right" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16;anchors.topMargin: 62;anchors.bottomMargin: output.panelEdge==="bottom" ? Theme.barThickness+16+(Orbit.appearance.taskbarFloating ? 16 : 0) : 16
             visible: Orbit.appearance.desktopIcons;controller: DesktopFiles;originX: output.geometry.x;originY: output.geometry.y;outputId: output.screenName
             onContextRequested: (path,x,y) => Orbit.openContextOn(path ? "desktop-file" : "desktop",path,x,y,output.screenName)
             onInteracted: {Orbit.dismiss();Orbit.closeContext();}
             onEditFocusRequested: (outputId,active) => Orbit.setDesktopEditing(outputId,active)
         }
 
+    }
+    property Window systemStrips: TopStrips {
+        objectName: "secondarySystemStripsSurface"
+        geometry: output.geometry
+        orbitOutputName: output.screenName
+        clockNow: output.now
+        ready: output.ready && Orbit.surfacesReady && Theme.fold
     }
     property Window topbar: Window {
         id: secondaryBar
@@ -45,7 +52,7 @@ QtObject {
         property rect orbitTaskbarBody: spine.visible ? spine.bodyGeometry : Qt.rect(0,0,0,0)
         function syncBarMask() {Orbit.syncTaskbarMask(secondaryBar);}
         onOrbitTaskbarBodyChanged: Qt.callLater(syncBarMask)
-        OrbitSpine {id: spine;anchors.fill: parent;visible: Theme.fold;clockText: output.shortClock;clockNow: output.now;outputName: output.screenName}
+        OrbitSpine {id: spine;section: "apps";anchors.fill: parent;visible: Theme.fold;clockText: output.shortClock;clockNow: output.now;outputName: output.screenName}
         FoldTopbar {visible: !Theme.fold;width: parent.width;height: Theme.compact ? 30 : 38;clockText: output.clock;screenWidth: output.geometry.width;outputName: output.screenName}
     }
     property Window reserve: Window {
