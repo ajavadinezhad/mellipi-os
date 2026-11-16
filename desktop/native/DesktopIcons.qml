@@ -158,8 +158,34 @@ Item {
                     x:4;y:2;width:parent.width-8;height:icons.iconCell-6;radius:Theme.corner(7)
                     color:icons.selectedPaths.indexOf(modelData.path)>=0?Qt.rgba(0.208,0.518,0.894,0.22):hit.containsMouse?Theme.hover:"transparent"
                     border.color:icons.selectedPaths.indexOf(modelData.path)>=0?icons.selectionBlue:"transparent"
-                    Image{anchors.horizontalCenter:parent.horizontalCenter;y:8;width:icons.iconSize;height:icons.iconSize;source:Theme.iconSource(modelData.icon);sourceSize:Qt.size(Math.max(40, icons.iconSize),Math.max(40, icons.iconSize));fillMode:Image.PreserveAspectFit}
-                    Text{x:4;y:icons.iconSize+13;width:parent.width-8;height:Math.max(24,icons.iconCell-icons.iconSize-28);text:modelData.name;textFormat:Text.PlainText;color:Theme.text;font.pixelSize:Theme.fontSize(11);horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;maximumLineCount:2;elide:Text.ElideRight}
+                    Item {
+                        id: artwork
+                        objectName: "desktopArtwork"
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: 8
+                        width: icons.iconSize
+                        height: width
+                        // Only the shell's own places and ordinary folders are controls.
+                        // Preserve authored launcher art and file-type illustrations.
+                        readonly property bool owned: modelData.kind === "place" || modelData.kind === "folder"
+                        Rectangle {
+                            anchors.fill: parent
+                            visible: artwork.owned
+                            radius: Theme.corner(Math.round(artwork.width*.24))
+                            color: Theme.raised
+                            border.width: Theme.highContrast ? 1 : 0
+                            border.color: Theme.controlBorder
+                        }
+                        Image {
+                            anchors.centerIn: parent
+                            width: artwork.owned ? Math.round(artwork.width*.68) : artwork.width
+                            height: width
+                            source: artwork.owned ? Theme.symbolicIconSource(modelData.icon, Theme.accentInk) : Theme.iconSource(modelData.icon)
+                            sourceSize: Qt.size(Math.max(40, width),Math.max(40, height))
+                            fillMode: Image.PreserveAspectFit
+                        }
+                    }
+                    Text{x:4;y:icons.iconSize+10;width:parent.width-8;height:Math.max(0,parent.height-y-1);text:modelData.name;textFormat:Text.PlainText;color:Theme.text;font.pixelSize:Theme.fontSize(11);horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;maximumLineCount:2;elide:Text.ElideRight}
                     MouseArea {
                         id:hit;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         property bool wasDragged:false

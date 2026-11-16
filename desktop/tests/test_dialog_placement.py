@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from PyQt6.QtCore import QPoint, QTimer, Qt
-from PyQt6.QtWidgets import QApplication, QDialog, QWidget
+from PyQt6.QtWidgets import QApplication, QDialog, QTextEdit, QWidget
 
 from file_chooser import FileChooser
 from qt_app import AppWindow, exec_owned_dialog, themed_choice
@@ -58,3 +58,28 @@ class DialogPlacementTests(unittest.TestCase):
         self.assertEqual(themed_choice(self.owner, 'Unsaved changes', 'Save the document?',
                                        'Save', 'Cancel', 'Discard'), QDialog.DialogCode.Rejected)
         self.assertEqual(observed, [])
+
+    def test_long_confirmation_keeps_buttons_accessible_and_message_scrollable(self):
+        body = 'recording-' + 'é' * 115 + '.wav\u200f\n' + ('מיקום ' + 'a' * 100 + '\n') * 25
+        errors = []
+
+        def inspect_and_cancel():
+            dialog = QApplication.activeModalWidget()
+            try:
+                self.assert_dialog(dialog)
+                message = dialog.findChild(QTextEdit, 'promptMessage')
+                self.assertTrue(message.isReadOnly())
+                self.assertEqual(message.toPlainText(), body)
+                self.assertFalse(message.horizontalScrollBar().isVisible())
+                self.assertGreater(message.verticalScrollBar().maximum(), 0)
+                self.assertLessEqual(dialog.height(), self.owner.screen().availableGeometry().height())
+                self.assertEqual(dialog.focusWidget().objectName(), 'promptCancel')
+            except Exception as error:
+                errors.append(error)
+            finally:
+                dialog.reject()
+
+        QTimer.singleShot(0, inspect_and_cancel)
+        self.assertEqual(themed_choice(self.owner, 'Move recording to Trash?', body,
+                                       'Move to Trash', 'Cancel'), QDialog.DialogCode.Rejected)
+        self.assertEqual(errors, [])

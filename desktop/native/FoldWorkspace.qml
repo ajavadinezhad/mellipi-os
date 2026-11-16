@@ -8,6 +8,7 @@ Item {
     objectName: "foldWorkspace"
     implicitWidth: 728;implicitHeight: 490
     readonly property bool narrow: width<560
+    readonly property bool shortViewport: height<270
     readonly property string view: Fold.state.view || "work"
     readonly property var currentSpace: Orbit.desktops.find(space => space.active) || ({name:"Workspace",id:0})
     readonly property string workspaceName: /^\d+$/.test(String(currentSpace.name || "")) ? "Workspace "+currentSpace.name : currentSpace.name || "Workspace "+(currentSpace.id+1)
@@ -22,9 +23,10 @@ Item {
     }
     onViewChanged: if(view!=="work")Qt.callLater(function(){unified.focusSearch();})
     ColumnLayout {
-        anchors.fill: parent;spacing: Theme.compact ? 10 : 12
+        anchors.fill: parent;spacing: fold.shortViewport ? 5 : Theme.compact ? 10 : 12
         SheetHeader {
             Layout.fillWidth: true;Layout.preferredHeight: implicitHeight
+            dense: fold.shortViewport
             section: "Mellipi / "+fold.workspaceName
             title: fold.view==="work" ? "Files & notes" : "Apps & windows"
             subtitle: ""
@@ -36,11 +38,11 @@ Item {
             Item {Layout.fillWidth: true}
         }
         RowLayout {
-            Layout.fillWidth: true;Layout.fillHeight: true;spacing: 14
+            Layout.fillWidth: true;Layout.fillHeight: true;Layout.minimumHeight: 0;spacing: 14
         StackLayout {
             id: foldPages
             property bool ready: false
-            Layout.fillWidth: true;Layout.fillHeight: true
+            Layout.fillWidth: true;Layout.fillHeight: true;Layout.minimumHeight: 0
             currentIndex: fold.view==="work" ? 0 : 1
             transform: Translate {id: foldPageShift}
             Component.onCompleted: ready=true
@@ -83,12 +85,12 @@ Item {
                     }
                 }
             }
-            UnifiedLauncher {id: unified;Layout.fillWidth: true;Layout.fillHeight: true;onToolsRequested: Fold.setView("work")}
+            UnifiedLauncher {id: unified;Layout.fillWidth: true;Layout.fillHeight: true;Layout.minimumHeight: 0;compactViewport: fold.shortViewport;onToolsRequested: Fold.setView("work")}
         }
         }
         Text {visible: !!Fold.state.error;Layout.fillWidth: true;Layout.maximumHeight: 30;text: Fold.state.error || "";color: Theme.muted;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap;maximumLineCount: 2;elide: Text.ElideRight;textFormat: Text.PlainText}
         RowLayout {
-            Layout.fillWidth: true;Layout.preferredHeight: 26;spacing: 7
+            visible: !fold.shortViewport;Layout.fillWidth: true;Layout.preferredHeight: 26;spacing: 7
             Rectangle {width: 5;height: 5;rotation: 45;color: Theme.accent}
             Text {text: fold.windowCount;color: Theme.muted;font.pixelSize: Theme.fontSize(10);Layout.rightMargin: 4}
             Item {Layout.fillWidth: true}

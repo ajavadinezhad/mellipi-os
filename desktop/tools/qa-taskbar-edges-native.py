@@ -37,6 +37,13 @@ def verify_workspace_drag(client,parent_env,child):
             def button(down):
                 stamp=int(time.monotonic()*1000)&0xffffffff
                 pointer.send(5,2,struct.pack('=III',stamp,272,down));pointer.send(5,4);pointer.roundtrip();time.sleep(.08)
+            button_region=qa.wait(lambda:qa.control('qa-shell-item:spineControls'),5)
+            move(button_region['x']+button_region['width']/2,button_region['y']+button_region['height']/2)
+            tip=qa.wait(lambda:(qa.control('status') or {}).get('tooltip'),5)
+            assert tip['text']=="Quick controls" and tip['y']>=TOP_STRIP_HEIGHT,tip
+            assert bounds['x']<=tip['x'] and tip['x']+tip['width']<=bounds['x']+bounds['width'],tip
+            assert tip['y']+tip['height']<=bounds['y']+bounds['height'],tip
+            print('PASS hovered top-right tooltip fits without clipping',flush=True)
             x,y=task['x']+task['width']/2,task['y']+task['height']/2
             move(x,y);button(1);move(x,y-20);move(dest['x']+dest['width']/2,dest['y']+dest['height']/2);button(0)
         qa.wait(lambda:any(w['id']==row['id'] and w['desktop']==1 for w in client.windows()),6)

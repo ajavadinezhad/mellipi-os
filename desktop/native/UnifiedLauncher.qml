@@ -5,7 +5,8 @@ import "."
 ColumnLayout {
     id: launcher
     objectName: "unifiedLauncher"
-    spacing: Theme.sectionGap
+    property bool compactViewport: false
+    spacing: compactViewport ? 4 : Theme.sectionGap
     readonly property int toolbarHeight: Math.max(36, Theme.labelSize + 14)
     readonly property int actionHeight: Math.max(28, Theme.detailSize + 10)
     signal toolsRequested()
@@ -228,7 +229,7 @@ ColumnLayout {
     ColumnLayout {
         id: savedSpaces
         objectName: "launcherSavedSpaces"
-        visible: !launcher.showLayouts && !launcher.query.trim() && !launcher.pinnedOnly
+        visible: !launcher.compactViewport && !launcher.showLayouts && !launcher.query.trim() && !launcher.pinnedOnly
                  && !(Orbit.windowFilter && Orbit.windowFilter.length) && Arrangements.layouts.length > 0
         Layout.fillWidth: true
         spacing: Theme.rowGap
@@ -330,10 +331,10 @@ ColumnLayout {
     ListView {
         visible:!launcher.showLayouts
         opacity:launcher.viewOpacity;transform:Translate {y:launcher.viewOffset}
-        id: resultsList;objectName: "unifiedResults";Layout.fillWidth: true;Layout.fillHeight: true
+        id: resultsList;objectName: "unifiedResults";Layout.fillWidth: true;Layout.fillHeight: true;Layout.minimumHeight: 0
         model: launcher.results;clip: true;cacheBuffer: 0;reuseItems: true;spacing: 4
         boundsBehavior: Flickable.StopAtBounds;activeFocusOnTab: true;keyNavigationEnabled: true
-        section.property: "category";section.criteria: ViewSection.FullString
+        section.property: launcher.compactViewport ? "" : "category";section.criteria: ViewSection.FullString
         section.delegate: Item {
             width: resultsList.width
             height: Math.max(30, heading.implicitHeight + 12)
@@ -366,9 +367,9 @@ ColumnLayout {
         Keys.onUpPressed: {if(currentIndex<=0){search.forceActiveFocus();event.accepted=true;}else event.accepted=false;}
         delegate: Rectangle {
             id: result;objectName: "unifiedResult";required property var modelData;required property int index
-            readonly property int rowInset: Theme.extraCompact ? 6 : Theme.compact ? 9 : 12
+            readonly property int rowInset: launcher.compactViewport ? 3 : Theme.extraCompact ? 6 : Theme.compact ? 9 : 12
             width: resultsList.width
-            height: Math.max(Theme.extraCompact ? 44 : Theme.compact ? 56 : 64, Math.ceil(resultContent.implicitHeight)+2*rowInset)
+            height: Math.max(launcher.compactViewport ? 38 : Theme.extraCompact ? 44 : Theme.compact ? 56 : 64, Math.ceil(resultContent.implicitHeight)+2*rowInset)
             radius: Theme.corner(5)
             color: resultsList.currentIndex===index ? Theme.selectedSurface : hit.containsMouse ? Theme.hover : "transparent"
             border.color: Theme.focusColor
@@ -409,7 +410,7 @@ ColumnLayout {
                 ColumnLayout {
                     Layout.fillWidth: true;Layout.minimumWidth: 0;spacing: 3
                     Text {objectName: modelData.kind==="calculation" ? "launcherCalculationResult" : "";text: modelData.name;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.labelSize;textFormat: Text.PlainText}
-                    Text {text: modelData.description;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.muted;font.pixelSize: Theme.detailSize;textFormat: Text.PlainText}
+                    Text {visible: !launcher.compactViewport;text: modelData.description;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.muted;font.pixelSize: Theme.detailSize;textFormat: Text.PlainText}
                 }
                 IconButton {
                     objectName: "unifiedWindowActions"

@@ -30,7 +30,7 @@ QtObject {
         return "image://icons/menu/"+String(ink || accentInk).slice(1)+"/"+name;
     }
     function phosphorIconSource(name, ink, relief) {
-        return "image://icons/" + (relief && !highContrast ? "phosphor-relief/" : "phosphor/")
+        return "image://icons/" + (relief ? (highContrast ? "phosphor-relief-hc/" : "phosphor-relief/") : "phosphor/")
             + String(ink).slice(1) + "/" + name;
     }
     function taskbarIconSource(name, internal) {

@@ -28,7 +28,7 @@ from device_monitor import DeviceMonitor
 from file_transfers import MAX_SOURCES, Cancelled, CancelToken, Transfer
 from file_archives import archive_suffix, compress, extract_here, preview_archive
 from storage_analyzer import analyze
-from files_icons import ACTIONS, PLACES, file_icon, icon as phosphor_icon
+from files_icons import ACTIONS, PLACES, file_icon, icon as phosphor_icon, place_icon
 
 
 class FileJob(QThread):
@@ -1202,8 +1202,7 @@ class Files(QMainWindow):
             if not name:
                 continue
             if (control.objectName() == 'place' or name == 'drive-harddisk') and name in PLACES:
-                glyph, tint = PLACES[name]
-                icon = phosphor_icon('duotone', glyph, ink, tint)
+                icon = place_icon(name, palette)
             else:
                 icon = phosphor_icon('regular', ACTIONS.get(name, ''), ink)
             if icon.isNull():
@@ -1356,8 +1355,7 @@ class Files(QMainWindow):
     def storage_action(self, label, callback, parent=None):
         action = QAction(label, parent or self)
         if hasattr(self, 'theme_watch'):
-            glyph, tint = PLACES['drive-harddisk']
-            action.setIcon(phosphor_icon('duotone', glyph, self.theme_watch.tokens['text'], tint))
+            action.setIcon(place_icon('drive-harddisk', self.theme_watch.tokens))
         action.setProperty('symbolicIcon', 'drive-harddisk')
         action.setIconVisibleInMenu(True)
         action.triggered.connect(callback)

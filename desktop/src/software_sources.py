@@ -44,6 +44,7 @@ class Package:
     branch: str = ''
     installed: bool = False
     classic: bool = False
+    update_version: str = ''
 
     @property
     def origin(self):
@@ -58,6 +59,8 @@ class SourceResult:
     packages: list[Package] = field(default_factory=list)
     status: str = ''
     needs_refresh: bool = False
+    check_failed: bool = False
+    checked: bool = False
 
 
 def executable(path):
@@ -276,7 +279,7 @@ def search(query, sources=SOURCES, on_result=None):
     return _query_sources(adapters, sources, on_result, query)
 
 
-def _query_sources(adapters, sources, on_result, *arguments, match=''):
+def _query_sources(adapters, sources, on_result, *arguments, match='', update_check=False):
     with ThreadPoolExecutor(max_workers=len(SOURCES)) as pool:
         searches = {pool.submit(adapters[source], *arguments): source for source in sources}
         results = {}
@@ -289,7 +292,8 @@ def _query_sources(adapters, sources, on_result, *arguments, match=''):
                                        (p.name + '\n' + p.identifier + '\n' + p.description).casefold()]
                 results[source] = result
             except (RuntimeError, OSError, HTTPException, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
-                results[source] = SourceResult(status=friendly_error(error))
+                prefix = f'{SOURCES[source]}: ' if update_check else ''
+                results[source] = SourceResult(status=prefix + friendly_error(error), check_failed=update_check)
             if on_result:on_result(source, results[source])
         return results
 
@@ -356,6 +360,80 @@ def installed_software(query, sources=SOURCES, on_result=None):
         raise ValueError('Search terms must be 120 characters or fewer.')
     adapters = {'apt': apt_installed, 'flatpak': flatpak_installed, 'snap': snap_installed}
     return _query_sources(adapters, sources, on_result, match=query)
+
+def apt_updates():
+    if not (executable(APT_GET) and executable(APT_CACHE)):
+        return SourceResult(status='APT is unavailable.')
+    if not any(line.rstrip().endswith(' Packages')
+               for line in run([APT_CACHE, 'policy']).splitlines()):
+        return SourceResult(status='APT: refresh the system package index to check for updates.',
+                            needs_refresh=True, check_failed=True)
+    # Simulation uses the configured policy and local signed indexes. It does not
+    # take package locks, prompt for administrator access, or start a transaction.
+    rows = run([APT_GET, '--simulate', '--no-remove',
+                '-o', 'APT::Get::Show-User-Simulation-Note=false', 'upgrade'], timeout=20)
+    packages = []
+    for row in rows.splitlines():
+        match = re.match(r'^Inst (\S+) \[([^\]]+)\] \((\S+)', row)
+        if match and APT_INSTALLED_ID.fullmatch(match[1]):
+            identifier, installed, candidate = match.groups()
+            packages.append(Package('apt', identifier, identifier, '', installed,
+                                    installed=True, update_version=candidate))
+    return SourceResult(packages, f'APT: {len(packages)} eligible from the local index.', checked=True)
+
+
+def flatpak_updates():
+    if not executable(FLATPAK):
+        return SourceResult(status='Flatpak is not installed.')
+    packages, errors = [], []
+    checked = False
+    for scope in ('user', 'system'):
+        try:
+            rows = run([FLATPAK, '--' + scope, 'remote-ls', '--app', '--updates',
+                        '--columns=application:f,name:f,version:f,branch:f,origin:f'], timeout=15)
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+            errors.append(f'{scope.title()} Flatpak: {friendly_error(error)}')
+            continue
+        checked = True
+        seen = set()
+        for line in rows.splitlines():
+            fields = line.split('\t')
+            if len(fields) != 5:
+                continue
+            identifier, name, version, branch, remote = fields
+            if not (FLATPAK_ID.fullmatch(identifier) and FLATPAK_COMPONENT.fullmatch(branch)
+                    and FLATPAK_COMPONENT.fullmatch(remote)):
+                continue
+            if (identifier, branch) in seen:
+                continue
+            seen.add((identifier, branch))
+            packages.append(Package('flatpak', identifier, name or identifier, '',
+                                    scope=scope, remote=remote, branch=branch,
+                                    installed=True, update_version=version))
+    return SourceResult(packages, ' '.join([f'Flatpak: {len(packages)} available.', *errors]),
+                        check_failed=bool(errors), checked=checked)
+
+
+def snap_updates():
+    if not (executable(SNAP) and SNAP_SOCKET.is_socket()):
+        return SourceResult(status='Snap is not configured.')
+    packages = []
+    for row in snap_request('/v2/find', select='refresh'):
+        identifier = row.get('name')
+        if not isinstance(identifier, str) or not SNAP_ID.fullmatch(identifier):
+            continue
+        title, summary, version = (row.get(key) for key in ('title', 'summary', 'version'))
+        packages.append(Package('snap', identifier, title if isinstance(title, str) and title else identifier,
+                                summary if isinstance(summary, str) else '', installed=True,
+                                update_version=version if isinstance(version, str) else ''))
+    return SourceResult(packages, f'Snap: {len(packages)} available.', checked=True)
+
+
+def available_updates(sources=SOURCES, on_result=None):
+    """Query configured sources independently, without installing or refreshing packages."""
+    adapters = {'apt': apt_updates, 'flatpak': flatpak_updates, 'snap': snap_updates}
+    return _query_sources(adapters, sources, on_result, update_check=True)
+
 
 def install_arguments(package):
     if package.installed:

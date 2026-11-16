@@ -20,21 +20,33 @@ from window_controls import PATHS as WINDOW_CONTROL_PATHS, glyph_svg
 def native_session():return bool(os.environ.get('ORBIT_NATIVE_CONTROL'))
 def wayland_session():return native_session() or bool(os.environ.get('SWAYSOCK'))
 
-def taskbar_relief_svg(source, color, size):
-    """Shade the original Phosphor outline, without a tile or runtime effect."""
+def taskbar_relief_svg(source, color, size, high_contrast=False):
+    """A cached two-layer bevel, legible even for 16 px taskbar symbols."""
     _, _, body = source.partition('>')
     body = body.rsplit('</svg>', 1)[0]
     base = color.name()
-    light = color.lighter(121).name()
-    shade = color.darker(135).name()
+    if high_contrast:
+        # Keep the same flat, opaque glyph and add depth outside its face.
+        shadow = (color.darker(175) if color.lightness() >= 128 else color.lighter(170)).name()
+        return (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 256 256">'
+            f'<g transform="translate(5 13)" opacity=".8" fill="{shadow}">'
+            f'{body.replace("currentColor", shadow)}</g>'
+            f'<g fill="{base}">{body.replace("currentColor", base)}</g></svg>'
+        )
+    light = color.lighter(148).name()
+    shade = color.darker(170).name()
+    face_shade = color.darker(117).name()
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 256 256">'
-        '<defs><linearGradient id="face" x1="0%" y1="0%" x2="25%" y2="100%">'
-        f'<stop offset="0" stop-color="{light}"/><stop offset=".52" stop-color="{base}"/>'
-        f'<stop offset="1" stop-color="{shade}"/></linearGradient></defs>'
-        f'<g transform="translate(0 7)" opacity=".33" fill="{shade}">'
+        '<defs><linearGradient id="face" x1="0%" y1="0%" x2="35%" y2="100%">'
+        f'<stop offset="0" stop-color="{light}"/>'
+        f'<stop offset=".32" stop-color="{base}"/><stop offset=".65" stop-color="{base}"/>'
+        f'<stop offset="1" stop-color="{face_shade}"/></linearGradient></defs>'
+        '<g transform="translate(8 4) scale(.94)">'
+        f'<g transform="translate(7 14)" opacity=".88" fill="{shade}">'
         f'{body.replace("currentColor", shade)}</g>'
-        f'<g fill="url(#face)">{body.replace("currentColor", "url(#face)")}</g></svg>'
+        f'<g fill="url(#face)">{body.replace("currentColor", "url(#face)")}</g></g></svg>'
     )
 
 
@@ -43,7 +55,7 @@ class Icons(QQuickImageProvider):
     def requestImage(self,ident,*sizes):
         requested=sizes[-1]
         tint=None
-        if ident.startswith(('phosphor/', 'phosphor-relief/')):
+        if ident.startswith(('phosphor/', 'phosphor-relief/', 'phosphor-relief-hc/')):
             from files_icons import asset
             treatment, ink, name = ident.split('/', 2)
             glyph = {
@@ -63,8 +75,8 @@ class Icons(QQuickImageProvider):
             color=QColor('#'+ink)
             if glyph and color.isValid() and (svg:=asset('regular',glyph)):
                 side=max(16,min(96,requested.width() if requested.width()>0 else 24))
-                if treatment == 'phosphor-relief':
-                    svg = taskbar_relief_svg(svg, color, side)
+                if treatment.startswith('phosphor-relief'):
+                    svg = taskbar_relief_svg(svg, color, side, treatment.endswith('-hc'))
                 else:
                     svg = svg.replace('currentColor', color.name()).replace(
                         '<svg ', f'<svg width="{side}" height="{side}" ', 1)
@@ -765,7 +777,7 @@ class Bridge(QObject):
             self._tooltipLifecycleConnected=True
         self.hideTooltip()
         if not text:return
-        self._pendingTooltip=dict(text=text[:120],x=x,y=y,panel=self._panel)
+        self._pendingTooltip=dict(text=text,x=x,y=y,panel=self._panel)
         self.tooltipTimer.start()
     def publishTooltip(self):
         from interactions import tooltip_position
@@ -790,25 +802,36 @@ class Bridge(QObject):
                 anchor_top=top_point['y'];anchor_bottom=bottom_point['y']
                 placement='above' if request['localY']<=0 else 'below'
             except (RuntimeError,TypeError):self.hideTooltip();return
-        if self.currentScreen() is None:self.hideTooltip();return
-        target=self.currentScreen()
-        if hasattr(self,'app'):
-            target=next((q for q in self.app.screens() if q.geometry().x()<=x<q.geometry().x()+q.geometry().width() and q.geometry().y()<=y<q.geometry().y()+q.geometry().height()),target)
+        target=anchor.window().screen() if anchor is not None and anchor.window() is not None else None
+        if target is None:
+            target=next((q for q in self.app.screens() if q.geometry().x()<=x<q.geometry().x()+q.geometry().width() and q.geometry().y()<=y<q.geometry().y()+q.geometry().height()),self.currentScreen())
+        if target is None:self.hideTooltip();return
         screen=target.geometry()
-        width=min(300,max(80,len(text)*7+20));x,y=tooltip_position((screen.x(),screen.y(),screen.width(),screen.height()),x,y,width,34,placement=placement,anchor_top=anchor_top,anchor_bottom=anchor_bottom)
-        if self.appearance.get('shellLayout')=='fold':
-            edge=panel_edge(self.appearance)
-            inset=panel_thickness(self.appearance)+12+(16 if self.appearance.get('taskbarFloating') else 0)
-            left=screen.x()+(inset if edge=='left' else 8);right=screen.x()+screen.width()-(inset if edge=='right' else 8)
-            top=screen.y()+(inset if edge=='top' else 8);bottom=screen.y()+screen.height()-(inset if edge=='bottom' else 8)
-            x=max(left,min(x,right-width));y=max(top,min(y,bottom-34))
-        # Mirror the same hint inside an open panel as well as in the small
-        # native tooltip surface. The panel's own scene wins over its opaque
-        # body; the native hint supplies any portion outside that scene/mask.
-        inline=bool(self._panel and getattr(self,'panelWindow',None));local_x=local_y=0
-        if inline:
-            origin=self.panelTooltipOrigin();local_x=x-origin['x'];local_y=y-origin['y']
-        self._tooltip=dict(text=text,x=x,y=y,width=width,inline=inline,localX=local_x,localY=local_y)
+        edge=panel_edge(self.appearance)
+        reserve=panel_thickness(self.appearance)+(16 if self.appearance.get('taskbarFloating') else 0)
+        folded=self.appearance.get('shellLayout')=='fold'
+        left=screen.x()+8+(reserve if folded and edge=='left' else 0)
+        right=screen.x()+screen.width()-8-(reserve if folded and edge=='right' else 0)
+        top=screen.y()+8+(TOP_STRIP_HEIGHT if folded else 0)
+        bottom=screen.y()+screen.height()-8-(reserve if folded and edge=='bottom' else 0)
+        available_width=max(1,right-left);available_height=max(1,bottom-top)
+        font=QFont(self.app.font())
+        scale=float(self.appearance.get('textScale',1))
+        font.setPixelSize(max(8,int((10 if self.appearance.get('density')=='extra' else 11)*scale+.5)))
+        metrics=QFontMetrics(font)
+        paragraphs=text.splitlines() or [text]
+        width=min(360,available_width,max(48,max(metrics.horizontalAdvance(line) for line in paragraphs)+24))
+        option=QTextOption();option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        text_height=0
+        for paragraph in paragraphs:
+            layout=QTextLayout(paragraph or ' ',font);layout.setTextOption(option);layout.beginLayout()
+            while (line:=layout.createLine()).isValid():
+                line.setLineWidth(max(1,width-24));text_height+=line.height()
+            layout.endLayout()
+        height=min(available_height,max(32,round(text_height+16)))
+        x,y=tooltip_position((left,top,available_width,available_height),x,y,width,height,placement=placement,anchor_top=anchor_top,anchor_bottom=anchor_bottom)
+        max_lines=max(1,(height-16)//max(1,metrics.lineSpacing())) if height<text_height+16 else 0
+        self._tooltip=dict(text=text,x=x,y=y,width=width,height=height,maxLines=max_lines)
         if LAYER_SHELL and wayland_session() and self.tooltipWindow:
             from wayland_surfaces import position_tooltip
             if self.tooltipWindow.screen() is not target:self.tooltipWindow.setScreen(target)
@@ -1039,9 +1062,6 @@ class Bridge(QObject):
         spine=self.appearance.get('shellLayout')=='fold';right=getattr(self,'_panelPlacement',False)
         if spine:return panel_body_origin(getattr(self,'_panel',''),width,height,screen,self.popupPanelEdge(self._panel),self.popupAnchorRect(self._panel,screen),content_size=self.panelContentSize())
         return dict(x=screen['x']+(76 if spine else screen['width']-width-12 if right else (screen['width']-width)/2),y=screen['y']+((screen['height']-height-16 if getattr(self,'_panelBottom',False) else 16) if spine else 42 if right else (screen['height']-height)/2))
-    def panelTooltipOrigin(self):
-        window=self.panelWindow;origin=Bridge.overlayOrigin(self,window.width(),window.height())
-        return dict(origin,width=window.width(),height=window.height())
     @Slot(QObject,str,int,int)
     def queueItemTooltip(self,item,text,x,y):
         if not isinstance(item,QQuickItem):self.hideTooltip();return

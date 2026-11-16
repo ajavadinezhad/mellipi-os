@@ -117,6 +117,80 @@ class InstalledSoftwareTests(unittest.TestCase):
         request.assert_called_once_with('/v2/snaps')
 
 
+class UpdateDiscoveryTests(unittest.TestCase):
+    @patch('software_sources.executable', return_value=True)
+    @patch('software_sources.run', side_effect=[
+        'Package files:\n 500 https://example.org stable/main amd64 Packages\n',
+        'Inst mellipi-shell [0.1.22] (0.1.23 Mellipi:stable [amd64])\n'
+        'Inst libsample:i386 [1.0] (2.0 stable [i386])\n'
+        'Inst new-package (1.0 stable [amd64])\n'
+        'Conf mellipi-shell (0.1.23 stable [amd64])\n',
+    ])
+    def test_apt_update_check_is_read_only_and_preserves_architecture(self, run, _):
+        from software_sources import apt_updates
+        result = apt_updates()
+        self.assertTrue(result.checked)
+        self.assertFalse(result.check_failed)
+        self.assertEqual([(p.identifier, p.version, p.update_version) for p in result.packages],
+                         [('mellipi-shell', '0.1.22', '0.1.23'), ('libsample:i386', '1.0', '2.0')])
+        self.assertEqual(run.call_args.args[0],
+                         [APT_GET, '--simulate', '--no-remove',
+                          '-o', 'APT::Get::Show-User-Simulation-Note=false', 'upgrade'])
+        self.assertIn('local index', result.status)
+
+    @patch('software_sources.executable', return_value=True)
+    @patch('software_sources.run', return_value='100 /var/lib/dpkg/status\n')
+    def test_missing_index_is_not_reported_as_no_updates(self, run, _):
+        from software_sources import apt_updates
+        result = apt_updates()
+        self.assertTrue(result.needs_refresh)
+        self.assertTrue(result.check_failed)
+        self.assertFalse(result.checked)
+        run.assert_called_once_with([APT_CACHE, 'policy'])
+
+    @patch('software_sources.executable', return_value=True)
+    @patch('software_sources.run', side_effect=[
+        'org.example.App\tExample\t2.1\tstable\tflathub\n'
+        'org.example.App\tExample\t2.1\tstable\tflathub\n',
+        RuntimeError('Could not reach remote'),
+    ])
+    def test_flatpak_partial_failure_preserves_successful_updates(self, run, _):
+        from software_sources import FLATPAK, flatpak_updates
+        result = flatpak_updates()
+        self.assertTrue(result.checked)
+        self.assertTrue(result.check_failed)
+        self.assertEqual([(p.identifier, p.scope, p.update_version) for p in result.packages],
+                         [('org.example.App', 'user', '2.1')])
+        self.assertIn('System Flatpak: Could not reach remote', result.status)
+        self.assertEqual([call.args[0][:5] for call in run.call_args_list],
+                         [[FLATPAK, '--user', 'remote-ls', '--app', '--updates'],
+                          [FLATPAK, '--system', 'remote-ls', '--app', '--updates']])
+
+    @patch('software_sources.executable', return_value=True)
+    @patch('software_sources.SNAP_SOCKET')
+    @patch('software_sources.snap_request', return_value=[
+        {'name': 'example', 'title': 'Example', 'version': '2.0'}, {'name': '../bad'},
+    ])
+    def test_snap_refresh_listing_never_starts_an_update(self, request, socket, _):
+        from software_sources import snap_updates
+        socket.is_socket.return_value = True
+        result = snap_updates()
+        self.assertTrue(result.checked)
+        self.assertEqual([(p.identifier, p.update_version) for p in result.packages],
+                         [('example', '2.0')])
+        request.assert_called_once_with('/v2/find', select='refresh')
+
+    @patch('software_sources.apt_updates', side_effect=RuntimeError('APT failed'))
+    @patch('software_sources.snap_updates')
+    def test_one_source_failure_does_not_discard_the_other_result(self, snap, _):
+        from software_sources import SourceResult, available_updates
+        snap.return_value = SourceResult(status='Snap: 0 available.', checked=True)
+        result = available_updates(('apt', 'snap'))
+        self.assertTrue(result['apt'].check_failed)
+        self.assertIn('System packages: APT failed', result['apt'].status)
+        self.assertTrue(result['snap'].checked)
+
+
 class SoftwareManagementTests(unittest.TestCase):
     @patch('software_sources.run', side_effect=['install\tinstalled\t\t\toptional\t1.0\n', '', '1.1'])
     def test_apt_update_never_removes_and_reports_version_change(self, run):

@@ -1,16 +1,16 @@
 """Small deterministic interaction models, independent of the renderer."""
 def tooltip_position(screen,x,y,width=260,height=34,placement='auto',anchor_top=None,anchor_bottom=None):
+    """Keep the complete bubble on its output, flipping away from the edge."""
     sx,sy,sw,sh=screen
-    left=max(sx+8,min(x-width//2,sx+sw-width-8))
-    if placement=='above':
-        top=(y if anchor_top is None else anchor_top)-height-8
-    elif placement=='below':
-        top=(y if anchor_bottom is None else anchor_bottom)+8
-        if top+height>sy+sh-72:top=(y if anchor_top is None else anchor_top)-height-8
-    else:
-        top=y-height-8 if y>sy+sh-110 else y+8
-    bottom_margin=8 if placement in ('above','below') else 72
-    return int(left),int(max(sy+36,min(top,sy+sh-height-bottom_margin)))
+    gap=8
+    left=max(sx,min(x-width//2,sx+sw-width))
+    below=(y if anchor_bottom is None else anchor_bottom)+gap
+    above=(y if anchor_top is None else anchor_top)-gap-height
+    choices=(above,below) if placement=='above' else (below,above)
+    top=next((candidate for candidate in choices if sy<=candidate and candidate+height<=sy+sh),
+             max(sy,min(choices[0],sy+sh-height)))
+    return round(left),round(top)
+
 
 def switch_order(windows,recent):
     by_id={w['id']:w for w in windows}

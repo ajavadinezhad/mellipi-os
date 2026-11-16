@@ -31,8 +31,9 @@ QtObject {
     readonly property var taskbarRect: {var style=Orbit.appearance;return Orbit.panelSurfaceRect(panelEdge,Orbit.screenGeometry)}
     readonly property bool centeredPanel: Orbit.centeredPanels.indexOf(renderedPanel)>=0
     readonly property bool systemSheet: foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
-    readonly property int panelPadding: Theme.extraCompact ? 12 : Theme.compact ? 16 : 20
-    readonly property int panelGap: Theme.extraCompact ? 6 : Theme.compact ? 10 : 14
+    readonly property bool shortOverlay: sh<470
+    readonly property int panelPadding: shortOverlay ? 8 : Theme.extraCompact ? 12 : Theme.compact ? 16 : 20
+    readonly property int panelGap: shortOverlay ? 5 : Theme.extraCompact ? 6 : Theme.compact ? 10 : 14
     readonly property bool exitReview: renderedPanel === "session-exit"
     readonly property int panelOverhead: 2*panelPadding+(exitReview ? 0 : panelGap+(foldStyle ? sheetHeader.implicitHeight : 30))
     readonly property bool foldPanel: foldStyle && (renderedPanel === "launcher" || renderedPanel === "overview")
@@ -45,7 +46,7 @@ QtObject {
     readonly property int centeredHorizontalMargin: 2*(10+(horizontalBar ? 0 : taskbarReserve))
     readonly property int centeredVerticalMargin: 2*(8+Math.max(46,horizontalBar ? taskbarReserve : 0))
     readonly property int panelBodyWidth: Math.max(1,Math.min(sw-(keepPanelCentered ? centeredHorizontalMargin : foldStyle ? (systemSheet || horizontalBar ? 32 : taskbarReserve+28) : 24),panelWidth,760))
-    readonly property int panelBodyHeight: Math.max(1,Math.min(sh-(keepPanelCentered ? centeredVerticalMargin : foldStyle ? (systemSheet ? 74 : horizontalBar ? taskbarReserve+28 : 32) : foldPanel ? (Theme.compact ? 144 : 172) : 100),panelHeight,620))
+    readonly property int panelBodyHeight: Math.max(1,Math.min(sh-(keepPanelCentered ? centeredVerticalMargin : foldStyle ? (systemSheet ? 74+(panelEdge==="bottom" ? taskbarReserve : 0) : horizontalBar ? taskbarReserve+28 : 32) : foldPanel ? (Theme.compact ? 144 : 172) : 100),panelHeight,620))
     onPanelBodyWidthChanged: queuePanelGeometry()
     onPanelBodyHeightChanged: queuePanelGeometry()
     property int panelHeight: {
@@ -365,6 +366,7 @@ QtObject {
             Rectangle {
                 id: surface
                 objectName: "panelBody"
+                clip: true
                 width: shell.panelBodyWidth;height: shell.panelBodyHeight
                 readonly property var bodyMask: Orbit.panelBodyMask(shell.renderedPanel,parent.width,parent.height,width,height,Orbit.popupPanelEdge(shell.renderedPanel))
                 x: Orbit.isWayland ? bodyMask.x : 0
@@ -377,7 +379,7 @@ QtObject {
                 MouseArea { anchors.fill: parent; onClicked: mouse => mouse.accepted=true }
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: shell.panelPadding; spacing: shell.panelGap
-                    SheetHeader {id: sheetHeader;visible: shell.foldStyle && !shell.foldPanel && !shell.exitReview;Layout.fillWidth: true;Layout.preferredHeight: implicitHeight;compact: true;section: "MELLIPI / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel==="screenshot" ? "CAPTURE" : "CONTROLS");title: shell.title();onCloseRequested: Orbit.closePanel()}
+                    SheetHeader {id: sheetHeader;visible: shell.foldStyle && !shell.foldPanel && !shell.exitReview;Layout.fillWidth: true;Layout.preferredHeight: implicitHeight;compact: true;dense: shell.shortOverlay;section: "MELLIPI / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel==="screenshot" ? "CAPTURE" : "CONTROLS");title: shell.title();onCloseRequested: Orbit.closePanel()}
                     RowLayout {
                         visible: !shell.foldPanel && !shell.foldStyle && !shell.exitReview
                         Layout.fillWidth: true;Layout.preferredHeight: 30
@@ -397,14 +399,14 @@ QtObject {
                         onSelected: view => Orbit.showPanel(view)
                     }
                     Loader {
-                        id: foldLoader;Layout.fillWidth: true;Layout.fillHeight: true
+                        id: foldLoader;Layout.fillWidth: true;Layout.fillHeight: true;Layout.minimumHeight: 0
                         visible: shell.foldPanel
                         active: shell.foldPanel
                         sourceComponent: foldPage
                         onLoaded: if(shell.renderedPanel==="launcher")Qt.callLater(overlay.focusLauncher)
                     }
                     Loader {
-                        id: pageLoader; Layout.fillWidth: true; Layout.fillHeight: true
+                        id: pageLoader; Layout.fillWidth: true; Layout.fillHeight: true;Layout.minimumHeight: 0
                         active: visible && shell.renderedPanel !== ""
                         visible: !shell.foldPanel
                         sourceComponent: ({launcher:launcherPage,overview:overviewPage,ai:aiPage,capture:capturePage,settings:settingsPage,"system-settings":systemSettingsPage,"session-exit":sessionExitPage,quick:quickPage,music:musicPage,usage:usagePage,notifications:notificationsPage,tray:trayPage,bluetooth:bluetoothPage,battery:batteryPage,screenshot:screenshotPage,"window-capture":windowCapturePage,"window-placement":windowPlacementPage,switcher:switcherPage})[shell.renderedPanel] || null
@@ -413,16 +415,7 @@ QtObject {
                 }
             }
 
-            Rectangle {
-                id: panelTooltip;objectName: "panelTooltip";z: 1000
-                visible: Orbit.tooltip.inline === true && Orbit.tooltip.text !== undefined
-                x: Orbit.tooltip.localX || 0;y: Orbit.tooltip.localY || 0
-                width: Orbit.tooltip.width || 160;height: 34
-                radius: Theme.corner(7);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
-                onVisibleChanged: if(visible){opacity=0;panelTipEnter.restart();}
-                Text { anchors.centerIn: parent;width: parent.width-18;text: Orbit.tooltip.text || "";font.pixelSize: Theme.fontSize(11);color: Theme.text;elide: Text.ElideRight;horizontalAlignment: Text.AlignHCenter;textFormat: Text.PlainText }
-                NumberAnimation { id: panelTipEnter;target: panelTooltip;property: "opacity";to: 1;duration: Theme.motion }
-            }
+
         }
     }
 
@@ -448,12 +441,21 @@ QtObject {
 
     property Window tooltipSurface: Window {
         objectName: "tooltipSurface";title: "Mellipi — Tooltip";visible: Orbit.surfacesReady && Orbit.tooltip.text !== undefined
-        x: Orbit.tooltip.x || 0;y: Orbit.tooltip.y || 36;width: Orbit.isWayland ? 300 : (Orbit.tooltip.width || 160);height: 34;color: "transparent"
+        x: Orbit.tooltip.x || 0;y: Orbit.tooltip.y || 0
+        width: Orbit.tooltip.width || 160;height: Orbit.tooltip.height || 32;color: "transparent"
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
-        onVisibleChanged: if(visible){tipBody.opacity=0;tipEnter.restart();}
-        NumberAnimation { id: tipEnter;target: tipBody;property: "opacity";to: 1;duration: Theme.motion }
-        Rectangle { id: tipBody;width: Orbit.tooltip.width || 160;height: parent.height;radius: Theme.corner(7);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
-            Text { anchors.centerIn: parent;width: parent.width-18;text: Orbit.tooltip.text || "";font.pixelSize: Theme.fontSize(11);color: Theme.text;elide: Text.ElideRight;horizontalAlignment: Text.AlignHCenter;textFormat: Text.PlainText }
+        Rectangle {
+            anchors.fill: parent;radius: Theme.corner(7);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
+            clip: true
+            Text {
+                objectName: "tooltipText"
+                anchors.left: parent.left;anchors.right: parent.right;anchors.margins: 12
+                anchors.verticalCenter: parent.verticalCenter
+                text: Orbit.tooltip.text || "";font.pixelSize: Theme.fontSize(11);color: Theme.text
+                wrapMode: Text.Wrap;horizontalAlignment: Text.AlignHCenter;textFormat: Text.PlainText
+                maximumLineCount: Orbit.tooltip.maxLines || 2147483647
+                elide: Orbit.tooltip.maxLines ? Text.ElideRight : Text.ElideNone
+            }
         }
     }
     property Window contextSurface: Window {

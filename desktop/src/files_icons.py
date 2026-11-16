@@ -41,7 +41,7 @@ def asset(style, name):
 
 
 @lru_cache(maxsize=192)
-def icon(style, name, ink, tint='', selected=''):
+def icon(style, name, ink, tint='', selected='', *, semantic_tint=True):
     original = asset(style, name)
     result = QIcon()
     if not original:
@@ -51,19 +51,25 @@ def icon(style, name, ink, tint='', selected=''):
             continue
         # Mix the semantic color into the outline too; a tiny shaded area
         # alone is hard to distinguish at file-list size.
-        if tint and mode == QIcon.Mode.Normal:
+        if tint and semantic_tint and mode == QIcon.Mode.Normal:
             base, accent = QColor(fg), QColor(tint)
             fg = QColor(*(round(.55 * a + .45 * b) for a,b in zip(
                 base.getRgb()[:3], accent.getRgb()[:3]))).name()
         svg = original.replace('currentColor', fg)
         if fill:
-            svg = svg.replace('opacity="0.2"', f'fill="{fill}" opacity="0.72"')
+            svg = svg.replace('opacity="0.2"', f'fill="{fill}" opacity="{0.72 if semantic_tint else 0.34}"')
         for size in (16, 20, 24, 32, 48):
             scaled = svg.replace('<svg ', f'<svg width="{size}" height="{size}" ', 1)
             pixmap = QPixmap()
             if pixmap.loadFromData(scaled.encode(), 'SVG'):
                 result.addPixmap(pixmap, mode)
     return result
+
+
+def place_icon(name, palette):
+    """Keep each location's glyph while letting the current theme supply its inks."""
+    glyph, _ = PLACES[name]
+    return icon('duotone', glyph, palette['accent_ink'], palette['accent'], semantic_tint=False)
 
 
 def file_icon(filename, folder, ink, selected):

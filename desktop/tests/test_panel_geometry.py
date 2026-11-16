@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from interactions import tooltip_position
 from preferences import Preferences
 
 from panel_policy import panel_body_origin, panel_mask_origin, taskbar_overlay_layout, workspace_drop_target
@@ -86,3 +87,15 @@ class WorkspaceDropTargetTest(unittest.TestCase):
         self.assertEqual(workspace_drop_target(targets,34,15),2)
         self.assertIsNone(workspace_drop_target(targets,32,15))
         self.assertIsNone(workspace_drop_target(targets,39,46))
+
+
+class TooltipGeometryTest(unittest.TestCase):
+    def test_tall_tooltip_flips_and_fits_negative_origin_output(self):
+        viewport=(-792,54,784,386)
+        x,y=tooltip_position(viewport,-10,423,360,92,placement='below',anchor_top=412,anchor_bottom=435)
+        self.assertEqual((x,y),(-368,312))
+        self.assertLessEqual(y+92,412)
+
+    def test_tall_tooltip_at_top_flips_below_when_placed_above(self):
+        viewport=(8,54,640,386)
+        self.assertEqual(tooltip_position(viewport,70,57,200,95,'above',55,72),(8,80))

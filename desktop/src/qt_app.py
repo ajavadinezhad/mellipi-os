@@ -1,11 +1,12 @@
 """Shared, live Mellipi appearance for Qt Widgets applications."""
 from pathlib import Path
 from functools import lru_cache
+from math import ceil
 from html import escape
 
 from PyQt6.QtCore import QFileSystemWatcher, QPoint, QSize, QTemporaryDir, Qt, pyqtSignal, QObject
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPalette
-from PyQt6.QtWidgets import QApplication, QAbstractButton, QDialog, QDialogButtonBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QPushButton, QSizePolicy, QTabBar, QToolButton, QVBoxLayout, QWidget
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPalette, QTextOption
+from PyQt6.QtWidgets import QApplication, QAbstractButton, QBoxLayout, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QPushButton, QSizePolicy, QTabBar, QTextEdit, QToolButton, QVBoxLayout, QWidget
 
 from app_palette import HEADER_HEIGHTS, colors, identity_appearance
 from installed_launcher import user_environment
@@ -339,6 +340,10 @@ def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
     dialog.setStyleSheet((BASE_STYLE + """
         QDialog#themedPrompt { border: 1px solid %(separator)s; }
         QLabel#promptHeading { color: %(text)s; font-size: %(headingSize)dpx; font-weight: 650; }
+        QTextEdit#promptMessage {
+            background: transparent; border: 1px solid transparent; padding: 0; color: %(text)s;
+        }
+        QTextEdit#promptMessage:focus { border-color: %(focus)s; }
         QPushButton#promptPrimary { background: %(accent)s; color: %(accent_text)s; }
         QPushButton#promptPrimary:hover { border-color: %(text)s; }
         QPushButton#promptCancel { background: transparent; color: %(text)s; }
@@ -359,14 +364,31 @@ def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
     body = QVBoxLayout()
     body.setContentsMargins(0, 0, 0, 0)
     body.setSpacing(14)
-    label = QLabel(message, dialog)
-    label.setTextFormat(Qt.TextFormat.PlainText)
-    label.setWordWrap(True)
-    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    label.setMinimumWidth(260)
-    label.setMaximumWidth(440)
-    body.addWidget(label)
-    buttons = QHBoxLayout()
+    available = parent.screen().availableGeometry()
+    width_limit = max(1, available.width() - 56)
+    message_view = QTextEdit(dialog)
+    message_view.setObjectName('promptMessage')
+    message_view.setAccessibleName('Message')
+    message_view.setReadOnly(True)
+    message_view.setPlainText(message)
+    message_view.setFrameShape(QFrame.Shape.NoFrame)
+    message_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+    message_view.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+    message_view.setTabChangesFocus(True)
+    message_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    message_view.ensurePolished()
+    metrics = message_view.fontMetrics()
+    longest = max((metrics.horizontalAdvance(line) for line in message.splitlines()), default=0)
+    message_width = min(440, width_limit, max(260, longest + 6))
+    message_view.setFixedWidth(message_width)
+    document = message_view.document()
+    document.setDocumentMargin(1)
+    # Reserve scrollbar width when measuring to avoid an extra clipped line
+    # after a long message starts scrolling.
+    scroll_width = message_view.verticalScrollBar().sizeHint().width()
+    document.setTextWidth(max(1, message_width - scroll_width - 2))
+    body.addWidget(message_view)
+    buttons = QBoxLayout(QBoxLayout.Direction.LeftToRight)
     buttons.addStretch()
     action = QPushButton(primary, dialog)
     action.setObjectName('promptPrimary')
@@ -386,8 +408,19 @@ def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
     buttons.addWidget(action)
     dismiss.setDefault(True)
     dismiss.setFocus()
+    button_order = ([dismiss] if cancel else []) + ([alternative] if alternate else []) + [action]
+    if sum(button.sizeHint().width() for button in button_order) + 8 * len(button_order) > width_limit:
+        buttons.setDirection(QBoxLayout.Direction.TopToBottom)
+        for button in button_order:
+            buttons.setAlignment(button, Qt.AlignmentFlag.AlignRight)
     body.addLayout(buttons)
     layout.addLayout(body)
+    remaining_height = available.height() - heading.sizeHint().height() - buttons.sizeHint().height() - 72
+    view_height = min(ceil(document.size().height()) + 4, 300, max(message_view.fontMetrics().height() + 2, remaining_height))
+    message_view.setFixedHeight(view_height)
+    for previous, following in zip(button_order, [*button_order[1:], message_view]):
+        dialog.setTabOrder(previous, following)
+    dialog.setTabOrder(message_view, button_order[0])
     try:
         return exec_owned_dialog(dialog)
     finally:
