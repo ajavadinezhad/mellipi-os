@@ -3,13 +3,11 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "."
 import "SettingReveal.js" as SettingReveal
-GridLayout {
+ColumnLayout {
     id: settings;objectName: "systemSettingsPanel"
     readonly property bool narrowNavigation: width < 620 + Math.max(0,Theme.textScale-1)*160
     readonly property int navigationWidth: Math.round(Math.min(184, width * .27))
-    readonly property int spacing: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
-    columns: narrowNavigation ? 1 : 2
-    rowSpacing: spacing;columnSpacing: spacing
+    spacing: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
     property int section: typeof Orbit.settingsSection!=="undefined" ? Orbit.settingsSection : 0
     readonly property var pageNames: ["input","lock","displays","shortcuts","accessibility","network","power-mode","battery","music","bluetooth","appearance","","help","","","brightness","tools"]
     readonly property string pageName: pageNames[Math.max(0,Math.min(pageNames.length-1,section))]
@@ -108,9 +106,9 @@ GridLayout {
         {value:10,label:"Appearance",icon:"color-select",group:"DESKTOP",keywords:"theme accent colours colors dark light contrast taskbar wallpaper"},
         {value:2,label:"Displays",icon:"video-display",group:"DESKTOP",keywords:"resolution scale scaling monitor output orientation screen hdmi"},
         {value:15,label:"Brightness",icon:"display-brightness",group:"DESKTOP"},
+        {value:5,label:"Network",icon:"network-wireless",group:"CONNECTIONS",keywords:"wi-fi wifi internet ethernet wireless connections"},
+        {value:9,label:"Bluetooth",icon:"bluetooth-active",group:"CONNECTIONS",keywords:"pair device wireless headset"},
         {value:8,label:"Sound",icon:"audio-volume-high",group:"DEVICES",keywords:"speakers headphones audio output mixer playback volume profile"},
-        {value:9,label:"Bluetooth",icon:"bluetooth-active",group:"DEVICES",keywords:"pair device wireless headset"},
-        {value:5,label:"Network",icon:"network-wireless",group:"DEVICES",keywords:"wi-fi wifi internet ethernet wireless connections"},
         {value:0,label:"Input",icon:"input-keyboard",group:"DEVICES",keywords:"keyboard layout mouse touchpad repeat scroll natural sensitivity"},
         {value:6,label:"Power mode",icon:"system-shutdown",group:"POWER"},
         {value:7,label:"Battery health",icon:"battery-good",group:"POWER"},
@@ -120,12 +118,10 @@ GridLayout {
         {value:16,label:"System tools",icon:"preferences-system",group:"SYSTEM"},
     ]
     GridLayout {
-        Layout.fillHeight: !settings.narrowNavigation
-        Layout.fillWidth: settings.narrowNavigation
-        Layout.preferredWidth: settings.narrowNavigation ? -1 : settings.navigationWidth
-        Layout.maximumWidth: settings.narrowNavigation ? Infinity : settings.navigationWidth
+        objectName: "settingsNavigationHeader"
+        Layout.fillWidth: true
         Layout.minimumWidth: 0
-        columns: settings.narrowNavigation ? 2 : 1
+        columns: settings.narrowNavigation && width>=420 ? 2 : 1
         rowSpacing: settings.spacing;columnSpacing: settings.spacing
         OrbitField {
             id: search;objectName: "settingsSearchField";Layout.fillWidth:true
@@ -159,85 +155,94 @@ GridLayout {
             Accessible.name: "Settings section"
             onActivated: idx => {settings.closeSearch();settings.selectSection(settings.sections[idx].value);}
         }
+    }
+    Item {
+        id: settingsBody
+        Layout.fillWidth: true;Layout.fillHeight: true
+        Layout.minimumWidth: 0;Layout.minimumHeight: 0
         SectionIndex {
-            id: index;objectName: "systemSettingsIndex";Layout.fillHeight: true;Layout.fillWidth: true
+            id: index;objectName: "systemSettingsIndex"
             visible: !settings.narrowNavigation
+            anchors.left: parent.left;anchors.top: parent.top;anchors.bottom: parent.bottom
+            width: settings.navigationWidth
             sections: settings.sections
             current: settings.section
             onSelected: value => {settings.closeSearch();settings.selectSection(value);}
         }
-    }
-    Item {
-        objectName: "settingsContentViewport"
-        Layout.fillWidth: true;Layout.fillHeight: true;Layout.minimumWidth: 0
-        ColumnLayout {
-            anchors.fill: parent
-            visible: settings.searching
-            spacing: 8
-            Text {
-                Layout.fillWidth: true
-                text: "Search results"
-                color: Theme.text;font.pixelSize: Theme.headingSize;font.weight: Font.DemiBold
-            }
-            Text {
-                visible: !results.count
-                Layout.fillWidth: true;text: "No settings match. Try a shorter search."
-                color: Theme.muted;font.pixelSize: Theme.detailSize;wrapMode: Text.Wrap
-            }
-            ListView {
-                id: results;objectName: "settingsSearchResults"
-                Layout.fillWidth: true;Layout.fillHeight: true
-                model: settings.searchResults
-                onModelChanged: currentIndex=count ? 0 : -1
-                visible: count>0
-                clip: true;spacing: 4;activeFocusOnTab: true;keyNavigationEnabled: true
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar {}
-                Keys.onReturnPressed: settings.openSearchResult(settings.searchResults[currentIndex])
-                Keys.onEnterPressed: settings.openSearchResult(settings.searchResults[currentIndex])
-                Keys.onEscapePressed: {settings.closeSearch();settings.focusSearch();}
-                delegate: OrbitButton {
-                    id: result
-                    required property var modelData
-                    required property int index
-                    width: results.width;quiet: results.currentIndex!==index
-                    implicitHeight: contentItem.implicitHeight+2*padding
-                    Accessible.name: modelData.name
-                    Accessible.description: modelData.description
-                    onClicked: settings.openSearchResult(modelData)
-                    contentItem: RowLayout {
-                        spacing: 8
-                        Image {
-                            Layout.preferredWidth: 16;Layout.preferredHeight: 16
-                            source: Theme.symbolicIconSource(result.modelData.icon)
-                            sourceSize: Qt.size(16,16)
-                        }
-                        ColumnLayout {
-                            Layout.fillWidth: true;Layout.minimumWidth: 0;spacing: 2
-                            Text {
-                                Layout.fillWidth: true;text: result.modelData.name
-                                color: Theme.text;font.pixelSize: Theme.labelSize
-                                textFormat: Text.PlainText;elide: Text.ElideRight
+        Item {
+            objectName: "settingsContentViewport"
+            anchors.top: parent.top;anchors.bottom: parent.bottom;anchors.right: parent.right
+            anchors.left: settings.narrowNavigation ? parent.left : index.right
+            anchors.leftMargin: settings.narrowNavigation ? 0 : settings.spacing
+            ColumnLayout {
+                anchors.fill: parent
+                visible: settings.searching
+                spacing: 8
+                Text {
+                    Layout.fillWidth: true
+                    text: "Search results"
+                    color: Theme.text;font.pixelSize: Theme.headingSize;font.weight: Font.DemiBold
+                }
+                Text {
+                    visible: !results.count
+                    Layout.fillWidth: true;text: "No settings match. Try a shorter search."
+                    color: Theme.muted;font.pixelSize: Theme.detailSize;wrapMode: Text.Wrap
+                }
+                ListView {
+                    id: results;objectName: "settingsSearchResults"
+                    Layout.fillWidth: true;Layout.fillHeight: true
+                    model: settings.searchResults
+                    onModelChanged: currentIndex=count ? 0 : -1
+                    visible: count>0
+                    clip: true;spacing: 4;activeFocusOnTab: true;keyNavigationEnabled: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar {}
+                    Keys.onReturnPressed: settings.openSearchResult(settings.searchResults[currentIndex])
+                    Keys.onEnterPressed: settings.openSearchResult(settings.searchResults[currentIndex])
+                    Keys.onEscapePressed: {settings.closeSearch();settings.focusSearch();}
+                    delegate: OrbitButton {
+                        id: result
+                        required property var modelData
+                        required property int index
+                        width: results.width;quiet: results.currentIndex!==index
+                        implicitHeight: contentItem.implicitHeight+2*padding
+                        Accessible.name: modelData.name
+                        Accessible.description: modelData.description
+                        onClicked: settings.openSearchResult(modelData)
+                        contentItem: RowLayout {
+                            spacing: 8
+                            Image {
+                                Layout.preferredWidth: 16;Layout.preferredHeight: 16
+                                source: Theme.symbolicIconSource(result.modelData.icon)
+                                sourceSize: Qt.size(16,16)
                             }
-                            Text {
-                                Layout.fillWidth: true;text: result.modelData.description
-                                visible: !!text
-                                color: Theme.muted;font.pixelSize: Theme.detailSize
-                                textFormat: Text.PlainText;elide: Text.ElideRight
+                            ColumnLayout {
+                                Layout.fillWidth: true;Layout.minimumWidth: 0;spacing: 2
+                                Text {
+                                    Layout.fillWidth: true;text: result.modelData.name
+                                    color: Theme.text;font.pixelSize: Theme.labelSize
+                                    textFormat: Text.PlainText;elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.fillWidth: true;text: result.modelData.description
+                                    visible: !!text
+                                    color: Theme.muted;font.pixelSize: Theme.detailSize
+                                    textFormat: Text.PlainText;elide: Text.ElideRight
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-        Loader {
-            id: page;objectName: "settingsPageLoader";anchors.fill: parent
-            visible: !settings.searching
-            sourceComponent: [inputs,locks,displays,shortcuts,accessibility,network,power,battery,sound,bluetooth,appearance,null,help,null,null,brightness,systemTools][Math.max(0,Math.min(16,settings.section))]
-            onLoaded: {
-                pageFade.stop();page.opacity=1;
-                if(settings.contentReady && !Theme.reducedMotion)pageFade.start();
-                settings.queueNotice();settings.queueReveal();
+            Loader {
+                id: page;objectName: "settingsPageLoader";anchors.fill: parent
+                visible: !settings.searching
+                sourceComponent: [inputs,locks,displays,shortcuts,accessibility,network,power,battery,sound,bluetooth,appearance,null,help,null,null,brightness,systemTools][Math.max(0,Math.min(16,settings.section))]
+                onLoaded: {
+                    pageFade.stop();page.opacity=1;
+                    if(settings.contentReady && !Theme.reducedMotion)pageFade.start();
+                    settings.queueNotice();settings.queueReveal();
+                }
             }
         }
     }

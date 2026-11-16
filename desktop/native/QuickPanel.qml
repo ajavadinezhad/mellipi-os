@@ -15,6 +15,18 @@ ColumnLayout {
     property bool contentReady: false
     readonly property bool wifiBusy: !!System.values.wifiConnecting
     readonly property bool wifiScanning: !!System.values.wifiScanning
+    function chooseNetwork(row) {
+        if(wifiBusy)return;
+        selectedSsid=row.active ? "" : row.ssid;
+        selectedSecure=row.secure;
+        wifiPassword.text="";
+        if(row.active)return;
+        if(!row.secure){connectSelectedNetwork();return;}
+        // Keep the join controls visible even when the selected row was
+        // reached inside a scrolled list on a short screen.
+        if(body.contentItem)body.contentItem.contentY=0;
+        wifiPassword.forceActiveFocus();
+    }
     function connectSelectedNetwork() {
         if(!selectedSsid || wifiBusy)return;
         submitted=true;
@@ -99,6 +111,25 @@ ColumnLayout {
                     IconButton {iconName: "refresh";implicitWidth: 26;implicitHeight: 26;hint: "Refresh Wi-Fi networks";enabled: System.values.networkAvailable && System.values.wifiEnabled && !quick.wifiBusy && !quick.wifiScanning;onClicked: System.refreshWifi()}
                     SettingToggle { label: "Wi-Fi power";checked: System.values.wifiEnabled;enabled: System.values.networkAvailable && !quick.wifiBusy;onClicked: System.setWifi(checked) }
                 }
+                ColumnLayout {
+                    objectName: "wifiJoinForm"
+                    enabled: !quick.wifiBusy
+                    visible: quick.selectedSsid!=="";Layout.fillWidth: true;Layout.margins: 4;spacing: quick.rowGap
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {text: "Join "+quick.selectedSsid;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight;color:Theme.text;font.pixelSize:Theme.fontSize(11);font.weight:Font.DemiBold;textFormat:Text.PlainText}
+                        IconButton {
+                            iconName:"close";hint:"Cancel joining this network"
+                            onClicked:{quick.selectedSsid="";wifiPassword.text="";networks.forceActiveFocus();}
+                        }
+                    }
+                    RowLayout {
+                        readonly property int fieldHeight:Math.max(30,Theme.fontSize(12)+16)
+                        Layout.fillWidth: true
+                        OrbitField { id: wifiPassword;visible: quick.selectedSecure;objectName: "wifiPassword";placeholderText: "Wi-Fi password";echoMode: TextInput.Password;Layout.fillWidth: true;Layout.minimumWidth:0;implicitHeight:parent.fieldHeight;onAccepted:quick.connectSelectedNetwork() }
+                        OrbitButton { text: "Join";implicitHeight:parent.fieldHeight;accent:true;onClicked: quick.connectSelectedNetwork() }
+                    }
+                }
                 ListView {
                     id: networks;objectName: "quickNetworks";visible: System.values.wifiEnabled && count>0
                     Layout.fillWidth: true;Layout.minimumWidth: 0
@@ -112,7 +143,7 @@ ColumnLayout {
                         required property var modelData
                         enabled: !quick.wifiBusy
                         activeFocusOnTab: true
-                        function selectNetwork(){if(quick.wifiBusy)return;quick.selectedSsid=modelData.active ? "" : modelData.ssid;quick.selectedSecure=modelData.secure;wifiPassword.text="";if(modelData.active)return;if(modelData.secure)wifiPassword.forceActiveFocus();else quick.connectSelectedNetwork();}
+                        function selectNetwork(){quick.chooseNetwork(modelData);}
                         Accessible.role: Accessible.Button
                         Accessible.name: modelData.ssid
                         Accessible.description: (modelData.active ? "Connected · " : "")+(modelData.secure ? "Secured" : "Open network")+" · "+modelData.signal+"%"
@@ -153,17 +184,6 @@ ColumnLayout {
                     text: "No nearby networks";Layout.fillWidth: true;Layout.margins: 6
                     color: Theme.muted;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap
                 }
-                ColumnLayout {
-                    enabled: !quick.wifiBusy
-                    visible: quick.selectedSsid!=="";Layout.fillWidth: true;Layout.margins: 4;spacing: quick.rowGap
-                    Text { text: "Connect to "+quick.selectedSsid;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.muted;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText }
-                    RowLayout {
-                        readonly property int fieldHeight:Math.max(30,Theme.fontSize(12)+16)
-                        Layout.fillWidth: true
-                        OrbitField { id: wifiPassword;visible: quick.selectedSecure;objectName: "wifiPassword";placeholderText: "Wi-Fi password";echoMode: TextInput.Password;Layout.fillWidth: true;Layout.minimumWidth:0;implicitHeight:parent.fieldHeight;onAccepted:quick.connectSelectedNetwork() }
-                        OrbitButton { text: "Join";implicitHeight:parent.fieldHeight;accent:true;onClicked: quick.connectSelectedNetwork() }
-                    }
-                }
             }
             SettingsGroup {
                 title: "Bluetooth"
@@ -192,16 +212,27 @@ ColumnLayout {
         }
         }
     }
-    RowLayout {
-        id:settingsLink;Layout.fillWidth:true;spacing:quick.rowGap
-        Item {Layout.fillWidth: true}
-        IconButton {objectName:"systemSettingsLink";iconName:"settings";hint:"Open Settings";implicitHeight:28;onClicked:Orbit.showPanel("system-settings")}
-        IconButton {
-            objectName:"quickUpdates";iconName:"updates";implicitWidth:28;implicitHeight:28
-            accessibleLabel:"Software updates"
-            readonly property bool available:typeof DesktopTools!=="undefined" && DesktopTools!==null && !!DesktopTools.tools.updates && DesktopTools.tools.updates.available
-            enabled:available;hint:available ? "Software updates" : "Install a software update manager to check for updates"
-            onClicked:DesktopTools.open("updates")
+    ColumnLayout {
+        id: settingsLink;Layout.fillWidth:true;spacing:Math.max(4,quick.rowGap-2)
+        Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.separator}
+        RowLayout {
+            Layout.fillWidth:true;spacing:quick.rowGap
+            readonly property bool showLabels: width>=240+Math.max(0,Theme.textScale-1)*80
+            IconButton {
+                objectName:"systemSettingsLink";iconName:"settings";hint:"Open Settings"
+                text:parent.showLabels ? "Settings" : ""
+                Layout.fillWidth:true;implicitHeight:Math.max(30,Theme.fontSize(11)+14)
+                onClicked:Orbit.showPanel("system-settings")
+            }
+            IconButton {
+                objectName:"quickUpdates";iconName:"updates";implicitHeight:Math.max(30,Theme.fontSize(11)+14)
+                text:parent.showLabels ? "Updates" : ""
+                Layout.fillWidth:true
+                accessibleLabel:"Software updates"
+                readonly property bool available:typeof DesktopTools!=="undefined" && DesktopTools!==null && !!DesktopTools.tools.updates && DesktopTools.tools.updates.available
+                enabled:available;hint:available ? "Software updates" : "Install a software update manager to check for updates"
+                onClicked:DesktopTools.open("updates")
+            }
         }
     }
 

@@ -3,7 +3,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from PyQt6.QtMultimedia import QMediaPlayer
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QBoxLayout
 
 from mellipi_media import Media
 
@@ -51,3 +51,15 @@ class RepeatTests(TestCase):
         self.media.set_repeat('None')
         self.assertFalse(self.media.repeat_button.isChecked())
         self.assertEqual(self.media.player.loops(), 1)
+
+    def test_queue_moves_beside_stage_without_losing_selection(self):
+        self.media.resize(940, 520)
+        self.media.show()
+        self.media.queue_toggle.click()
+        self.app.processEvents()
+        self.assertEqual(self.media.stage_layout.direction(), QBoxLayout.Direction.LeftToRight)
+        self.assertEqual(self.media.queue_view.currentRow(), self.media.index)
+        self.media.resize(450, 400)
+        self.app.processEvents()
+        self.assertEqual(self.media.stage_layout.direction(), QBoxLayout.Direction.TopToBottom)
+        self.assertEqual(self.media.queue_view.currentRow(), self.media.index)

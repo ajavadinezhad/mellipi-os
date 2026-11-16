@@ -128,6 +128,16 @@ Item {
         onClicked: spine.openPanel("launcher")
     }
 
+    Rectangle {
+        // Separate the launcher action from app slots without changing hit areas.
+        visible: frame.appBar && spine.tasks.length > 0 && spine.taskLaneLength >= spine.overflowLength
+        x: spine.horizontal ? Math.round(home.x + home.width + spine.groupGap/2) : Math.round((spine.width-width)/2)
+        y: spine.horizontal ? Math.round((spine.height-height)/2) : Math.round(home.y + home.height + spine.groupGap/2)
+        width: spine.horizontal ? 1 : 18
+        height: spine.horizontal ? 18 : 1
+        color: Theme.separator
+    }
+
 
     Item {
         id: workspaceColumn
@@ -337,8 +347,9 @@ Item {
             readonly property var hidden: capacity>=all.length ? []
                 : secondary.slice(shownSecondary).concat(primary.slice(0,primary.length-primaryCount))
             readonly property var visibleItems: capacity>=all.length ? all : capacity===0 ? []
-                : secondary.slice(0,shownSecondary).concat(primary.slice(primary.length-primaryCount),
-                    [{key:"overflow",item:"UtilityOverflow",glyph:"more",hint:"More taskbar controls"}])
+                : secondary.slice(0,shownSecondary).concat(
+                    [{key:"overflow",item:"UtilityOverflow",glyph:"more",hint:"More taskbar controls"}],
+                    primary.slice(primary.length-primaryCount))
             columns:spine.horizontal ? Math.max(1,visibleItems.length) : across
             spacing: Theme.extraCompact ? 2 : 3
             Repeater {
@@ -363,6 +374,12 @@ Item {
                     }
                 }
             }
+        }
+        Rectangle {
+            visible: spine.horizontal && footer.showClock && footerIcons.visibleItems.length > 0
+            x: Math.round(footerIcons.width + spine.utilityGroupGap/2)
+            y: Math.round((footer.height-height)/2)
+            width: 1;height: Math.min(18,footer.height-8);color: Theme.separator
         }
         Rectangle {
             visible: footer.showClock

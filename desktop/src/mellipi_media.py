@@ -14,7 +14,7 @@ from PyQt6.QtCore import Qt, QUrl, QSize
 from PyQt6.QtGui import QActionGroup, QShortcut, QIcon, QKeySequence
 from PyQt6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
-from PyQt6.QtWidgets import (QSizePolicy, QApplication, QHBoxLayout, QLabel,
+from PyQt6.QtWidgets import (QSizePolicy, QApplication, QBoxLayout, QHBoxLayout, QLabel,
                              QListWidget, QListWidgetItem, QMenu, QSlider, QStackedWidget,
                              QPushButton, QToolButton, QVBoxLayout, QWidget)
 
@@ -198,7 +198,9 @@ class Media(AppWindow):
         self.header.addWidget(self.queue_toggle)
         stage = QStackedWidget()
         self.stage = stage
-        self.content.addWidget(stage, 1)
+        self.stage_layout = QBoxLayout(QBoxLayout.Direction.TopToBottom)
+        self.content.addLayout(self.stage_layout, 1)
+        self.stage_layout.addWidget(stage, 3)
         self.title.setTextFormat(Qt.TextFormat.PlainText)
         self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.summary = QWidget()
@@ -252,7 +254,7 @@ class Media(AppWindow):
         self.queue_view.currentRowChanged.connect(self.update_queue_actions)
         self.queue_view.itemActivated.connect(lambda item: self.load(self.queue_view.row(item)))
         queue_layout.addWidget(self.queue_view, 1)
-        self.content.addWidget(self.queue_panel, 1)
+        self.stage_layout.addWidget(self.queue_panel, 2)
         self.queue_panel.hide()
 
         seek_controls = QHBoxLayout()
@@ -337,7 +339,7 @@ class Media(AppWindow):
 
     def apply_control_metrics(self):
         scale = self.theme['text_scale']
-        self.queue_panel.setMaximumHeight(round(160 + 45 * max(0, scale - 1)))
+        self.fit_stage_layout()
         queue_row_height = self.queue_view.fontMetrics().height() + 2 * self.theme['padding']
         self.queue_view.setMinimumHeight(2 * (queue_row_height + 1) + 2 * self.queue_view.frameWidth())
         badge = round(42 * min(1.25, scale))
@@ -352,6 +354,19 @@ class Media(AppWindow):
         for button in self.findChildren(QToolButton):
             button.setIconSize(QSize(side, side))
             button.setMinimumSize(max(30, side+10), max(30, side+10))
+
+    def fit_stage_layout(self):
+        if not hasattr(self, 'queue_panel'):
+            return
+        side = self.viewport_width() >= round(700 + 140 * (self.theme['text_scale'] - 1))
+        self.stage_layout.setDirection(QBoxLayout.Direction.LeftToRight if side else QBoxLayout.Direction.TopToBottom)
+        self.queue_panel.setMaximumWidth(320 if side else 16777215)
+        self.queue_panel.setMaximumHeight(16777215 if side else round(160 + 45 * max(0, self.theme['text_scale'] - 1)))
+        self.stage_layout.setSpacing(self.layout_spacing()[1])
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit_stage_layout()
 
     def refresh_stage_icon(self):
         surface = self.theme['selected_surface']

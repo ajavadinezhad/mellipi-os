@@ -1132,7 +1132,7 @@ class Bridge(QObject):
     @Slot(QObject,'QVariantList',bool)
     def openTaskbarOverflow(self,item,values,utilities):
         if utilities:
-            labels={'screenshot':'Screenshot','notifications':'Notifications','music':'Volume and playback',
+            labels={'quick':'Quick Settings','screenshot':'Screenshot','notifications':'Notifications','music':'Volume and playback',
                     'tray':'Background apps','usage':'System Monitor','window-placement':'Auto-snap'}
             items=[dict(label=labels[name],action='monitor' if name=='usage' else 'panel',value=name)
                    for name in values if name in labels]

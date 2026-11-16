@@ -10,6 +10,7 @@ ColumnLayout {
     readonly property int toolbarHeight: Math.max(36, Theme.labelSize + 14)
     readonly property int actionHeight: Math.max(28, Theme.detailSize + 10)
     readonly property int controlGap: width < 360 ? 5 : 8
+    readonly property bool labelDestinations: width >= Math.ceil(570*Theme.textScale)
     readonly property int resultGap: compactViewport ? 3 : Theme.extraCompact ? 4 : 6
     readonly property int previewWidth: Math.ceil(124 * Theme.textScale)
     // Optional previews yield to search results when height or width is scarce.
@@ -221,28 +222,55 @@ ColumnLayout {
         function onSystemActionsChanged(){launcher.actionsData=null;launcher.queueRebuild();}
     }
     RowLayout {
-        Layout.fillWidth: true;spacing: launcher.controlGap
-        OrbitField {
-            visible: !launcher.showLayouts;id: search;objectName: "foldAppSearch";Layout.fillWidth: true;Layout.minimumWidth: 0;implicitHeight: launcher.toolbarHeight
-            placeholderText: "Search apps, windows, actions…";font.pixelSize: Theme.labelSize
-            leftPadding: 34;rightPadding: 10
-            Image {
-                anchors.left: parent.left;anchors.leftMargin: 10;anchors.verticalCenter: parent.verticalCenter
-                width: 17;height: 17;sourceSize: Qt.size(24,24)
-                source: Theme.symbolicIconSource("start-search", Theme.accentInk)
-            }
-            onTextChanged: launcher.query=text
-            Keys.onReturnPressed: event => {
-                if (!(event.modifiers & Qt.ControlModifier)) {event.accepted=false;return;}
-                launcher.flushRebuild();
-                if (!launcher.showLayouts && launcher.results.length)
-                    launcher.activateFromKeyboard(launcher.results[0],event);
-            }
-            onAccepted: {launcher.flushRebuild(); if(!launcher.showLayouts && launcher.results.length)launcher.activate(launcher.results[0]);}
-            Keys.onDownPressed: {launcher.flushRebuild(); if(!launcher.showLayouts && resultsList.count){resultsList.currentIndex=0;resultsList.forceActiveFocus();}}
+        visible: launcher.showLayouts;Layout.fillWidth: true;spacing: launcher.controlGap
+        IconButton {
+            objectName: "foldLayoutsBack";iconName: "go-previous";text: "Apps & windows";hint: "Back to apps and windows"
+            implicitHeight: launcher.toolbarHeight
+            onClicked: {launcher.showLayouts=false;Qt.callLater(launcher.focusSearch);}
         }
-        IconButton {objectName: "foldLayoutsButton";iconName: launcher.showLayouts ? "start-library" : "start-spaces";hint: launcher.showLayouts ? "Apps & windows" : "Saved layouts";accessibleLabel: launcher.showLayouts ? "Return to app and window search" : "Open saved layouts";enabled: Arrangements.available;implicitHeight:launcher.toolbarHeight;onClicked:launcher.showLayouts=!launcher.showLayouts}
-        IconButton {objectName: "foldToolsButton";iconName: "start-tools";implicitHeight: launcher.toolbarHeight;hint: "Files & notes";accessibleLabel: "Open files and notes";onClicked: launcher.toolsRequested()}
+        Item {Layout.fillWidth: true;Layout.minimumWidth: 0}
+        IconButton {iconName: "start-tools";hint: "Files & notes";accessibleLabel: "Open files and notes";onClicked: launcher.toolsRequested()}
+    }
+    OrbitField {
+        visible: !launcher.showLayouts;id: search;objectName: "foldAppSearch";Layout.fillWidth: true;Layout.minimumWidth: 0;implicitHeight: launcher.toolbarHeight
+        placeholderText: "Search apps, windows, actions…";font.pixelSize: Theme.labelSize
+        leftPadding: 34;rightPadding: 10
+        Image {
+            anchors.left: parent.left;anchors.leftMargin: 10;anchors.verticalCenter: parent.verticalCenter
+            width: 17;height: 17;sourceSize: Qt.size(24,24)
+            source: Theme.symbolicIconSource("start-search", Theme.accentInk)
+        }
+        onTextChanged: launcher.query=text
+        Keys.onReturnPressed: event => {
+            if (!(event.modifiers & Qt.ControlModifier)) {event.accepted=false;return;}
+            launcher.flushRebuild();
+            if (!launcher.showLayouts && launcher.results.length)
+                launcher.activateFromKeyboard(launcher.results[0],event);
+        }
+        onAccepted: {launcher.flushRebuild(); if(!launcher.showLayouts && launcher.results.length)launcher.activate(launcher.results[0]);}
+        Keys.onDownPressed: {launcher.flushRebuild(); if(!launcher.showLayouts && resultsList.count){resultsList.currentIndex=0;resultsList.forceActiveFocus();}}
+    }
+    RowLayout {
+        visible:!launcher.showLayouts && !(Orbit.windowFilter && Orbit.windowFilter.length)
+        Layout.fillWidth: true;spacing: launcher.controlGap
+        IconButton {
+            objectName: "launcherPinnedFilter"
+            iconName: launcher.pinnedOnly ? "pinned" : "pin"
+            accent: launcher.pinnedOnly
+            implicitWidth: launcher.actionHeight
+            implicitHeight: launcher.actionHeight
+            hint: launcher.pinnedOnly ? "Show all apps and windows" : "Show pinned apps and their open windows"
+            onClicked: launcher.pinnedOnly=!launcher.pinnedOnly
+        }
+        SettingsSegments {
+            objectName: "launcherSortOptions"
+            Layout.maximumWidth: implicitWidth
+            value: Orbit.appearance.launcherSort || "frequent"
+            segmentWidth: 76
+            options: [{label:"Most used",value:"frequent"},{label:"Recent",value:"recent"},{label:"A–Z",value:"name"}]
+            onSelected: value => Orbit.setPreference("launcherSort",value)
+        }
+        Item {Layout.fillWidth: true}
     }
     ColumnLayout {
         id: savedSpaces
@@ -319,44 +347,6 @@ ColumnLayout {
             }
             Item {Layout.fillWidth: true;Layout.minimumWidth: 0;visible: Arrangements.layouts.length < launcher.previewCount}
         }
-    }
-    RowLayout {
-        visible:!launcher.showLayouts && !(Orbit.windowFilter && Orbit.windowFilter.length)
-        Layout.fillWidth: true;spacing: launcher.controlGap
-        IconButton {
-            objectName: "launcherPinnedFilter"
-            iconName: launcher.pinnedOnly ? "pinned" : "pin"
-            accent: launcher.pinnedOnly
-            implicitWidth: launcher.actionHeight
-            implicitHeight: launcher.actionHeight
-            hint: launcher.pinnedOnly ? "Show all apps and windows" : "Show pinned apps and their open windows"
-            onClicked: launcher.pinnedOnly=!launcher.pinnedOnly
-        }
-        SettingsSegments {
-            objectName: "launcherSortOptions"
-            Layout.maximumWidth: implicitWidth
-            value: Orbit.appearance.launcherSort || "frequent"
-            segmentWidth: 76
-            options: [{label:"Most used",value:"frequent"},{label:"Recent",value:"recent"},{label:"A–Z",value:"name"}]
-            onSelected: value => Orbit.setPreference("launcherSort",value)
-        }
-        Item {Layout.fillWidth: true}
-    }
-    GridLayout {
-        id: historyControls
-        visible:!launcher.showLayouts && launcher.historyOptions;Layout.fillWidth:true
-        columns: historyLabel.implicitWidth + resetHistory.implicitWidth + closeHistory.implicitWidth
-                 + 2*columnSpacing <= width ? 3 : 2
-        columnSpacing: launcher.controlGap
-        rowSpacing: launcher.resultGap
-        Text {
-            id: historyLabel
-            Layout.fillWidth:true;Layout.minimumWidth:0;Layout.columnSpan: historyControls.columns===2 ? 2 : 1
-            text:launcher.confirmHistoryReset ? "Clear app counts and recent ordering?" : "Application usage is stored locally."
-            wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.detailSize
-        }
-        OrbitButton {id: resetHistory;objectName:"launcherResetUsage";Layout.fillWidth: historyControls.columns===2;Layout.minimumWidth: 0;text:launcher.confirmHistoryReset ? "Clear history" : "Clear history…";implicitHeight:launcher.actionHeight;onClicked:{if(launcher.confirmHistoryReset){Orbit.clearLauncherHistory();launcher.confirmHistoryReset=false;launcher.historyOptions=false;}else launcher.confirmHistoryReset=true;}}
-        IconButton {id: closeHistory;iconName:"close";hint:"Cancel";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.historyOptions=false;launcher.confirmHistoryReset=false;}}
     }
     ListView {
         visible:!launcher.showLayouts
@@ -461,21 +451,52 @@ ColumnLayout {
             IconButton {id:emptyReset;objectName:"launcherClearFilters";anchors.top:emptyLabel.bottom;anchors.topMargin:10;anchors.horizontalCenter:parent.horizontalCenter;iconName:"start-library";hint:"Show all apps";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.pinnedOnly=false;search.text="";launcher.query="";launcher.focusSearch();}}
         }
     }
+    GridLayout {
+        id: historyControls
+        visible:!launcher.showLayouts && launcher.historyOptions;Layout.fillWidth:true
+        columns: historyLabel.implicitWidth + resetHistory.implicitWidth + closeHistory.implicitWidth
+                 + 2*columnSpacing <= width ? 3 : 2
+        columnSpacing: launcher.controlGap
+        rowSpacing: launcher.resultGap
+        Text {
+            id: historyLabel
+            Layout.fillWidth:true;Layout.minimumWidth:0;Layout.columnSpan: historyControls.columns===2 ? 2 : 1
+            text:launcher.confirmHistoryReset ? "Clear app counts and recent ordering?" : "Application usage is stored locally."
+            wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.detailSize
+        }
+        OrbitButton {id: resetHistory;objectName:"launcherResetUsage";Layout.fillWidth: historyControls.columns===2;Layout.minimumWidth: 0;text:launcher.confirmHistoryReset ? "Clear history" : "Clear history…";implicitHeight:launcher.actionHeight;onClicked:{if(launcher.confirmHistoryReset){Orbit.clearLauncherHistory();launcher.confirmHistoryReset=false;launcher.historyOptions=false;}else launcher.confirmHistoryReset=true;}}
+        IconButton {id: closeHistory;iconName:"close";hint:"Cancel";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.historyOptions=false;launcher.confirmHistoryReset=false;}}
+    }
     RowLayout {
-        visible: !launcher.showLayouts;Layout.fillWidth: true
-        Text {text: launcher.results.length+" results";color: Theme.faint;font.pixelSize: Theme.detailSize;Layout.fillWidth: true}
+        id: launcherFooter
+        objectName: "launcherFooter"
+        visible: !launcher.showLayouts;Layout.fillWidth: true;spacing: launcher.controlGap
+        Text {
+            text: launcher.results.length+" results";color: Theme.faint;font.pixelSize: Theme.detailSize
+            Layout.fillWidth: true;Layout.minimumWidth: 0;elide: Text.ElideRight
+        }
+        IconButton {
+            objectName: "foldLayoutsButton";iconName: "start-spaces"
+            text: launcher.labelDestinations ? "Layouts" : ""
+            hint: "Saved layouts";accessibleLabel: "Open saved layouts";enabled: Arrangements.available
+            implicitHeight: launcher.actionHeight;onClicked: launcher.showLayouts=true
+        }
+        IconButton {
+            objectName: "foldToolsButton";iconName: "start-tools"
+            text: launcher.labelDestinations ? "Files & notes" : ""
+            hint: "Files & notes";accessibleLabel: "Open files and notes"
+            implicitHeight: launcher.actionHeight;onClicked: launcher.toolsRequested()
+        }
+        Rectangle {width: 1;height: Theme.detailSize;color: Theme.separator;Layout.alignment: Qt.AlignVCenter}
         IconButton {objectName: "launcherShowDesktop";iconName: "display";hint: "Show desktop";implicitWidth: launcher.actionHeight;implicitHeight: launcher.actionHeight;onClicked: Orbit.showDesktop()}
         IconButton {objectName:"launcherHistoryOptions";iconName:"history";hint:launcher.historyOptions ? "Hide app usage options" : "App usage options";accent:launcher.historyOptions;implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.historyOptions=!launcher.historyOptions;launcher.confirmHistoryReset=false;}}
+        IconButton {
+            objectName:"launcherUndoArrangement";iconName:"undo";hint:"Undo "+Arrangements.undoLabel
+            implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight
+            visible:Arrangements.undoLabel!=="";enabled:!Arrangements.busy
+            onClicked:Arrangements.undo()
+        }
     }
     Loader {id:layoutsLoader;opacity:launcher.viewOpacity;transform:Translate {y:launcher.viewOffset}
         Layout.fillWidth:true;Layout.fillHeight:true;visible:launcher.showLayouts;active:launcher.showLayouts;sourceComponent:Component{LayoutsPanel{}}}
-    IconButton {
-        objectName:"launcherUndoArrangement"
-        Layout.alignment:Qt.AlignRight
-        iconName:"undo";hint:"Undo "+Arrangements.undoLabel
-        implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight
-        visible:Arrangements.undoLabel!=="";enabled:!Arrangements.busy
-        onClicked:Arrangements.undo()
-    }
-
 }

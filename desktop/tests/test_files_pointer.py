@@ -33,6 +33,29 @@ class FilesPointerTests(unittest.TestCase):
             window.close()
             self.application.processEvents()
 
+    def test_folder_search_stays_over_results_and_closes_on_navigation(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            child = root / 'Subfolder'
+            child.mkdir()
+            window = Files(root)
+            try:
+                window.resize(494, 350)
+                window.show()
+                window.show_search()
+                self.application.processEvents()
+                self.assertTrue(window.search.isVisible())
+                self.assertEqual(window.search_row.x(), window.view.x())
+                self.assertGreater(window.search_row.x(), window.places_panel.geometry().right())
+                self.assertEqual(window.search_row.width(), window.view.width())
+                window.search.setText('Subfolder')
+                self.assertTrue(window.navigate(child))
+                self.assertFalse(window.search_row.isVisible())
+                self.assertEqual(window.search.text(), '')
+            finally:
+                window.close()
+                self.application.processEvents()
+
     def test_bookmarks_are_shared_and_disambiguate_matching_folder_names(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)

@@ -685,7 +685,17 @@ class Files(QMainWindow):
         self.search.installEventFilter(self)
         self.search.textChanged.connect(self.filter_folder)
         self.search.returnPressed.connect(self.focus_results)
-        self.search.hide()
+        self.search_row = QWidget()
+        self.search_layout = QHBoxLayout(self.search_row)
+        self.search_layout.setContentsMargins(0, 0, 0, 0)
+        self.search_layout.addWidget(self.search, 1)
+        close_search = self.button('×', self.close_search)
+        close_search.setProperty('symbolicIcon', 'window-close')
+        close_search.setObjectName('navigation')
+        close_search.setAccessibleName('Close folder search')
+        close_search.setToolTip('Close folder search (Esc)')
+        self.search_layout.addWidget(close_search)
+        self.search_row.hide()
         self.sidebar = QVBoxLayout()
         self.places = {}
         self.bookmark_settings = QSettings('Mellipi', 'Files')
@@ -731,7 +741,11 @@ class Files(QMainWindow):
         self.sidebar.setSpacing(2)
         body.setSpacing(6)
         body.addWidget(self.places_panel)
-        body.addWidget(self.view, 1)
+        self.results_layout = QVBoxLayout()
+        self.results_layout.setContentsMargins(0, 0, 0, 0)
+        self.results_layout.addWidget(self.search_row)
+        self.results_layout.addWidget(self.view, 1)
+        body.addLayout(self.results_layout, 1)
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(8, 0, 8, 8)
@@ -743,7 +757,6 @@ class Files(QMainWindow):
         rule.setFixedHeight(1)
         layout.addWidget(rule)
         self.content_layout = QVBoxLayout()
-        self.content_layout.addWidget(self.search)
         self.content_layout.addLayout(body, 1)
         layout.addLayout(self.content_layout, 1)
         self.transfer_strip = TransferStrip(self)
@@ -826,9 +839,14 @@ class Files(QMainWindow):
         self.action_sheet.open()
 
     def show_search(self):
-        self.search.show()
+        self.search_row.show()
         self.search.setFocus()
         self.search.selectAll()
+
+    def close_search(self):
+        self.search.clear()
+        self.search_row.hide()
+        self.view.setFocus()
 
     def focus_results(self):
         if not self.view.currentIndex().isValid():
@@ -961,9 +979,7 @@ class Files(QMainWindow):
             self.breadcrumb_timer.start(0)
         if event.type() == QEvent.Type.KeyPress and watched is getattr(self, 'search', None):
             if event.key() == Qt.Key.Key_Escape:
-                self.search.clear()
-                self.search.hide()
-                self.view.setFocus()
+                self.close_search()
                 return True
             if event.key() == Qt.Key.Key_Down:
                 self.focus_results()
@@ -1221,6 +1237,8 @@ class Files(QMainWindow):
         self.navigation_layout.setSpacing(max(3, padding - 2))
         self.sidebar.setSpacing(max(2, padding // 2))
         self.browse_layout.setSpacing(padding)
+        self.results_layout.setSpacing(padding)
+        self.search_layout.setSpacing(max(3, padding - 2))
         sidebar_width = {'comfortable': 148, 'compact': 132, 'extra': 116}[density]
         text_scale = preferences.values['textScale']
         self.sidebar.setContentsMargins(padding, padding, padding, padding)
@@ -1315,7 +1333,7 @@ class Files(QMainWindow):
             self.search_selection = []
             with QSignalBlocker(self.search):
                 self.search.clear()
-            self.search.hide()
+            self.search_row.hide()
             self.proxy.set_query(folder, '')
         self.folder = folder
         self.view.setRootIndex(self.proxy.mapFromSource(self.model.setRootPath(str(folder))))

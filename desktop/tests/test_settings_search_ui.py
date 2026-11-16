@@ -122,6 +122,8 @@ class SettingsSearchTests(unittest.TestCase):
             self.assertLess(viewport.property('width'), 820)
             self.assertGreaterEqual(viewport.property('width'), 620)
             self.assertLessEqual(sidebar.property('width'), 184)
+            self.assertGreater(viewport.property('x'), sidebar.property('x') + sidebar.property('width'))
+            self.assertEqual(viewport.property('y'), sidebar.property('y'))
             self.assertEqual(warnings, [])
         finally:
             if window:
