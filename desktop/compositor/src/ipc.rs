@@ -406,6 +406,18 @@ impl OrbitCompositor {
                     Err(error) => json!({"ok":false,"error":error}),
                 }
             }
+            "window-auto-float" => {
+                let Some(floating) = value["floating"].as_bool() else {
+                    return json!({"ok":false,"error":"Expected floating state"});
+                };
+                json!({"ok": self.set_auto_float(window_id(&value), floating)})
+            }
+            "workspace-auto-pause" => {
+                let (Some(workspace), Some(paused)) = (value["workspace"].as_u64(), value["paused"].as_bool()) else {
+                    return json!({"ok":false,"error":"Expected workspace and pause state"});
+                };
+                json!({"ok": self.pause_auto_workspace(workspace as usize, paused)})
+            }
             "window-placement" => {
                 let Some(layout) = value["layout"].as_str().and_then(crate::window_placement::WindowPlacement::parse) else {
                     return json!({"ok":false,"error":"unknown window placement layout"});
@@ -535,7 +547,9 @@ impl OrbitCompositor {
             }
             "windows" => json!({"windows":self.snapshot()["windows"]}),
             "move" => {
-                json!({"ok":self.move_window_to_workspace(window_id(&value),value["workspace"].as_u64().unwrap_or(0).wrapping_sub(1) as usize)})
+                let moved = self.move_window_to_workspace(window_id(&value),value["workspace"].as_u64().unwrap_or(0).wrapping_sub(1) as usize);
+                if moved { self.reflow_auto_placement(); }
+                json!({"ok":moved})
             }
             "maximize" => {
                 self.restore_native(window_id(&value));
@@ -689,10 +703,10 @@ impl OrbitCompositor {
                 contains("x", "width", location.x) && contains("y", "height", location.y)
             }).map(|output| output["workarea"].clone()).unwrap_or(default_area.clone());
             let frame=if !minimized&&crate::decoration::needs_header(window){json!({"x":geometry.loc.x,"y":geometry.loc.y-crate::decoration::HEIGHT,"width":geometry.size.w,"height":crate::decoration::HEIGHT})}else{json!({})};
-            Some(json!({"id":id.to_string(),"workspace":workspace+1,"desktop":workspace,"pid":pid,"klass":klass.chars().take(256).collect::<String>().to_lowercase(),"app_id":klass.chars().take(256).collect::<String>(),"title":title.chars().take(512).collect::<String>(),"transient":transient,"active":active,"minimized":minimized,"maximized":maximized,"fullscreen":fullscreen,"snap":self.snapped_windows.get(id).filter(|snap| !matches!(snap.zone, crate::window_snap::SnapZone::GridCell { .. })).map(|snap| snap.zone.name()),"workarea":area,"rect":rect_value(geometry),"x":geometry.loc.x,"y":geometry.loc.y,"width":geometry.size.w,"height":geometry.size.h,"frame":frame,"native":true}))
+            Some(json!({"id":id.to_string(),"workspace":workspace+1,"desktop":workspace,"pid":pid,"klass":klass.chars().take(256).collect::<String>().to_lowercase(),"app_id":klass.chars().take(256).collect::<String>(),"title":title.chars().take(512).collect::<String>(),"transient":transient,"auto_floating":self.auto_float.contains(id),"active":active,"minimized":minimized,"maximized":maximized,"fullscreen":fullscreen,"snap":self.snapped_windows.get(id).filter(|snap| !matches!(snap.zone, crate::window_snap::SnapZone::GridCell { .. })).map(|snap| snap.zone.name()),"workarea":area,"rect":rect_value(geometry),"x":geometry.loc.x,"y":geometry.loc.y,"width":geometry.size.w,"height":geometry.size.h,"frame":frame,"native":true}))
         }).take(256).collect()
         };
-        json!({"backend":"orbit-native","windows":windows,"desktops":(0..self.workspaces.len()).map(|index|json!({"id":index,"active":index==self.active_workspace(),"name":format!("Space {}",index+1)})).collect::<Vec<_>>(),"outputs":outputs,"independent_workspaces":self.independent_workspaces,"locked":locked})
+        json!({"backend":"orbit-native","windows":windows,"desktops":(0..self.workspaces.len()).map(|index|json!({"id":index,"active":index==self.active_workspace(),"auto_paused":self.auto_paused_workspaces.contains(&index),"name":format!("Space {}",index+1)})).collect::<Vec<_>>(),"outputs":outputs,"independent_workspaces":self.independent_workspaces,"locked":locked})
     }
     pub fn minimize_window(&mut self, id: u64) -> bool {
         self.window_action(&json!({"command":"minimize","id":id}))["ok"] == true

@@ -95,7 +95,7 @@ static void check_panel(const char *directory) {
 }
 static void check_fitted_panel(const char *directory) {
     const int outputs[] = {1080,720,480,392,360,312,240,160};
-    assert(orbit_lock_panel_height(1080)==400);
+    assert(orbit_lock_panel_height(1080)==ORBIT_LOCK_PANEL_HEIGHT);
     assert(orbit_lock_panel_height(240)==208);
     for (size_t i=0;i<sizeof(outputs)/sizeof(*outputs);++i) {
         int height=orbit_lock_panel_height(outputs[i]);assert(height<=outputs[i]);
@@ -105,7 +105,7 @@ static void check_fitted_panel(const char *directory) {
         struct orbit_lock_info_visual info={.time_text="12:34 PM",.date_text="Wednesday, September 30",.user_text="Renée",.battery_text="Battery 100%",.layout_text="Keyboard: English (US)",.network_text="Network link active",.inside=0x171718ff,.border=0x656568ff,.text=0xf2f2f3ff,.muted=0xceced1ff,.accent=0xc8cbd0ff};
         orbit_draw_lock_panel_fit(cr,288,height,&textbox,&info);
         assert(cairo_status(cr)==CAIRO_STATUS_SUCCESS);
-        if (height >= 360) {
+        if (height >= 304) {
             cairo_surface_flush(image);int stride=cairo_image_surface_get_stride(image);
             size_t bytes=(size_t)stride*height;unsigned char *before=malloc(bytes);assert(before);
             memcpy(before,cairo_image_surface_get_data(image),bytes);

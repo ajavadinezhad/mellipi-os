@@ -140,13 +140,16 @@ QtObject {
             keyboardMode=false;
             Orbit.setTaskbarKeyboard(false);
         }
-        onActiveChanged: if(active && keyboardMode)spine.focusTaskbar();else if(!active)leaveKeyboardMode()
+        onActiveChanged: if(active && keyboardMode)spine.focusTaskbar(spine.requestedFocus);else if(!active)leaveKeyboardMode()
         Connections {
             target: Orbit
             function onTaskbarFocusRequested() {
                 top.keyboardMode=true;
                 Orbit.setTaskbarKeyboard(true);
                 spine.focusTaskbar();
+            }
+            function onTaskbarMenuFocusRequested(name) {
+                top.keyboardMode=true;Orbit.setTaskbarKeyboard(true);spine.focusTaskbar(name);
             }
             function onPanelChanged() {if(Orbit.panel!=="")top.leaveKeyboardMode();}
         }
@@ -449,7 +452,7 @@ QtObject {
         NumberAnimation { id: contextEnter;target: contextPopup;property: "opacity";to: 1;duration: Theme.motion;easing.type: Easing.OutCubic }
         Item {
             id: contextRoot;anchors.fill: parent;focus: true
-            Keys.onEscapePressed: {if(Orbit.context.items!==undefined)Orbit.closeContext();else Orbit.dismiss();}
+            Keys.onEscapePressed: {if(Orbit.context.items!==undefined)Orbit.cancelContext();else Orbit.dismiss();}
             Keys.onDownPressed: if(contextList.count)contextList.currentIndex=(contextList.currentIndex+1)%contextList.count
             Keys.onUpPressed: if(contextList.count)contextList.currentIndex=(contextList.currentIndex+contextList.count-1)%contextList.count
             Keys.onReturnPressed: Orbit.contextAction(contextList.currentIndex)
@@ -457,16 +460,23 @@ QtObject {
             Rectangle {
                 id: contextPopup;objectName: "contextPopup";visible: Orbit.context.items !== undefined
                 onVisibleChanged: if(visible){Orbit.syncContextSurface();contextRoot.forceActiveFocus();contextList.currentIndex=0;opacity=Theme.reducedMotion ? 1 : 0;if(!Theme.reducedMotion)contextEnter.restart();}
-                width: Math.max(1,Math.min(250,parent.width-16));height: Math.min(contextList.contentHeight+12,Math.max(1,parent.height-48));radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
-                x: Math.max(8,Math.min((Orbit.context.x || 0)-shell.sx-(Orbit.context.placement === "above" ? width/2 : 0),parent.width-width-8));y: Math.max(36,Math.min((Orbit.context.y || 0)-shell.sy-(Orbit.context.placement === "above" ? height+8 : 0),parent.height-height-12))
+                width: Math.max(1,Math.min(Orbit.context.opener ? 320 : 250,parent.width-16));height: Math.min(contextList.contentHeight+12,Math.max(1,parent.height-48));radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
+                readonly property string anchorEdge: Orbit.context.edge || ""
+                x: Math.max(8,Math.min((Orbit.context.x || 0)-shell.sx+
+                    (anchorEdge==="left" ? 8 : anchorEdge==="right" ? -width-8 :
+                     anchorEdge || Orbit.context.placement==="above" ? -width/2 : 0),parent.width-width-8))
+                y: Math.max(8,Math.min((Orbit.context.y || 0)-shell.sy+
+                    (anchorEdge==="top" ? 8 : anchorEdge==="bottom" || Orbit.context.placement==="above" ? -height-8 :
+                     anchorEdge ? -height/2 : 0),parent.height-height-8))
                 ListView {
                     id: contextList;anchors.fill: parent;anchors.margins: 6;clip: true;interactive: contentHeight>height;model: Orbit.context.items || []
                     onCurrentIndexChanged: if(currentIndex>=0)positionViewAtIndex(currentIndex,ListView.Contain)
                     ScrollBar.vertical: ScrollBar {}
                     delegate: Rectangle {
-                        required property var modelData;required property int index;width: ListView.view.width;height: Math.max(32,Theme.fontSize(12)+14);radius: Theme.corner(6);color: index===contextList.currentIndex ? Theme.selectedSurface : "transparent";border.color: Theme.focusColor;border.width: index===contextList.currentIndex && contextRoot.activeFocus ? (Theme.highContrast ? 2 : 1) : 0
+                        required property var modelData;required property int index;width: ListView.view.width;height: modelData.detail ? Theme.fontSize(12)+Theme.fontSize(10)+20 : Math.max(32,Theme.fontSize(12)+14);radius: Theme.corner(6);color: index===contextList.currentIndex ? Theme.selectedSurface : "transparent";border.color: Theme.focusColor;border.width: index===contextList.currentIndex && contextRoot.activeFocus ? (Theme.highContrast ? 2 : 1) : 0
                         Accessible.role: Accessible.MenuItem
                         Accessible.name: modelData.label
+                        Accessible.description: modelData.detail || ""
                         Accessible.focused: index===contextList.currentIndex
                         Accessible.onPressAction: if(modelData.enabled!==false)Orbit.contextAction(index)
                         Image {
@@ -476,7 +486,12 @@ QtObject {
                             width: 16;height: 16;sourceSize: Qt.size(16,16)
                             source: visible ? Theme.symbolicIconSource(modelData.icon) : ""
                         }
-                        Text { anchors.fill: parent;anchors.leftMargin: menuIcon.visible ? 33 : 9;anchors.rightMargin: 9;verticalAlignment: Text.AlignVCenter;text: modelData.label;color: modelData.enabled === false ? Theme.faint : Theme.text;font.pixelSize: Theme.fontSize(12);elide: Text.ElideRight;textFormat: Text.PlainText }
+                        Column {
+                            anchors.left:parent.left;anchors.leftMargin:menuIcon.visible ? 33 : 9
+                            anchors.right:parent.right;anchors.rightMargin:9;anchors.verticalCenter:parent.verticalCenter
+                            Text {width:parent.width;text:modelData.label;color:modelData.enabled===false ? Theme.faint : Theme.text;font.pixelSize:Theme.fontSize(12);elide:Text.ElideRight;textFormat:Text.PlainText}
+                            Text {visible:!!modelData.detail;width:parent.width;text:modelData.detail || "";color:Theme.muted;font.pixelSize:Theme.fontSize(10);elide:Text.ElideRight;textFormat:Text.PlainText}
+                        }
                         MouseArea { enabled: modelData.enabled !== false;anchors.fill: parent;hoverEnabled: true;onEntered: contextList.currentIndex=index;onClicked: Orbit.contextAction(index) }
                     }
                 }
@@ -528,6 +543,17 @@ QtObject {
                     label: "Auto-snap new windows"
                     checked: Orbit.windowPlacementEnabled === true
                     onToggled: Orbit.setPreference("windowPlacementEnabled",checked)
+                }
+            }
+            readonly property var workspace: Orbit.desktops.find(d => d.active) || ({})
+            SettingRow {
+                visible: placement.workspace.id !== undefined && Orbit.windowPlacementEnabled
+                label: "Pause on this workspace"
+                SettingToggle {
+                    objectName: "workspaceAutoSnapPause"
+                    label: "Pause Auto-snap on this workspace"
+                    checked: placement.workspace.auto_paused === true
+                    onClicked: Orbit.pauseWorkspaceAutoSnap(placement.workspace.id,checked)
                 }
             }
             Text {

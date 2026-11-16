@@ -327,6 +327,7 @@ impl OrbitCompositor {
                 self.xwayland.restore.remove(&id);
                 self.normal_geometry.remove(&id);
                 self.snapped_windows.remove(&id);
+            self.auto_float.remove(&id);
             self.window_motions.active.remove(&id);
             self.window_motions.pending_open.remove(&id);
             }

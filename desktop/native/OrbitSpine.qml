@@ -13,7 +13,22 @@ Item {
     readonly property real availableLength: Math.max(0,(horizontal ? width : height)-2*inset)
     readonly property real footerLength: horizontal ? footer.width+10 : footer.height+(Theme.compact ? 8 : 12)
     readonly property real bodyLength: fit ? Math.min(availableLength,Math.ceil(spine.taskStart+spine.preferredTaskLength+8+footerLength)) : availableLength
-    function focusTaskbar() {home.forceActiveFocus(Qt.TabFocusReason);}
+    property string requestedFocus: ""
+    function focusTaskbar(name) {
+        requestedFocus=name || "";
+        if(requestedFocus==="spineAllWindows"){taskOverflow.forceActiveFocus(Qt.TabFocusReason);return;}
+        if(requestedFocus==="spineUtilityOverflow") {
+            for(let i=0;i<utilityItems.count;++i) {
+                let candidate=utilityItems.itemAt(i);
+                if(candidate && candidate.objectName===name){candidate.forceActiveFocus(Qt.TabFocusReason);return;}
+            }
+        }
+        for(let i=0;i<taskItems.count;++i) {
+            let candidate=taskItems.itemAt(i);
+            if(candidate && candidate.objectName===name){candidate.forceActiveFocus(Qt.TabFocusReason);return;}
+        }
+        home.forceActiveFocus(Qt.TabFocusReason);
+    }
     readonly property rect bodyGeometry: Qt.rect(spine.x,spine.y,spine.width,spine.height)
     Item {
 
@@ -30,8 +45,8 @@ Item {
     property date clockNow: frame.clockNow
     readonly property string edge: Orbit.appearance.panelPosition || "left"
     readonly property bool horizontal: frame.horizontal
-    readonly property bool denseFooter: horizontal && (frame.fit || frame.availableLength<850)
     readonly property var spaces: Orbit.desktops.filter(s => !outputName || !s.output || s.output===outputName)
+    readonly property int verticalSpaceHeight: Math.min(spaces.length,frame.availableLength<500 ? 2 : 4)*(Theme.compact ? 28 : 33)
     readonly property var tasks: Orbit.dockApps
     readonly property var emptyTask: ({id:"",name:"",icon:"",windows:[]})
     readonly property var emptySpace: ({id:-1,active:false})
@@ -78,7 +93,7 @@ Item {
     }
     Rectangle {visible: frame.inset===0 && Orbit.appearance.taskbarLength!=="fit";x: spine.edge==="right" ? spine.width-3 : 0;y: Theme.corner(12);width: 3;height: spine.horizontal ? spine.height-2*Theme.corner(12) : 32;color: Theme.accentInk}
     IconButton {
-        id: home;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 26 : Theme.compact ? 32 : 38;iconName: "fold";phosphor: true;bare: true;glyphSize: spine.utilityIconSize
+        id: home;objectName: "spineHome";x: spine.horizontal ? 8 : Math.round((spine.width-38)/2);y: spine.horizontal ? Math.round((spine.height-height)/2) : 7;width: 38;height: Theme.extraCompact ? 28 : Theme.compact ? 32 : 38;padding: 2;iconName: "fold";phosphor: true;relief: true;bare: true;glyphSize: spine.utilityIconSize
         hint: "Apps, windows and actions · Super";accessibleLabel: "Open Mellipi apps, windows and actions"
         onClicked: spine.openPanel("launcher")
     }
@@ -88,12 +103,12 @@ Item {
         id: workspaceColumn
         x: spine.horizontal ? 60 : 8;y: spine.horizontal ? 2 : Theme.compact ? 52 : 60
         width: spine.horizontal ? Math.max(30,Math.min(spine.spaces.length,4)*33-3) : spine.width-16
-        height: spine.horizontal ? frame.thickness-4 : spaceList.y+spaceList.height
+        height: spine.horizontal ? frame.thickness-4 : spine.verticalSpaceHeight
 
         ListView {
             id: spaceList;objectName: "spineWorkspaceList"
             y: spine.horizontal ? Math.round((workspaceColumn.height-height)/2) : 0
-            width: workspaceColumn.width;height: spine.horizontal ? (Theme.extraCompact ? 26 : Theme.compact ? 30 : 34) : Math.min(count,frame.availableLength<500 ? 2 : 4)*(Theme.compact ? 28 : 33)
+            width: workspaceColumn.width;height: spine.horizontal ? (Theme.extraCompact ? 26 : Theme.compact ? 30 : 34) : spine.verticalSpaceHeight
             orientation: spine.horizontal ? ListView.Horizontal : ListView.Vertical
             // Updating the workspace array should not recreate its buttons.
             model: spine.spaces.length;clip: true;spacing: 3;boundsBehavior: Flickable.StopAtBounds
@@ -126,11 +141,25 @@ Item {
                 readonly property bool current: spine.isCurrentSpace(modelData)
                 width: spine.horizontal ? 30 : workspaceColumn.width;height: spine.horizontal ? spaceList.height : Theme.compact ? 25 : 30;padding: 2;quiet: true
                 text: (modelData.id<9 ? "0" : "")+(modelData.id+1);font.pixelSize: Theme.detailSize;font.weight: space.current ? Font.DemiBold : Font.Normal
-                hint: "Workspace "+(modelData.id+1);Accessible.name: hint+(current ? ", current" : "")
+                readonly property int windowCount: Orbit.windows.filter(w => w.desktop===modelData.id && !w.transient).length
+                hint: (modelData.name || "Workspace "+(modelData.id+1))+" · "+windowCount+(windowCount===1 ? " window" : " windows")
+                Accessible.name: hint+(current ? ", current" : "")
+                DropArea {
+                    id: workspaceDrop
+                    anchors.fill:parent;keys:["mellipi-workspace-window"]
+                    onDropped: drop => {
+                        const ident=drop.source ? drop.source.windowId : "";
+                        if(ident){Orbit.moveWindow(ident,space.modelData.id+1);drop.acceptProposedAction();}
+                    }
+                }
+                Rectangle {
+                    visible:space.windowCount>0;anchors.right:parent.right;anchors.rightMargin:4
+                    anchors.bottom:parent.bottom;anchors.bottomMargin:5;width:4;height:4;radius:2;color:Theme.accentInk
+                }
                 contentItem: Text {text: space.text;font: space.font;horizontalAlignment: Text.AlignHCenter;verticalAlignment: Text.AlignVCenter;color: space.current ? Theme.text : Theme.muted}
                 background: Rectangle {
                     radius: Theme.corner(8)
-                    color: space.hovered ? Theme.hover : space.current ? Theme.selectedSurface : "transparent"
+                    color: workspaceDrop.containsDrag ? Theme.selectedSurface : space.hovered ? Theme.hover : space.current ? Theme.selectedSurface : "transparent"
                     border.width: space.activeFocus ? 2 : space.current && Theme.highContrast ? 1 : 0
                     border.color: space.activeFocus ? Theme.focusColor : Theme.controlBorder
                 }
@@ -148,6 +177,7 @@ Item {
         flow: spine.horizontal ? Flow.LeftToRight : Flow.TopToBottom
         spacing: spine.taskSpacing;clip: true
         Repeater {
+            id: taskItems
             // Keep buttons and textures when focus/title changes leave
             // the number of displayed slots unchanged.
             model: Math.min(spine.tasks.length,spine.taskCapacity)
@@ -160,7 +190,7 @@ Item {
                 readonly property bool running: modelData.windows.length>0
                 Accessible.name: modelData.name;Accessible.role: Accessible.Button
                 Accessible.description: modelData.windows.length ? modelData.windows.length+" open windows" : "Launch application"
-                Accessible.onPressAction: Orbit.activateDock(modelData.id,false)
+                Accessible.onPressAction: Orbit.openTaskbarGroup(task,modelData.id)
                 Rectangle {
                     anchors.fill: parent
                     radius: Theme.corner(8)
@@ -189,59 +219,101 @@ Item {
                     }
                 }
                 MouseArea {id: hit;anchors.fill: parent;hoverEnabled: true;acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onClicked: mouse => {if(mouse.button===Qt.RightButton){var p=Orbit.itemScreenPoint(task,mouse.x,mouse.y);Orbit.openDockContext(modelData.id,p.x,p.y);}else Orbit.activateDock(modelData.id,false);}
+                    onClicked: mouse => {if(mouse.button===Qt.RightButton){var p=Orbit.itemScreenPoint(task,mouse.x,mouse.y);Orbit.openDockContext(modelData.id,p.x,p.y);}else Orbit.openTaskbarGroup(task,modelData.id);}
                     onEntered: spine.taskTooltip(task,modelData.name)
                     onExited: Orbit.hideTooltip()
                 }
+                Item {
+                    id: dragProxy
+                    width:task.width;height:task.height
+                    readonly property string windowId: task.modelData.windows.length===1 ? task.modelData.windows[0].id : ""
+                    Drag.keys:["mellipi-workspace-window"]
+                    Drag.supportedActions:Qt.MoveAction
+                    Drag.proposedAction:Qt.MoveAction
+                    Drag.hotSpot.x:width/2;Drag.hotSpot.y:height/2
+                }
+                DragHandler {
+                    enabled: !!dragProxy.windowId
+                    target:dragProxy
+                    onActiveChanged: {
+                        if(active)dragProxy.Drag.active=true;
+                        else if(dragProxy.Drag.active) {
+                            dragProxy.Drag.drop();
+                            dragProxy.x=0;dragProxy.y=0;
+                        }
+                    }
+                    onCanceled: {dragProxy.Drag.cancel();dragProxy.x=0;dragProxy.y=0;}
+                }
                 activeFocusOnTab: true
                 Keys.onPressed:event=>{if(event.key===Qt.Key_Menu || (event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))){var p=Orbit.itemScreenPoint(task,task.width/2,task.height/2);Orbit.openDockContext(modelData.id,p.x,p.y);event.accepted=true;}}
-                Keys.onReturnPressed: Orbit.activateDock(modelData.id,false)
-                Keys.onEnterPressed: Orbit.activateDock(modelData.id,false)
-                Keys.onSpacePressed: Orbit.activateDock(modelData.id,false)
+                Keys.onReturnPressed: Orbit.openTaskbarGroup(task,modelData.id)
+                Keys.onEnterPressed: Orbit.openTaskbarGroup(task,modelData.id)
+                Keys.onSpacePressed: Orbit.openTaskbarGroup(task,modelData.id)
             }
         }
         OrbitButton {
-            objectName: "spineAllWindows"
+            id: taskOverflow;objectName: "spineAllWindows"
             visible: spine.hiddenTaskCount>0 && spine.taskLaneLength>=spine.overflowLength
             width: spine.horizontal ? spine.overflowLength : taskColumn.width
             height: spine.horizontal ? spine.taskSlotHeight : spine.overflowLength
             text: "+"+spine.hiddenTaskCount;quiet: true
             hint: spine.hiddenTaskCount+(spine.hiddenTaskCount===1 ? " more app" : " more apps")
             Accessible.name: hint
-            onClicked: spine.openPanel("overview")
+            onClicked: Orbit.openTaskbarOverflow(taskOverflow,spine.tasks.slice(spine.taskCapacity).map(t=>t.id),false)
         }
     }
     Item {
         id: footer;objectName: "spineFooter"
-        x: spine.horizontal ? spine.width-width-10 : Theme.extraCompact ? 6 : 8;y: spine.horizontal ? 0 : spine.height-height-(Theme.compact ? 8 : 12)
-        width: spine.horizontal ? footerIcons.columns*footerIcons.buttonWidth+10+clockGroup.naturalWidth : frame.thickness-(Theme.extraCompact ? 12 : 16)
-        height: spine.horizontal ? frame.thickness : footerIcons.height+clockGroup.height+18
+        x: spine.horizontal ? spine.width-width-8 : 2
+        y: spine.horizontal ? 0 : spine.height-height-6
+        width: spine.horizontal ? footerIcons.width+8+clockGroup.naturalWidth : frame.thickness-4
+        height: spine.horizontal ? frame.thickness : footerIcons.height+clockGroup.height+14
         Rectangle {visible: !spine.horizontal;width: parent.width;height: 1;color: Theme.separator}
         Grid {
-            id: footerIcons;x: 0;y: spine.horizontal ? Math.max(0,Math.round((footer.height-height)/2)) : 6
-            columns: spine.horizontal ? spine.denseFooter ? Math.ceil(iconCount/2) : iconCount : 2
-            spacing: 0
-            readonly property int iconCount: placementButton.visible ? 7 : 6
-            readonly property int buttonWidth: spine.horizontal ? (Theme.extraCompact ? 22 : Theme.compact ? 26 : 30) : Math.floor((frame.thickness-(Theme.extraCompact ? 12 : 16))/2)
-            readonly property int buttonHeight: spine.horizontal ? buttonWidth : Theme.extraCompact ? 24 : Theme.compact ? 27 : 32
-            readonly property color iconInk: Theme.accentInk
-            IconButton {objectName: "spineCapture";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;accent: Orbit.panel==="screenshot";glyphColor: footerIcons.iconInk;iconName: "camera";hint: "Screenshot";onClicked: spine.openPanel("screenshot")}
-            IconButton {objectName: "spineNotifications";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;accent: Orbit.panel==="notifications";glyphColor: footerIcons.iconInk;iconName: "bell";hint: "Notifications";onClicked: spine.openPanel("notifications")
-                Rectangle {x: Math.round(parent.width/2)+6;y: Math.max(2,Math.round(parent.height/2)-9);width: 4;height: 4;radius: 2;color: Theme.accentInk;visible: System.notifications.length>0}
-            }
-            IconButton {objectName: "spineSound";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;accent: Orbit.panel==="music";glyphColor: footerIcons.iconInk;iconName: System.values.muted ? "mute" : "volume";hint: "Volume and playback";onClicked: spine.openPanel("music")}
-            IconButton {objectName: "spineBackground";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: spine.edge==="left" ? "chevron-right" : spine.edge==="right" ? "chevron-left" : spine.edge==="top" ? "chevron-down" : "chevron-up";hint: "Background apps";onClicked: spine.openPanel("tray")}
-            IconButton {objectName: "spineUsage";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;glyphColor: footerIcons.iconInk;iconName: "usage";hint: "System Monitor";onClicked: Orbit.openSystemMonitor()}
-            IconButton {objectName: "spineControls";phosphor: true;bare: true;glyphSize: spine.utilityIconSize;width: footerIcons.buttonWidth;height: footerIcons.buttonHeight;padding: Theme.extraCompact ? 2 : 4;accent: Orbit.panel==="quick";glyphColor: footerIcons.iconInk;iconName: "settings";hint: "Quick controls";onClicked: spine.openPanel("quick")}
-            IconButton {
-                id: placementButton;objectName: "spineAutoSnap";phosphor: true;bare: true;glyphSize: spine.utilityIconSize
-                visible: Orbit.nativePlacementSupported === true
-                width: footerIcons.buttonWidth;height: footerIcons.buttonHeight
-                padding: Theme.extraCompact ? 2 : 4
-                glyphColor: Orbit.windowPlacementEnabled ? footerIcons.iconInk : Theme.muted
-                iconName: "start-spaces"
-                hint: "Auto-snap · " + (Orbit.windowPlacementEnabled ? "On" : "Off")
-                onClicked: spine.openPanel("window-placement")
+            id: footerIcons
+            x:spine.horizontal ? 0 : Math.round((footer.width-width)/2)
+            y:spine.horizontal ? Math.max(0,Math.round((footer.height-height)/2)) : 4
+            readonly property int buttonWidth: Math.max(24,spine.utilityIconSize+4,Theme.compact ? 24 : 30)
+            readonly property int buttonHeight: buttonWidth
+            readonly property int across: Math.max(1,Math.min(2,Math.floor((frame.thickness-4)/buttonWidth)))
+            readonly property var primary: [{key:"music",item:"Sound",glyph:System.values.muted ? "mute" : "volume",hint:"Volume and playback"},{key:"quick",item:"Controls",glyph:"settings",hint:"Quick controls"}]
+            readonly property var secondary: [
+                {key:"screenshot",item:"Capture",glyph:"camera",hint:"Screenshot"},
+                {key:"notifications",item:"Notifications",glyph:"bell",hint:"Notifications"},
+                {key:"tray",item:"Background",glyph:spine.edge==="left" ? "chevron-right" : spine.edge==="right" ? "chevron-left" : spine.edge==="top" ? "chevron-down" : "chevron-up",hint:"Background apps"},
+                {key:"usage",item:"Usage",glyph:"usage",hint:"System Monitor"}
+            ].concat(Orbit.nativePlacementSupported===true ? [{key:"window-placement",item:"AutoSnap",glyph:"start-spaces",hint:"Auto-snap · "+(Orbit.windowPlacementEnabled ? "On" : "Off")}] : [])
+            readonly property int capacity: spine.horizontal ?
+                Math.max(3,Math.floor((frame.availableLength-spine.taskStart-clockGroup.naturalWidth-88)/buttonWidth)) :
+                Math.max(3,across*Math.floor((frame.availableLength-spine.taskStart-clockGroup.height-88)/buttonHeight))
+            readonly property int shownSecondary: Math.max(0,Math.min(secondary.length,capacity-primary.length-
+                (secondary.length+primary.length>capacity ? 1 : 0)))
+            readonly property var hidden: secondary.slice(shownSecondary)
+            readonly property var visibleItems: secondary.slice(0,shownSecondary).concat(primary,hidden.length ?
+                [{key:"overflow",item:"UtilityOverflow",glyph:"more",hint:"More taskbar controls"}] : [])
+            columns:spine.horizontal ? visibleItems.length : across
+            spacing:0
+            Repeater {
+                id:utilityItems;model:footerIcons.visibleItems
+                IconButton {
+                    id:control;required property var modelData
+                    objectName:"spine"+modelData.item
+                    phosphor:true;relief:true;bare:true;glyphSize:spine.utilityIconSize
+                    width:footerIcons.buttonWidth;height:footerIcons.buttonHeight;padding:2
+                    glyphColor:modelData.key==="window-placement" && !Orbit.windowPlacementEnabled ? Theme.muted : Theme.accentInk
+                    accent:Orbit.panel===modelData.key
+                    iconName:modelData.glyph;hint:modelData.hint
+                    onClicked:{
+                        if(modelData.key==="usage")Orbit.openSystemMonitor();
+                        else if(modelData.key==="overflow")Orbit.openTaskbarOverflow(control,footerIcons.hidden.map(r=>r.key),true);
+                        else spine.openPanel(modelData.key);
+                    }
+                    Rectangle {
+                        visible:control.modelData.key==="notifications" && System.notifications.length>0
+                        x:Math.round(parent.width/2)+6;y:Math.max(2,Math.round(parent.height/2)-9)
+                        width:4;height:4;radius:2;color:Theme.accentInk
+                    }
+                }
             }
         }
         FontMetrics {id: clockMetrics;font: clockLabel.font}

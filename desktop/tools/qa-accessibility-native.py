@@ -37,15 +37,20 @@ engine=QQmlApplicationEngine();style=Style();engine.rootContext().setContextProp
 uri=(Path(sys.argv[1])/'native').as_uri()
 engine.loadData(('import QtQuick 2.15\\nimport QtQuick.Controls 2.15\\nimport QtQuick.Window 2.15\\nimport "'+uri+'" as Ui\\nWindow{id:fixtureWindow;property bool applied:false;visible:true;width:480;height:240;title:"Mellipi accessibility fixture";Column{anchors.centerIn:parent;spacing:20;TextField{Accessible.name:"Write here";placeholderText:"Write here"}Ui.OrbitButton{text:"Apply example";onClicked:fixtureWindow.applied=true}Text{text:fixtureWindow.applied?"Applied example":"Ready";Accessible.name:text}}}').encode())
 assert engine.rootObjects()
-from PyQt5.QtDBus import QDBusConnection
-from PyQt5.QtCore import QTimer
+import os
+if os.environ['ORBIT_QT']=='6':
+ from PyQt6.QtDBus import QDBusConnection
+ from PyQt6.QtCore import QTimer
+else:
+ from PyQt5.QtDBus import QDBusConnection
+ from PyQt5.QtCore import QTimer
 QTimer.singleShot(2000,lambda:print('Qt AT-SPI connection established:',QDBusConnection('a11y').isConnected(),flush=True))
 app.exec()
 '''
 def main():
     if '--private-bus' not in sys.argv:
         env={k:v for k,v in os.environ.items() if k not in ('DBUS_SESSION_BUS_ADDRESS','AT_SPI_BUS_ADDRESS','WAYLAND_DISPLAY','DISPLAY','SWAYSOCK','ORBIT_NATIVE_CONTROL')}
-        return subprocess.call(['dbus-run-session','--','/usr/bin/python3',__file__,'--private-bus',*(['--enable-later'] if '--enable-later' in sys.argv else [])],env=env)
+        return subprocess.call(['dbus-run-session','--','/usr/bin/python3',__file__,'--private-bus',*[flag for flag in ('--enable-later','--qt6') if flag in sys.argv]],env=env)
     parent=native=fixture=None
     with tempfile.TemporaryDirectory(prefix='abstract-a11y-') as directory,open('/tmp/abstract-a11y-native.log','w') as log:
         base=Path(directory);runtime=base/'runtime';runtime.mkdir(mode=0o700);config=base/'sway.conf';config.write_text('output HEADLESS-1 mode 1024x768\nseat seat0 fallback true\n')
@@ -76,7 +81,7 @@ def main():
             os.environ['AT_SPI_BUS_ADDRESS']=address
             env.pop('QT_ACCESSIBILITY',None)
             env.pop('QT_LINUX_ACCESSIBILITY_ALWAYS_ON',None)
-            child=dict(env,QT_LOGGING_RULES='qt.accessibility.*=true',QT_NO_XDG_DESKTOP_PORTAL='1',WAYLAND_DISPLAY=info['wayland_display'],QT_QPA_PLATFORM='wayland',QT_WAYLAND_SHELL_INTEGRATION='xdg-shell',ORBIT_QT='5',AT_SPI_BUS_ADDRESS=address)
+            child=dict(env,QT_LOGGING_RULES='qt.accessibility.*=true',QT_NO_XDG_DESKTOP_PORTAL='1',WAYLAND_DISPLAY=info['wayland_display'],QT_QPA_PLATFORM='wayland',QT_WAYLAND_SHELL_INTEGRATION='xdg-shell',ORBIT_QT='6' if '--qt6' in sys.argv else '5',AT_SPI_BUS_ADDRESS=address)
             gi.require_version('Atspi','2.0');from gi.repository import Atspi
             Atspi.init()
             listener=Atspi.EventListener.new(lambda *args:None)

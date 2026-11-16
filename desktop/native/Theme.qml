@@ -29,10 +29,14 @@ QtObject {
     function symbolicIconSource(name, ink) {
         return "image://icons/menu/"+String(ink || accentInk).slice(1)+"/"+name;
     }
+    function phosphorIconSource(name, ink, relief) {
+        return "image://icons/" + (relief && !highContrast ? "phosphor-relief/" : "phosphor/")
+            + String(ink).slice(1) + "/" + name;
+    }
     function taskbarIconSource(name, internal) {
         const glyph = internal ? "mellipi-settings" : String(name);
         return glyph.indexOf("mellipi-")===0
-            ? "image://icons/phosphor/"+String(accentInk).slice(1)+"/"+glyph : iconSource(name);
+            ? phosphorIconSource(glyph, accentInk, true) : iconSource(name);
     }
     function iconSource(name) {
         if (String(name).indexOf("mellipi-")===0)

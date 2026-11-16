@@ -3,6 +3,7 @@ import argparse
 from html import escape
 import os
 import sys
+import weakref
 from pathlib import Path
 
 os.environ['ORBIT_QT'] = '6'
@@ -82,6 +83,7 @@ class TransferStrip(QFrame):
         self.cancel.clicked.connect(lambda: self.resolve('cancel'))
         layout.addLayout(controls)
         self.job = None
+        self._collision_focus = None
         self.hide()
 
     def start(self, job, count, move):
@@ -94,10 +96,17 @@ class TransferStrip(QFrame):
     def update_progress(self, patch):
         if self.job is None or self.job.token.event.is_set():
             return
+        had_collision = bool(self.state.get('conflict'))
         self.state.update(patch)
         collision = bool(self.state.get('conflict'))
+        if had_collision and not collision:
+            self.restore_collision_focus()
         self.keep.setVisible(collision)
         self.skip.setVisible(collision)
+        if collision and not had_collision and self.window().isActiveWindow():
+            opener = self.window().focusWidget()
+            self._collision_focus = weakref.ref(opener) if opener is not None else None
+            self.skip.setFocus(Qt.FocusReason.OtherFocusReason)
         self.bar.setVisible(not collision)
         current, total = self.state.get('currentBytes', 0), self.state.get('currentTotal', 0)
         self.bar.setRange(0, 100 if total else 0)
@@ -110,6 +119,16 @@ class TransferStrip(QFrame):
             message += f" · {self.state.get('completed', 0)} of {self.state['count']} transferred"
         self.message.setText(message)
 
+    def restore_collision_focus(self):
+        from PyQt6.sip import isdeleted
+        previous = self._collision_focus() if self._collision_focus is not None else None
+        self._collision_focus = None
+        focused = self.window().focusWidget()
+        if focused not in (self.skip, self.keep, self.cancel):
+            return
+        if previous is not None and not isdeleted(previous) and previous.isVisible() and previous.isEnabled():
+            previous.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def resolve(self, choice):
         if self.job is None or (choice != 'cancel' and not self.state.get('conflict')):
             return
@@ -117,12 +136,14 @@ class TransferStrip(QFrame):
             self.update_progress({'conflict': '', 'message': 'Continuing transfer…'})
         self.job.token.resolve(choice)
         if choice == 'cancel':
+            self.restore_collision_focus()
             self.message.setText('Canceling transfer…')
             self.keep.hide()
             self.skip.hide()
             self.cancel.setEnabled(False)
 
     def finish(self):
+        self.restore_collision_focus()
         self.job = None
         self.hide()
 

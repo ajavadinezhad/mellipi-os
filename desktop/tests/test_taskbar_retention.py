@@ -28,10 +28,15 @@ QtObject {
         property string themeMode:"dark"
         property var desktops:[{id:0,active:true},{id:1,active:false}]
         property var outputWorkspaces:({})
+        property var windows:[]
+        property string panel:""
+        property bool windowPlacementEnabled:true
         property var dockApps:[{id:"editor",name:"Editor",icon:"",windows:[]}]
         property bool nativePlacementSupported:false
         function queueItemTooltip(item,text,x,y) {}
         function hideTooltip() {}
+        property var lastMove:[]
+        function moveWindow(id,workspace) { lastMove=[id,workspace] }
     }
     property QtObject tray: QtObject { property var items: []; property int legacyCount:0 }
     property QtObject background: QtObject { property var items: [] }
@@ -88,7 +93,7 @@ Window {
         self.assertFalse(task.property('running'))
         self.assertFalse(workspace.property('current'))
         orbit.setProperty('dockApps', [{'id':'editor','name':'Editor','icon':'',
-                                        'windows':[{'active':True}]}])
+                                        'windows':[{'id':'1','active':True}]}])
         orbit.setProperty('desktops', [{'id':0,'active':False},{'id':1,'active':True}])
         self.app.processEvents()
         self.assertIs(self.named('spineTask_editor'), task)
@@ -101,3 +106,51 @@ Window {
         for text in ('23:59', 'Nov 15'):
             label = self.item(lambda item: item.property('text') == text)
             self.assertFalse(label.property('truncated'), text)
+
+
+    def test_small_viewport_preserves_click_targets_and_distinct_icon_sizes(self):
+        from PyQt6.QtQuick import QQuickItem
+        orbit=self.fixture.property('orbit')
+        frame=self.named('orbitSpine').parentItem()
+        for edge in ('left','right','top','bottom'):
+            sizes=[]
+            for scale in (75,100,125,150):
+                orbit.setProperty('appearance',dict(panelPosition=edge,shellLayout='fold',density='extra',
+                                  textScale=1.5,clock24=True,clockDate=True,reducedMotion=True,
+                                  taskbarIconScale=scale))
+                frame.setWidth(52 if edge in ('left','right') else 510)
+                frame.setHeight(510 if edge in ('left','right') else 52)
+                self.app.processEvents()
+                target=self.named('spineControls')
+                self.assertGreaterEqual(target.width(),24)
+                self.assertGreaterEqual(target.height(),24)
+                sizes.append(target.findChild(QQuickItem,'iconGlyph').width())
+            self.assertEqual(sizes,[12,16,20,24],edge)
+        orbit.setProperty('appearance',dict(panelPosition='left',shellLayout='fold',density='extra',
+                          textScale=1.5,taskbarIconScale=150,reducedMotion=True))
+        frame.setWidth(52)
+        frame.setHeight(360)
+        self.app.processEvents()
+        self.assertTrue(self.named('spineUtilityOverflow').isVisible())
+
+
+    def test_drag_single_window_to_workspace_without_switching(self):
+        from PyQt6.QtCore import QPoint, QPointF, Qt
+        from PyQt6.QtTest import QTest
+        orbit=self.fixture.property('orbit')
+        orbit.setProperty('dockApps',[dict(id='editor',name='Editor',icon='',
+                                            windows=[dict(id='17',active=True,desktop=0)])])
+        self.app.processEvents()
+        task=self.named('spineTask_editor')
+        workspace=self.named('spineWorkspace_1')
+        def point(item):
+            scene=item.mapToScene(QPointF(item.width()/2,item.height()/2))
+            return QPoint(round(scene.x()),round(scene.y()))
+        a,b=point(task),point(workspace)
+        QTest.mousePress(self.window,Qt.MouseButton.LeftButton,pos=a)
+        QTest.mouseMove(self.window,QPoint(a.x(),a.y()-16),25)
+        QTest.mouseMove(self.window,b,25)
+        QTest.mouseRelease(self.window,Qt.MouseButton.LeftButton,pos=b)
+        self.app.processEvents()
+        self.assertEqual(orbit.property('lastMove').toVariant(),['17',2])
+        self.assertFalse(workspace.property('current'))

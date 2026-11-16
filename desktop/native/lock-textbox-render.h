@@ -10,8 +10,9 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
-#define ORBIT_LOCK_PANEL_HEIGHT 400
+#define ORBIT_LOCK_PANEL_HEIGHT 336
 
 struct orbit_lock_info_visual {
 	const char *time_text, *date_text, *user_text, *battery_text;
@@ -39,31 +40,37 @@ static void orbit_textbox_status(cairo_t *cr, const char *text,
 	cairo_move_to(cr, (width - ext.width) / 2 - ext.x_bearing, y);
 	cairo_show_text(cr, text);
 }
+static void orbit_round_rect(cairo_t *cr, double x, double y,
+        double w, double h, double radius) {
+    double r = radius < w/2 ? radius : w/2;
+    if (r > h/2) r = h/2;
+    if (r <= 0) {cairo_rectangle(cr,x,y,w,h);return;}
+    cairo_new_sub_path(cr);
+    cairo_arc(cr,x+w-r,y+r,r,-1.57079632679,0);
+    cairo_arc(cr,x+w-r,y+h-r,r,0,1.57079632679);
+    cairo_arc(cr,x+r,y+h-r,r,1.57079632679,3.14159265359);
+    cairo_arc(cr,x+r,y+r,r,3.14159265359,4.71238898038);
+    cairo_close_path(cr);
+}
 static void orbit_draw_lock_textbox(cairo_t *cr, double width,
 		const struct orbit_lock_textbox_visual *view) {
 	const char *density = getenv("ORBIT_LOCK_DENSITY");
 	const char *corners = getenv("ORBIT_LOCK_CORNERS");
 	const double box_height = density && !strcmp(density, "extra") ? 40 :
 		density && !strcmp(density, "compact") ? 44 : 48;
-	const double radius = corners && !strcmp(corners, "rounded") ? 8 :
-		corners && !strcmp(corners, "soft") ? 4 : 0;
+	const double radius = corners && !strcmp(corners, "square") ? 0 :
+		corners && !strcmp(corners, "soft") ? 4 : 8;
 	const double font_size = view->font_size < 12 ? 12 :
 		(view->font_size > 24 ? 24 : view->font_size);
 	uint32_t border = view->invalid ? view->wrong :
 		(view->validating ? view->checking : view->border);
 	cairo_save(cr);
-	if (radius) {
-		cairo_new_sub_path(cr);
-		cairo_arc(cr, width-1-radius, 1+radius, radius, -1.57079632679, 0);
-		cairo_arc(cr, width-1-radius, box_height-1-radius, radius, 0, 1.57079632679);
-		cairo_arc(cr, 1+radius, box_height-1-radius, radius, 1.57079632679, 3.14159265359);
-		cairo_arc(cr, 1+radius, 1+radius, radius, 3.14159265359, 4.71238898038);
-		cairo_close_path(cr);
-	} else {
-		cairo_rectangle(cr, 1, 1, width - 2, box_height - 2);
-	}
+    orbit_round_rect(cr,1,1,width-2,box_height-2,radius ? radius+3 : 0);
 	orbit_textbox_color(cr, view->inside);
 	cairo_fill_preserve(cr);
+    /* A slight accent wash separates the field from the card. */
+    orbit_textbox_color(cr,(view->border & 0xffffff00u) | 14u);
+    cairo_fill_preserve(cr);
 	orbit_textbox_color(cr, border);
 	cairo_set_line_width(cr, 1.5);
 	cairo_stroke(cr);
@@ -147,54 +154,67 @@ static void orbit_draw_lock_panel_fit(cairo_t *cr, double width, double height,
         const struct orbit_lock_textbox_visual *textbox,
         const struct orbit_lock_info_visual *info) {
     cairo_save(cr);
-    cairo_rectangle(cr, .5, .5, width - 1, height - 1);
-    orbit_textbox_color(cr, info->inside);cairo_fill_preserve(cr);
-    orbit_textbox_color(cr, info->border);cairo_set_line_width(cr, 1);cairo_stroke(cr);
-    orbit_textbox_color(cr, info->accent);cairo_rectangle(cr, 24, 0, 48, 3);cairo_fill(cr);
-    cairo_select_font_face(cr, textbox->font ? textbox->font : "Sans",
-        CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    const char *corners = getenv("ORBIT_LOCK_CORNERS");
+    const double radius = corners && !strcmp(corners,"square") ? 0 :
+        corners && !strcmp(corners,"soft") ? 10 : 20;
+    const double inset = width >= 220 ? 26 : 12;
+    orbit_round_rect(cr,.75,.75,width-1.5,height-1.5,radius);
+    orbit_textbox_color(cr,info->inside);
+    cairo_fill_preserve(cr);
+    orbit_textbox_color(cr,info->border);
+    cairo_set_line_width(cr,1);
+    cairo_stroke(cr);
+    cairo_select_font_face(cr,textbox->font ? textbox->font : "Sans",
+        CAIRO_FONT_SLANT_NORMAL,CAIRO_FONT_WEIGHT_NORMAL);
     double scale = textbox->font_size / 16;
     if (scale < .85) scale = .85;
     if (scale > 1.5) scale = 1.5;
     double field_y;
-    if (height >= 360) {
-        orbit_panel_line(cr, "Mellipi", width, height*.075, 13*scale, info->muted);
-        orbit_panel_line(cr, info->time_text, width, height*.25, 54*scale, info->text);
-        orbit_panel_line(cr, info->date_text, width, height*.33, 14*scale, info->muted);
-        orbit_panel_line(cr, info->user_text, width, height*.43, 17*scale, info->text);
-        orbit_panel_line(cr, info->layout_text, width, height*.49, 11*scale, info->muted);
-        field_y = height*.53;
-    } else if (height >= 280) {
-        orbit_panel_line(cr, info->time_text, width, height*.17, 42*scale, info->text);
-        orbit_panel_line(cr, info->date_text, width, height*.25, 12*scale, info->muted);
-        orbit_panel_line(cr, info->user_text, width, height*.35, 15*scale, info->text);
-        orbit_panel_line(cr, info->layout_text, width, height*.43, 11*scale, info->muted);
-        field_y = height*.47;
-    } else if (height >= 200) {
-        orbit_panel_line(cr, info->time_text, width, 34, 30, info->text);
-        orbit_panel_line(cr, info->user_text, width, 60, 14, info->text);
-        orbit_panel_line(cr, info->layout_text, width, 80, 11, info->muted);
-        field_y = 92;
+    if (height >= 304) {
+        /* Small lock mark balances the keyboard action on the opposite side. */
+        orbit_textbox_color(cr,info->accent);
+        cairo_set_line_width(cr,1.7);
+        cairo_rectangle(cr,inset,19,12,9);
+        cairo_move_to(cr,inset+2,19);
+        cairo_line_to(cr,inset+2,16);
+        cairo_curve_to(cr,inset+2,10,inset+10,10,inset+10,16);
+        cairo_line_to(cr,inset+10,19);
+        cairo_stroke(cr);
+        orbit_panel_line(cr,info->time_text,width,108,58*scale,info->text);
+        orbit_panel_line(cr,info->date_text,width,134,14*scale,info->muted);
+        orbit_panel_line(cr,info->user_text,width,171,15*scale,info->text);
+        field_y=184;
+        orbit_panel_line(cr,info->layout_text,width,height-51,11*scale,info->muted);
+        const char *battery=info->battery_text ? info->battery_text : "";
+        const char *network=info->network_text ? info->network_text : "";
+        if (*battery || *network) {
+            char details[164];
+            snprintf(details,sizeof(details),"%.95s%s%.63s",battery,
+                     *battery && *network ? " · " : "",network);
+            orbit_textbox_color(cr,info->border);
+            cairo_rectangle(cr,inset,height-38,width-2*inset,1);
+            cairo_fill(cr);
+            orbit_panel_line(cr,details,width,height-18,11*scale,info->muted);
+        }
+    } else if (height >= 220) {
+        orbit_panel_line(cr,info->time_text,width,64,35*scale,info->text);
+        orbit_panel_line(cr,info->user_text,width,91,13*scale,info->text);
+        field_y=104;
+        orbit_panel_line(cr,info->layout_text,width,height-23,11*scale,info->muted);
+    } else if (height >= 150) {
+        orbit_panel_line(cr,info->time_text,width,52,24,info->text);
+        orbit_panel_line(cr,info->user_text,width,70,12,info->text);
+        field_y=80;
     } else {
-        orbit_panel_line(cr, info->layout_text, width, 19, 11, info->muted);
-        field_y = 30;
+        field_y=36;
     }
-    cairo_save(cr);cairo_translate(cr, 24, field_y);
-    orbit_draw_lock_textbox(cr, width - 48, textbox);
+    cairo_save(cr);
+    cairo_translate(cr,inset,field_y);
+    orbit_draw_lock_textbox(cr,width-2*inset,textbox);
     cairo_restore(cr);
-    if (height >= 360) {
-        orbit_panel_line(cr, "Enter to unlock", width, height*.80, 12*scale, info->muted);
-        orbit_panel_line(cr, info->battery_text, width, height*.875, 12*scale, info->muted);
-        orbit_panel_line(cr, info->network_text, width, height*.95, 11*scale, info->muted);
-    } else if (height >= 280) {
-        orbit_panel_line(cr, "Enter to unlock", width, height-62, 11, info->muted);
-        orbit_panel_line(cr, info->battery_text, width, height-40, 11, info->muted);
-        orbit_panel_line(cr, info->network_text, width, height-18, 11, info->muted);
-    } else if (height >= 140) {
-        orbit_panel_line(cr, "Enter to unlock", width, height-15, 11, info->muted);
-    }
     cairo_restore(cr);
 }
+
 static inline void orbit_draw_lock_panel(cairo_t *cr, double width,
         const struct orbit_lock_textbox_visual *textbox,
         const struct orbit_lock_info_visual *info) {

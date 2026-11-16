@@ -20,19 +20,37 @@ from window_controls import PATHS as WINDOW_CONTROL_PATHS, glyph_svg
 def native_session():return bool(os.environ.get('ORBIT_NATIVE_CONTROL'))
 def wayland_session():return native_session() or bool(os.environ.get('SWAYSOCK'))
 
+def taskbar_relief_svg(source, color, size):
+    """Shade the original Phosphor outline, without a tile or runtime effect."""
+    _, _, body = source.partition('>')
+    body = body.rsplit('</svg>', 1)[0]
+    base = color.name()
+    light = color.lighter(121).name()
+    shade = color.darker(135).name()
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 256 256">'
+        '<defs><linearGradient id="face" x1="0%" y1="0%" x2="25%" y2="100%">'
+        f'<stop offset="0" stop-color="{light}"/><stop offset=".52" stop-color="{base}"/>'
+        f'<stop offset="1" stop-color="{shade}"/></linearGradient></defs>'
+        f'<g transform="translate(0 7)" opacity=".33" fill="{shade}">'
+        f'{body.replace("currentColor", shade)}</g>'
+        f'<g fill="url(#face)">{body.replace("currentColor", "url(#face)")}</g></svg>'
+    )
+
+
 class Icons(QQuickImageProvider):
     def __init__(self): super().__init__(QQuickImageProvider.Image if QT5 else QQuickImageProvider.ImageType.Image)
     def requestImage(self,ident,*sizes):
         requested=sizes[-1]
         tint=None
-        if ident.startswith('phosphor/'):
+        if ident.startswith(('phosphor/', 'phosphor-relief/')):
             from files_icons import asset
-            _, ink, name = ident.split('/', 2)
+            treatment, ink, name = ident.split('/', 2)
             glyph = {
                 'camera':'camera','volume':'speaker-high','mute':'speaker-slash','bell':'bell',
                 'chevron-up':'caret-up','chevron-down':'caret-down','chevron-left':'caret-left',
                 'chevron-right':'caret-right','usage':'chart-bar','settings':'sliders-horizontal',
-                'layouts':'squares-four', 'start-spaces':'squares-four', 'fold':'dots-nine',
+                'more':'dots-three', 'layouts':'squares-four', 'start-spaces':'squares-four', 'fold':'dots-nine',
                 'mellipi-files':'folder', 'mellipi-terminal':'terminal-window',
                 'mellipi-browser':'globe', 'mellipi-editor':'note-pencil',
                 'mellipi-calculator':'calculator', 'mellipi-calendar':'calendar',
@@ -45,8 +63,11 @@ class Icons(QQuickImageProvider):
             color=QColor('#'+ink)
             if glyph and color.isValid() and (svg:=asset('regular',glyph)):
                 side=max(16,min(96,requested.width() if requested.width()>0 else 24))
-                svg=svg.replace('currentColor',color.name()).replace(
-                    '<svg ',f'<svg width="{side}" height="{side}" ',1)
+                if treatment == 'phosphor-relief':
+                    svg = taskbar_relief_svg(svg, color, side)
+                else:
+                    svg = svg.replace('currentColor', color.name()).replace(
+                        '<svg ', f'<svg width="{side}" height="{side}" ', 1)
                 picture=QImage.fromData(svg.encode(),b'SVG')
                 if not picture.isNull():
                     if LAYER_SHELL:return picture,picture.size()
@@ -114,7 +135,7 @@ class Icons(QQuickImageProvider):
 
 class Bridge(QObject):
     changed=Signal(); windowsChanged=Signal(); noticeChanged=Signal(); panelChanged=Signal(); aiChanged=Signal(); settingsChanged=Signal(); shortcutsChanged=Signal();geometryChanged=Signal();frameChanged=Signal();dockLayoutChanged=Signal();launcherChanged=Signal();interactionChanged=Signal()
-    dockAppsChanged=Signal();systemActionsChanged=Signal();taskbarFocusRequested=Signal()
+    dockAppsChanged=Signal();systemActionsChanged=Signal();taskbarFocusRequested=Signal();taskbarMenuFocusRequested=Signal(str)
     desktopSnapshot=Signal(object); shortcutUpdate=Signal(str); aiEvent=Signal(object)
     completed=Signal(object); hotkey=Signal(str); hardwareKey=Signal(str); actionRequested=Signal(str); quitRequested=Signal()
     def __init__(self,app,preferences=None,store=None):
@@ -405,6 +426,7 @@ class Bridge(QObject):
             ('bluetooth','Bluetooth devices','Pair or connect a device','bluetooth','headphones wireless pair battery'),
             ('appearance','Appearance','Theme, colors and desktop layout','color-select','dark light black theme accent wallpaper'),
             ('shortcuts','Keyboard shortcuts','Find and change keyboard shortcuts','preferences-desktop-keyboard-shortcuts','hotkeys keys bindings'),
+            ('screen-reader','Open screen reader','Start Orca','preferences-desktop-accessibility','orca screen reader accessibility speech'),
             ('focus-taskbar','Focus taskbar','Navigate taskbar controls with the keyboard','view-list','dock panel keyboard focus'),
             ('help','Getting around Mellipi','Learn where actions are and how to use the desktop','help-browser','help guide how login logout shortcuts'),
             ('lock','Lock screen','Lock this session; apps stay open','system-lock-screen','lock password privacy'),
@@ -481,6 +503,11 @@ class Bridge(QObject):
             return
         if action=='wifi-quick':
             self.dismiss();self._quickSection=1;self.interactionChanged.emit();return self.showPanel('quick')
+        if action=='screen-reader':
+            tools=getattr(self,'desktopTools',None)
+            if not tools or not tools.tools.get('screen-reader',{}).get('available'):
+                return self.notify('Orca is not installed. Look for Orca in Software.')
+            self.dismiss();tools.open('screen-reader');return
         if action=='focus-taskbar':
             self.dismiss();QTimer.singleShot(160,self.taskbarFocusRequested.emit);return
         if action in SETTING_TARGETS:return self.openSettingsTarget(*SETTING_TARGETS[action])
@@ -837,6 +864,10 @@ class Bridge(QObject):
                     if workspace['id'] != window.get('desktop'):
                         number=workspace['id']+1
                         add('Move to workspace '+str(number),'move-window',[window['id'],number])
+        def add_float(window):
+            if self.nativePlacementSupported and window and not any(window.get(k) for k in ('transient','minimized','maximized','fullscreen')):
+                floating=not window.get('auto_floating',False)
+                add('Float this window' if floating else 'Return to grid','auto-float',[window['id'],floating])
         if kind in ('dock','app','window') and ident=='orbit-settings':
             add('Open Settings','settings-task');add('Close Settings','close-settings-task')
         elif kind=='desktop':
@@ -860,7 +891,7 @@ class Bridge(QObject):
             if group and len(group['windows'])==1:
                 window=group['windows'][0];wid=window['id']
                 add('Minimize','minimize-window',wid);add('Maximize / Restore size','maximize-window',wid)
-                add_workspace_moves(window)
+                add_workspace_moves(window);add_float(window)
                 add('Close window','close-window',wid)
                 self.addRememberPlacement(add,next((w for w in self._windows if w['id']==wid),None))
         elif kind=='desktop-file':
@@ -885,7 +916,7 @@ class Bridge(QObject):
             add('Minimize','minimize-window',ident);add('Maximize / Restore size','maximize-window',ident);add('Close window','close-window',ident)
             if self.windowActions:
                 add('Snap left','snap-window',[ident,'left']);add('Snap right','snap-window',[ident,'right'])
-                add_workspace_moves(target)
+                add_workspace_moves(target);add_float(target)
                 self.addRememberPlacement(add,target)
         if kind in ('desktop','window') and self.arrangements.undoLabel:add('Undo '+self.arrangements.undoLabel,'undo-arrangement')
         if kind=='object':
@@ -1029,6 +1060,70 @@ class Bridge(QObject):
     def openDockContext(self,ident,x,y):
         self.openContext('dock',ident,x,y)
         if self._context:self._context={**self._context,'placement':'above'};self.interactionChanged.emit()
+    def showTaskbarMenu(self,item,items,opener):
+        if not items:return
+        edge=panel_edge(self.appearance)
+        width,height=item.width(),item.height()
+        x=width if edge=='left' else 0 if edge=='right' else width/2
+        y=height if edge=='top' else 0 if edge=='bottom' else height/2
+        point=self.itemScreenPoint(item,round(x),round(y))
+        if not point:return
+        self.hideTooltip()
+        self._context=dict(items=items,x=point['x'],y=point['y'],edge=edge,opener=opener)
+        self.interactionChanged.emit()
+
+    @Slot(QObject,str)
+    def openTaskbarGroup(self,item,ident):
+        group=next((g for g in self._dockApps if g['id']==ident),None)
+        if not group or len(group['windows'])<2:
+            self.activateDock(ident,False)
+            return
+        self.showTaskbarMenu(item,self.taskbarWindowItems(group),'spineTask_'+ident)
+
+    @staticmethod
+    def taskbarWindowItems(group,with_app_name=False):
+        items=[]
+        for window in group['windows'][:64]:
+            workspace=window.get('desktop',-1)
+            detail=(f'Workspace {workspace+1}' if workspace>=0 else 'All workspaces')
+            if window.get('minimized'):detail+=' · Minimized'
+            elif window.get('active'):detail+=' · Active'
+            if with_app_name:detail=group['name']+' · '+detail
+            items.append(dict(label=window.get('title') or group['name'],detail=detail,
+                              action='focus',value=window['id']))
+        return items
+
+    @Slot(QObject,'QVariantList',bool)
+    def openTaskbarOverflow(self,item,values,utilities):
+        if utilities:
+            labels={'screenshot':'Screenshot','notifications':'Notifications','music':'Volume and playback',
+                    'tray':'Background apps','usage':'System Monitor','window-placement':'Auto-snap'}
+            items=[dict(label=labels[name],action='monitor' if name=='usage' else 'panel',value=name)
+                   for name in values if name in labels]
+            opener='spineUtilityOverflow'
+        else:
+            items=[]
+            for ident in values[:64]:
+                group=next((g for g in self.dockApps if g['id']==ident),None)
+                if group:
+                    if len(group['windows'])>1:items.extend(self.taskbarWindowItems(group,True))
+                    else:items.append(dict(label=group['name'],action='dock',value=ident))
+                if len(items)>=128:break
+            opener='spineAllWindows'
+        self.showTaskbarMenu(item,items,opener)
+
+    @Slot()
+    def cancelContext(self):
+        opener=self._context.get('opener')
+        self.closeContext()
+        if opener:self.taskbarMenuFocusRequested.emit(opener)
+
+    @Slot(int,bool)
+    def pauseWorkspaceAutoSnap(self,workspace,paused):
+        if not self.nativePlacementSupported:return
+        self.windowTask('__auto-grid__','pause',lambda:self.windowActions.client.request(
+            'workspace-auto-pause',workspace=workspace,paused=paused),lambda _:self.refreshWindows())
+
     @Slot()
     def closeContext(self):
         had_context=bool(self._context);self._context={};self.interactionChanged.emit()
@@ -1042,6 +1137,7 @@ class Bridge(QObject):
         self.closeContext();action,value=item['action'],item['value']
         if action=='tray-menu':self.trayHost.clickMenu(value[0],value[1])
         elif action=='panel':self.showPanel(value)
+        elif action=='monitor':self.openSystemMonitor()
         elif action=='settings-task':self.showPanel(self._settingsDestination)
         elif action=='close-settings-task':self.closeSettingsTask()
         elif action=='dock':self.activateDock(value,False)
@@ -1079,6 +1175,9 @@ class Bridge(QObject):
         elif action=='forget-placement':self.forgetPlacement(value)
         elif action=='snap-window':self.arrangeWindow(value[0],value[1])
         elif action=='move-window':self.moveWindow(value[0],value[1])
+        elif action=='auto-float' and self.nativePlacementSupported:
+            self.windowTask(value[0],'auto-float',lambda:self.windowActions.client.request(
+                'window-auto-float',id=int(value[0]),floating=value[1]),lambda _:self.refreshWindows())
     def addRememberPlacement(self,add,window):
         if not native_session() or not window or not window.get('klass') or window.get('transient'):return
         if not window.get('minimized') and not window.get('fullscreen') and not window.get('maximized'):

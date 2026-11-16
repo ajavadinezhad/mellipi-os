@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 import sys
+import weakref
 import tempfile
 from pathlib import Path
 from urllib.parse import urlencode
@@ -262,7 +263,7 @@ class Browser(AppWindow):
         self.address.returnPressed.connect(self.navigate)
         self.button(self.actions, 'tab-new', 'New tab (Ctrl+T)', self.add_tab)
         self.button(self.actions, 'edit-find', 'Find in page (Ctrl+F)', self.show_find)
-        self.button(self.actions, 'document-save', 'Downloads (Ctrl+J)', self.toggle_downloads)
+        self.download_button = self.button(self.actions, 'document-save', 'Downloads (Ctrl+J)', self.toggle_downloads)
         if not private:
             self.bookmark_button = self.button(self.actions, 'bookmark-new', 'Bookmarks (Ctrl+D to save or remove)', self.show_bookmarks)
             shortcut = QShortcut(QKeySequence('Ctrl+D'), self)
@@ -306,7 +307,8 @@ class Browser(AppWindow):
         downloads = QVBoxLayout(self.download_page)
         header = QHBoxLayout()
         header.addWidget(QLabel('Downloads', objectName='windowTitle'), 1)
-        self.button(header, 'window-close', 'Close downloads (Esc)', self.show_tabs, toolbar=False)
+        self.download_close = self.button(header, 'window-close', 'Close downloads (Esc)', self.show_tabs, toolbar=False)
+        self.download_opener = None
         downloads.addLayout(header)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -715,21 +717,25 @@ class Browser(AppWindow):
         returning = self.pages.currentWidget() is self.download_page
         self.pages.setCurrentWidget(self.tabs)
         if returning:
-            view = self.bookmark_page()
-            if view is not None:
-                view.setFocus()
+            opener = self.download_opener() if self.download_opener else None
+            self.download_opener = None
+            if opener is not None and not isdeleted(opener) and opener.isVisible() and opener.isEnabled():
+                opener.setFocus(Qt.FocusReason.ShortcutFocusReason)
             else:
-                self.focus_address()
+                self.download_button.setFocus(Qt.FocusReason.ShortcutFocusReason)
 
     def toggle_downloads(self):
         if self.pages.currentWidget() is self.download_page:
             self.show_tabs()
             return
+        opener = QApplication.focusWidget()
+        self.download_opener = weakref.ref(opener) if opener is not None and opener.window() is self else None
         if not self.find_bar.isHidden():
             self.hide_find()
         if self.status.text() == self.DOWNLOAD_NOTICE:
             self.message('')
         self.pages.setCurrentWidget(self.download_page)
+        self.download_close.setFocus(Qt.FocusReason.ShortcutFocusReason)
 
     def downloads_at_capacity(self):
         return sum(not row.finished for row in self.download_rows) >= self.MAX_DOWNLOADS

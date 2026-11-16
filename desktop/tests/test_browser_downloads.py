@@ -90,8 +90,10 @@ class BrowserDownloadsTests(TestCase):
     def test_keyboard_progress_cancel_and_close_panel(self):
         request = self.start()
         self.assertEqual(request.filename, 'test.txt')
+        self.browser.address.setFocus()
         QTest.keyClick(self.browser.address, Qt.Key.Key_J, Qt.KeyboardModifier.ControlModifier)
         self.assertIs(self.browser.pages.currentWidget(), self.browser.download_page)
+        self.assertIs(QApplication.focusWidget(), self.browser.download_close)
         row = self.browser.download_rows[0]
         self.assertEqual(row.progress.maximum(), 0)
         request.size = 4096
@@ -105,6 +107,7 @@ class BrowserDownloadsTests(TestCase):
         self.assertTrue(row.progress.isHidden())
         QTest.keyClick(row, Qt.Key.Key_Escape)
         self.assertIs(self.browser.pages.currentWidget(), self.browser.tabs)
+        self.assertIs(QApplication.focusWidget(), self.browser.address)
 
     def test_success_opens_containing_folder_and_failures_never_open_it(self):
         done = self.start('<b>report.txt')

@@ -85,8 +85,8 @@ def main():
             def pixels(image,x,y,w,h):
                 crop=image.copy(int(x),int(y),int(w),int(h));return bytes(crop.constBits().asstring(crop.sizeInBytes()))
             before=shot('closed');width,height=before.width(),before.height();pw=min(420,width-32);left=(width-pw)/2
-            ph=400 if height>432 else height-32;click(left+pw-56,(height-ph)/2+19)
-            opened=shot('open');kh=224 if height>528 else int(height*.425);ph=400 if height-kh>432 else height-kh-32;top=(height-ph-kh)/2
+            ph=336 if height>368 else height-32;click(left+pw-56,(height-ph)/2+19)
+            opened=shot('open');kh=224 if height>528 else int(height*.425);ph=336 if height-kh>368 else height-kh-32;top=(height-ph-kh)/2
             field_y=ph*.53 if ph>=360 else ph*.47 if ph>=280 else 92 if ph>=200 else 30
             baseline=pixels(opened,left+24,top+field_y,pw-48,48)
             # A synthetic 'a' through the locker-owned pointer grid. No keyboard
@@ -101,7 +101,7 @@ def main():
             click(left+12+cell,top+ph+8+4.5*rh)
             symbols=shot('symbols');assert pixels(symbols,left,top+ph,pw,kh)!=pixels(shifted,left,top+ph,pw,kh),'Symbols page did not change'
             click(left+pw-56,top+19);hidden=shot('hidden')
-            assert pixels(hidden,left,(height-(400 if height>432 else height-32))/2,pw,ph)!=pixels(symbols,left,top,pw,ph)
+            assert pixels(hidden,left,(height-(336 if height>368 else height-32))/2,pw,ph)!=pixels(symbols,left,top,pw,ph)
             assert client.status()['locked'],'Keyboard interactions must retain lock ownership'
             print(json.dumps(dict(private_headless_only=True,synthetic_presentation=True,host_apps_untouched=True,password_submitted=False,pointer_keyboard=True,backspace=True,shift=True,symbols=True,lock_preserved=True,open='/tmp/mellipi-lock-keyboard-open.png')))
         finally:

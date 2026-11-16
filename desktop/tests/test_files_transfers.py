@@ -34,16 +34,21 @@ class FilesTransferTests(unittest.TestCase):
                 existing.write_text('existing')
                 window = Files(target)
                 window.show()
+                window.activateWindow()
+                window.view.setFocus()
+                self.application.processEvents()
                 try:
                     window.transfer_paths([source], target)
                     strip = window.transfer_strip
                     self.wait_for(strip.keep.isVisible)
                     self.assertTrue(strip.skip.isVisible())
                     self.assertTrue(strip.cancel.isVisible())
+                    self.assertIs(self.application.focusWidget(), strip.skip)
                     self.assertEqual(existing.read_text(), 'existing')
                     getattr(strip, choice).click()
                     self.wait_for(lambda: window.job is None)
                     self.assertFalse(strip.isVisible())
+                    self.assertIs(self.application.focusWidget(), window.view)
                     self.assertEqual(existing.read_text(), 'existing')
                     self.assertEqual(source.read_text(), 'incoming')
                     copy = target / 'report (copy).txt'

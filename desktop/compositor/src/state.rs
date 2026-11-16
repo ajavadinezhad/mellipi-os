@@ -55,6 +55,8 @@ pub struct OrbitCompositor {
     pub reduced_motion: bool,
     pub window_motion_enabled: bool,
     pub(crate) window_snap_enabled: bool,
+    pub(crate) auto_float: std::collections::HashSet<u64>,
+    pub(crate) auto_paused_workspaces: std::collections::HashSet<usize>,
     pub(crate) window_placement: crate::window_placement::WindowPlacement,
     pub(crate) snap_preview: Option<(u64, smithay::utils::Rectangle<i32, Logical>)>,
     pub(crate) snap_preview_id: smithay::backend::renderer::element::Id,
@@ -150,6 +152,8 @@ impl OrbitCompositor {
             reduced_motion: std::env::var("ORBIT_NATIVE_REDUCED_MOTION").unwrap_or_default() == "1",
             window_motion_enabled: std::env::var("ORBIT_NATIVE_REDUCED_MOTION").unwrap_or_default() != "1",
             window_snap_enabled: std::env::var("ORBIT_NATIVE_WINDOW_SNAP").as_deref() != Ok("0"),
+            auto_float: Default::default(),
+            auto_paused_workspaces: Default::default(),
             window_placement: std::env::var("ORBIT_NATIVE_WINDOW_PLACEMENT")
                 .ok()
                 .and_then(|value| crate::window_placement::WindowPlacement::parse(&value))

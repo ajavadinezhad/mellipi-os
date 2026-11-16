@@ -327,6 +327,33 @@ impl OrbitCompositor {
         }
     }
 
+    pub(crate) fn set_auto_float(&mut self, id: u64, floating: bool) -> bool {
+        let Some((_, window)) = self.windows.iter().find(|(wid, window)| *wid == id && eligible(window)).cloned() else {
+            return false;
+        };
+        if floating {
+            self.auto_float.insert(id);
+            if let Some(restore) = self.forget_snap(id, &window) {
+                self.apply_snap(&window, restore, None);
+            }
+        } else {
+            self.auto_float.remove(&id);
+        }
+        self.reflow_auto_placement();
+        self.request_redraw();
+        true
+    }
+
+    pub(crate) fn pause_auto_workspace(&mut self, workspace: usize, paused: bool) -> bool {
+        if workspace >= self.workspaces.len() { return false; }
+        if paused { self.auto_paused_workspaces.insert(workspace); }
+        else {
+            self.auto_paused_workspaces.remove(&workspace);
+            self.reflow_auto_placement();
+        }
+        true
+    }
+
     pub(crate) fn reflow_auto_placement(&mut self) {
         if matches!(self.window_placement, WindowPlacement::Auto) {
             self.set_window_placement(WindowPlacement::Auto);
@@ -341,6 +368,9 @@ impl OrbitCompositor {
         let automatic = matches!(layout, WindowPlacement::Auto);
         let outputs: Vec<_> = self.space.outputs().cloned().collect();
         for output in &outputs {
+            if automatic && self.auto_paused_workspaces.contains(&self.output_workspace(&output.name())) {
+                continue;
+            }
             let mut windows: Vec<_> = self
                 .windows
                 .iter()
@@ -348,6 +378,7 @@ impl OrbitCompositor {
                     let location = self.space.element_location(window)?;
                     let size = window.geometry().size;
                     if !eligible(window) || size.w <= 1 || size.h <= 1
+                        || (automatic && self.auto_float.contains(id))
                         || (automatic && window.toplevel().is_some_and(|top| {
                             !crate::handlers::compositor::has_buffer(top.wl_surface())
                         }))

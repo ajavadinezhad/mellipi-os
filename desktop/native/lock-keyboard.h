@@ -70,8 +70,14 @@ static inline void mellipi_keyboard_label(cairo_t *cr,const char *text,double x,
  cairo_move_to(cr,x+(w-e.width)/2-e.x_bearing,y+(h-e.height)/2-e.y_bearing);cairo_show_text(cr,text);
 }
 static inline void mellipi_keyboard_toggle(cairo_t *cr,double width,bool shown,uint32_t border,uint32_t text) {
- cairo_save(cr);cairo_rectangle(cr,width-100,5,88,28);mellipi_keyboard_color(cr,border);cairo_set_line_width(cr,1);cairo_stroke(cr);
- cairo_set_font_size(cr,11);mellipi_keyboard_label(cr,shown?"Hide keys":"Keyboard",width-100,5,88,28,text);cairo_restore(cr);
+ cairo_save(cr);
+ const double x=width-91;
+ mellipi_keyboard_color(cr,text);cairo_set_line_width(cr,1.15);
+ cairo_rectangle(cr,x,14,13,9);
+ for(int col=0;col<3;col++) { cairo_move_to(cr,x+3+col*3,17);cairo_rel_line_to(cr,1,0); }
+ cairo_move_to(cr,x+4,20);cairo_rel_line_to(cr,5,0);cairo_stroke(cr);
+ if(shown){mellipi_keyboard_color(cr,border);cairo_rectangle(cr,x,27,70,1);cairo_fill(cr);}
+ cairo_set_font_size(cr,11);mellipi_keyboard_label(cr,shown?"Hide keys":"Keyboard",x+17,5,64,28,text);cairo_restore(cr);
 }
 static inline void mellipi_keyboard_draw(cairo_t *cr,double width,double panel_height,double height,
  bool shift,bool symbols,uint32_t inside,uint32_t border,uint32_t text,uint32_t accent) {

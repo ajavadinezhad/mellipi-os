@@ -187,6 +187,7 @@ impl DragSnap {
         if self.drag_started {
             let restore = self.restore.unwrap_or(self.initial);
             data.snap_window_at(window, point, restore);
+            data.reflow_auto_placement();
         }
     }
 }
@@ -305,6 +306,11 @@ impl OrbitCompositor {
         let id = self.windows.iter().find(|(_, entry)| entry == window)?.0;
         self.window_motions.active.remove(&id);
         let snapped = self.snapped_windows.remove(&id);
+        if matches!(self.window_placement, crate::window_placement::WindowPlacement::Auto)
+            && !is_fullscreen(window)
+        {
+            self.auto_float.insert(id);
+        }
         let restore = if let Some(surface) = window.x11_surface() {
             if surface.is_fullscreen() {
                 return None;

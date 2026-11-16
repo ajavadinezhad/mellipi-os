@@ -128,6 +128,7 @@ impl OrbitCompositor {
             .unwrap()
             .set_focus(self, existing_focus.or(focus), SERIAL_COUNTER.next_serial());
         self.send_window_activation_configures();
+        self.reflow_auto_placement();
         self.request_redraw();
         true
     }
@@ -204,6 +205,7 @@ impl OrbitCompositor {
             .unwrap()
             .set_focus(self, focus, SERIAL_COUNTER.next_serial());
         self.send_window_activation_configures();
+        self.reflow_auto_placement();
         self.request_redraw();
     }
     pub fn step_workspace(&mut self, direction: i32) {
