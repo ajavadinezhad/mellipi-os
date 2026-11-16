@@ -182,7 +182,8 @@ class Monitor(AppWindow):
         self.timer = QTimer(self, interval=SAMPLE_SECONDS * 1000)
         self.timer.timeout.connect(self.sample)
         metrics = QHBoxLayout()
-        metrics.setSpacing(8)
+        self.metrics_layout = metrics
+        self.space_controls(metrics)
         cpu_card, self.cpu_value, self.cpu_trend = self.metric_card('CPU', 'cpu')
         memory_card, self.memory_value, self.memory_trend = self.metric_card('Memory', 'memory')
         metrics.addWidget(cpu_card, 1)
@@ -266,7 +267,7 @@ class Monitor(AppWindow):
         font = label.font()
         font.setPixelSize(self.theme['font_size'])
         metrics = QFontMetrics(font)
-        width = max(1, (self.width() - 24) // 2 - 24)
+        width = max(1, (self.viewport_width() - self.metrics_layout.spacing()) // 2 - 24)
         needed = metrics.boundingRect(0, 0, width, 1000, Qt.TextFlag.TextWordWrap.value,
                                       label.text()).height()
         height = max(metrics.lineSpacing(), needed)

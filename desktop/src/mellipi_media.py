@@ -258,7 +258,7 @@ class Media(AppWindow):
         seek_controls = QHBoxLayout()
         seek_controls.setSpacing(10)
         controls = QHBoxLayout()
-        controls.setSpacing(5)
+        self.space_controls(controls, seek_controls)
         self.content.addLayout(seek_controls)
         self.content.addLayout(controls)
         self.previous = self.tool('media-skip-backward', 'Previous', lambda: self.advance(-1))

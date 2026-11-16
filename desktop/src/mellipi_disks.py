@@ -199,7 +199,7 @@ class Disks(AppWindow):
         self.content.addWidget(self.hint)
 
         self.actions = QGridLayout()
-        self.actions.setSpacing(8)
+        self.space_controls(self.actions)
         self.open_button = self.button('folder-open', 'Open mounted volume', self.open_volume, icon_only=True)
         self.mount_button = self.button('media-eject', 'Mount', self.mount_volume)
         self.format_button = self.button('edit-clear', 'Format…', self.format_volume)

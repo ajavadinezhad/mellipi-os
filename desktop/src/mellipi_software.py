@@ -73,14 +73,16 @@ class SoftwareWindow(AppWindow):
         self.closing = False
         layout = self.content
 
-        toolbar = QHBoxLayout()
+        toolbar = self.toolbar = QGridLayout()
+        self.toolbar_stacked = None
+        toolbar.setColumnStretch(0, 1)
         self.query = QLineEdit()
         self.query.setPlaceholderText('Search software')
         self.query.setAccessibleName('Search software')
         self.query.setMaxLength(120)
         self.query.setClearButtonEnabled(True)
         self.query.returnPressed.connect(self.start_search)
-        toolbar.addWidget(self.query, 1)
+        toolbar.addWidget(self.query, 0, 0)
         self.source = QComboBox()
         self.source.setAccessibleName('Software source')
         self.source.addItem('All sources', '')
@@ -93,13 +95,13 @@ class SoftwareWindow(AppWindow):
         self.search_button.setMinimumSize(32, 32)
         self.search_button.setProperty('mellipiSymbolicIcon', 'edit-find')
         self.search_button.clicked.connect(self.start_search)
-        toolbar.addWidget(self.search_button)
+        toolbar.addWidget(self.search_button, 0, 1)
         self.check_button = QPushButton('Check for updates')
         self.check_button.setObjectName('checkUpdates')
         self.check_button.setToolTip('Check configured sources without installing updates')
         self.check_button.setProperty('mellipiSymbolicIcon', 'view-refresh')
         self.check_button.clicked.connect(self.start_check_updates)
-        toolbar.addWidget(self.check_button)
+        toolbar.addWidget(self.check_button, 0, 2)
         layout.addLayout(toolbar)
         self.filters = QGridLayout()
         self.filters_are_stacked = None
@@ -232,7 +234,11 @@ class SoftwareWindow(AppWindow):
     def fit_layout(self):
         # Use actual font metrics, so large text gets the narrower layout
         # earlier without guessing from the physical screen resolution.
-        wide = self.width() >= max(600, self.fontMetrics().horizontalAdvance('Mellipi Software') * 5)
+        _, _, control_spacing = self.layout_spacing()
+        self.toolbar.setSpacing(control_spacing)
+        self.filters.setSpacing(control_spacing)
+        available = self.viewport_width()
+        wide = available >= max(600, self.fontMetrics().horizontalAdvance('Mellipi Software') * 5)
         combo_controls = (self.source, self.category) if self.category_available else (self.source,)
         combo_widths = []
         for combo in combo_controls:
@@ -241,7 +247,7 @@ class SoftwareWindow(AppWindow):
             width = label_width + 64
             combo.setMinimumWidth(width)
             combo_widths.append(width)
-        stacked = sum(combo_widths) + self.installed_button.sizeHint().width() + 42 > self.width()
+        stacked = sum(combo_widths) + self.installed_button.sizeHint().width() + control_spacing * len(combo_widths) > available
         if self.filters_are_stacked is not stacked:
             self.filters_are_stacked = stacked
             for control in (self.source, self.installed_button, self.category):
@@ -270,6 +276,20 @@ class SoftwareWindow(AppWindow):
         for button in (self.search_button, self.refresh_button, self.check_button, self.update_result_button):
             button.setIconSize(QSize(glyph, glyph))
         self.search_button.setFixedSize(control_height, control_height)
+        field_width = self.query.fontMetrics().horizontalAdvance(self.query.placeholderText()) + 24
+        required = field_width + control_height + self.check_button.sizeHint().width() + 2*control_spacing
+        stacked_toolbar = required > available
+        if self.toolbar_stacked is not stacked_toolbar:
+            self.toolbar_stacked = stacked_toolbar
+            for widget in (self.query, self.search_button, self.check_button):
+                self.toolbar.removeWidget(widget)
+            self.toolbar.addWidget(self.query, 0, 0)
+            self.toolbar.addWidget(self.search_button, 0, 1)
+            if stacked_toolbar:
+                self.toolbar.addWidget(self.check_button, 1, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+            else:
+                self.toolbar.addWidget(self.check_button, 0, 2)
+
         # The update view presents the authorized APT refresh as a distinct,
         # visible action; keep the small icon for normal catalog browsing.
         self.refresh_button.setText('Refresh system index' if self.updates_only else '')

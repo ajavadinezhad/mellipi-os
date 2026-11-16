@@ -432,8 +432,12 @@ class PdfWindow(AppWindow):
             self.open_path(value)
 
     def update_toolbar_layout(self):
+        _, section, control = self.layout_spacing()
+        self.toolbar.setSpacing(section)
+        for group in (self.navigation, self.tools):
+            group.setSpacing(control)
         required = self.navigation.sizeHint().width() + self.tools.sizeHint().width() + self.toolbar.spacing()
-        available = self.centralWidget().contentsRect().width() - 16
+        available = self.viewport_width()
         horizontal = required <= available
         direction = QBoxLayout.Direction.LeftToRight if horizontal else QBoxLayout.Direction.TopToBottom
         if self.toolbar.direction() != direction:

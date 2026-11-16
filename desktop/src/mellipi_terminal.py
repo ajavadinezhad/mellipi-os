@@ -115,7 +115,7 @@ class TerminalWindow(Gtk.Window):
         self.search_entry.connect('key-press-event', self.search_key_pressed)
         self.search_entry.set_hexpand(True)
         self.search_bar.attach(self.search_entry, 0, 0, 1, 1)
-        search_options = Gtk.Box(spacing=8)
+        search_options = self.search_options = Gtk.Box(spacing=8)
         self.search_case = Gtk.CheckButton(label='Match case')
         self.search_case.connect('toggled', self.update_search)
         search_options.pack_start(self.search_case, False, False, 0)
@@ -194,6 +194,10 @@ class TerminalWindow(Gtk.Window):
         pad = {'comfortable': 8, 'compact': 6, 'extra': 4}[prefs['density']]
         radius = {'square': 0, 'soft': 4, 'rounded': 8}[prefs['corners']]
         header_height = HEADER_HEIGHTS[prefs['density']] - 1
+        self.header.set_property('spacing', max(3, pad - 2))
+        self.search_bar.set_column_spacing(max(4, pad))
+        self.search_bar.set_row_spacing(max(3, pad - 2))
+        self.search_options.set_spacing(pad + 2)
         self.update_controls(palette['accent_ink'], self.is_maximized())
         from mellipi_icons import svg
         glyph, ink, identity_bg = identity_appearance('Mellipi Terminal', palette['background'])

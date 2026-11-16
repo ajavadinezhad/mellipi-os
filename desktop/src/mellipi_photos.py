@@ -369,7 +369,7 @@ class PhotosWindow(AppWindow):
         edit.addWidget(action('Resize image', 'view-restore', self.resize_dialog, self))
         edit.addStretch()
         edit_actions = QHBoxLayout()
-        edit_actions.setSpacing(4)
+        self.space_controls(toolbar, edit, edit_actions)
         edit_actions.addStretch()
         edit_stack.addLayout(edit_actions)
         self.apply_btn = action('Apply crop', 'check', self.crop, self, caption='Apply crop')

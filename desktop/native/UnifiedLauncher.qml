@@ -9,6 +9,11 @@ ColumnLayout {
     spacing: compactViewport ? 4 : Theme.sectionGap
     readonly property int toolbarHeight: Math.max(36, Theme.labelSize + 14)
     readonly property int actionHeight: Math.max(28, Theme.detailSize + 10)
+    readonly property int controlGap: width < 360 ? 5 : 8
+    readonly property int resultGap: compactViewport ? 3 : Theme.extraCompact ? 4 : 6
+    readonly property int previewWidth: Math.ceil(124 * Theme.textScale)
+    // Optional previews yield to search results when height or width is scarce.
+    readonly property int previewCount: Math.min(3, Math.floor((width+controlGap)/(previewWidth+controlGap)))
     signal toolsRequested()
     property string query: ""
     property bool showLayouts: false
@@ -216,9 +221,9 @@ ColumnLayout {
         function onSystemActionsChanged(){launcher.actionsData=null;launcher.queueRebuild();}
     }
     RowLayout {
-        Layout.fillWidth: true;spacing: 8
+        Layout.fillWidth: true;spacing: launcher.controlGap
         OrbitField {
-            visible: !launcher.showLayouts;id: search;objectName: "foldAppSearch";Layout.fillWidth: true;implicitHeight: launcher.toolbarHeight
+            visible: !launcher.showLayouts;id: search;objectName: "foldAppSearch";Layout.fillWidth: true;Layout.minimumWidth: 0;implicitHeight: launcher.toolbarHeight
             placeholderText: "Search apps, windows, actions…";font.pixelSize: Theme.labelSize
             leftPadding: 34;rightPadding: 10
             Image {
@@ -244,6 +249,7 @@ ColumnLayout {
         objectName: "launcherSavedSpaces"
         visible: !launcher.compactViewport && !launcher.showLayouts && !launcher.query.trim() && !launcher.pinnedOnly
                  && !(Orbit.windowFilter && Orbit.windowFilter.length) && Arrangements.layouts.length > 0
+                 && launcher.previewCount > 0 && launcher.height >= (launcher.toolbarHeight + launcher.actionHeight + 250)
         Layout.fillWidth: true
         spacing: Theme.rowGap
         Text {
@@ -254,14 +260,15 @@ ColumnLayout {
         }
         RowLayout {
             Layout.fillWidth: true
-            spacing: Theme.rowGap
+            spacing: launcher.controlGap
             Repeater {
-                model: savedSpaces.visible ? Arrangements.layouts.slice(0,3) : []
+                model: savedSpaces.visible ? Arrangements.layouts.slice(0,launcher.previewCount) : []
                 delegate: OrbitButton {
                     id: card
                     required property var modelData
-                    Layout.fillWidth: true
                     Layout.minimumWidth: 0
+                    Layout.preferredWidth: Math.floor((savedSpaces.width - (launcher.previewCount-1)*launcher.controlGap)
+                                                       / Math.max(1,launcher.previewCount))
                     implicitHeight: Math.max(86, Theme.labelSize + 62)
                     enabled: !Arrangements.busy
                     Accessible.name: "Resume " + modelData.name
@@ -310,12 +317,12 @@ ColumnLayout {
                     }
                 }
             }
-            Item {Layout.fillWidth: true; visible: Arrangements.layouts.length < 3}
+            Item {Layout.fillWidth: true;Layout.minimumWidth: 0;visible: Arrangements.layouts.length < launcher.previewCount}
         }
     }
     RowLayout {
         visible:!launcher.showLayouts && !(Orbit.windowFilter && Orbit.windowFilter.length)
-        Layout.fillWidth: true;spacing: 8
+        Layout.fillWidth: true;spacing: launcher.controlGap
         IconButton {
             objectName: "launcherPinnedFilter"
             iconName: launcher.pinnedOnly ? "pinned" : "pin"
@@ -335,17 +342,27 @@ ColumnLayout {
         }
         Item {Layout.fillWidth: true}
     }
-    RowLayout {
+    GridLayout {
+        id: historyControls
         visible:!launcher.showLayouts && launcher.historyOptions;Layout.fillWidth:true
-        Text {Layout.fillWidth:true;text:launcher.confirmHistoryReset ? "Clear app counts and recent ordering?" : "Application usage is stored locally.";wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.detailSize}
-        OrbitButton {objectName:"launcherResetUsage";text:launcher.confirmHistoryReset ? "Clear history" : "Clear history…";implicitHeight:launcher.actionHeight;onClicked:{if(launcher.confirmHistoryReset){Orbit.clearLauncherHistory();launcher.confirmHistoryReset=false;launcher.historyOptions=false;}else launcher.confirmHistoryReset=true;}}
-        IconButton {iconName:"close";hint:"Cancel";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.historyOptions=false;launcher.confirmHistoryReset=false;}}
+        columns: historyLabel.implicitWidth + resetHistory.implicitWidth + closeHistory.implicitWidth
+                 + 2*columnSpacing <= width ? 3 : 2
+        columnSpacing: launcher.controlGap
+        rowSpacing: launcher.resultGap
+        Text {
+            id: historyLabel
+            Layout.fillWidth:true;Layout.minimumWidth:0;Layout.columnSpan: historyControls.columns===2 ? 2 : 1
+            text:launcher.confirmHistoryReset ? "Clear app counts and recent ordering?" : "Application usage is stored locally."
+            wrapMode:Text.Wrap;color:Theme.muted;font.pixelSize:Theme.detailSize
+        }
+        OrbitButton {id: resetHistory;objectName:"launcherResetUsage";Layout.fillWidth: historyControls.columns===2;Layout.minimumWidth: 0;text:launcher.confirmHistoryReset ? "Clear history" : "Clear history…";implicitHeight:launcher.actionHeight;onClicked:{if(launcher.confirmHistoryReset){Orbit.clearLauncherHistory();launcher.confirmHistoryReset=false;launcher.historyOptions=false;}else launcher.confirmHistoryReset=true;}}
+        IconButton {id: closeHistory;iconName:"close";hint:"Cancel";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.historyOptions=false;launcher.confirmHistoryReset=false;}}
     }
     ListView {
         visible:!launcher.showLayouts
         opacity:launcher.viewOpacity;transform:Translate {y:launcher.viewOffset}
         id: resultsList;objectName: "unifiedResults";Layout.fillWidth: true;Layout.fillHeight: true;Layout.minimumHeight: 0
-        model: launcher.results;clip: true;cacheBuffer: 0;reuseItems: true;spacing: 4
+        model: launcher.results;clip: true;cacheBuffer: 0;reuseItems: true;spacing: launcher.resultGap
         boundsBehavior: Flickable.StopAtBounds;activeFocusOnTab: true;keyNavigationEnabled: true
         section.property: launcher.compactViewport ? "" : "category";section.criteria: ViewSection.FullString
         section.delegate: Item {
@@ -395,7 +412,7 @@ ColumnLayout {
                 onClicked: mouse => {resultsList.currentIndex=index;if(mouse.button===Qt.RightButton){if(modelData.kind!=="action" && modelData.kind!=="calculation")Orbit.openPanelContext(hit,modelData.kind==="task" ? "app" : modelData.kind,modelData.id,mouse.x,mouse.y);}else launcher.activate(modelData);}
             }
             RowLayout {
-                id: resultContent;anchors.fill: parent;anchors.margins: result.rowInset;spacing: Theme.extraCompact ? 7 : 10
+                id: resultContent;anchors.fill: parent;anchors.margins: result.rowInset;spacing: launcher.width < 360 ? 5 : Theme.extraCompact ? 7 : 10
                 Rectangle {
                     readonly property string icon: modelData.icon || "application-x-executable"
                     readonly property bool systemGlyph: modelData.kind==="action" ||

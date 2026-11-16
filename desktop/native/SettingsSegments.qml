@@ -62,8 +62,10 @@ Rectangle {
                 width: segments.optionWidth;height: segments.optionHeight;radius: Theme.corner(8)
                 border.width: activeFocus ? (Theme.highContrast ? 2 : 1) : 0;border.color: Theme.focusColor
                 color: segments.value === modelData.value ? "transparent" : hit.pressed ? Theme.selectedSurface : hit.containsMouse ? Theme.hover : "transparent"
+                TextMetrics { id: segmentTextMetrics; font: segmentLabel.font; text: modelData.label }
+                readonly property bool showGlyph: !!modelData.glyph && width >= Math.ceil(segmentTextMetrics.advanceWidth) + 29
                 Canvas {
-                    id: segmentGlyph;x: 6;anchors.verticalCenter: parent.verticalCenter;width: 12;height: 12;visible: !!modelData.glyph
+                    id: segmentGlyph;x: 6;anchors.verticalCenter: parent.verticalCenter;width: 12;height: 12;visible: parent.showGlyph
                     property string kind: modelData.glyph || ""
                     property color ink: !segments.enabled ? Theme.disabled : segments.value===modelData.value ? Theme.text : Theme.muted
                     onKindChanged: requestPaint();onInkChanged: requestPaint()
@@ -76,7 +78,7 @@ Rectangle {
                         c.stroke();
                     }
                 }
-                Text { anchors.verticalCenter: parent.verticalCenter;x: modelData.glyph ? 21 : 3;width: Math.max(0,parent.width-x-3);text: modelData.label;color: !segments.enabled ? Theme.disabled : segments.value===modelData.value ? Theme.text : Theme.muted;font.pixelSize: Theme.fontSize(11);horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight }
+                Text { id: segmentLabel;anchors.verticalCenter: parent.verticalCenter;x: parent.showGlyph ? 21 : 4;width: Math.max(0,parent.width-x-3);text: modelData.label;color: !segments.enabled ? Theme.disabled : segments.value===modelData.value ? Theme.text : Theme.muted;font.pixelSize: Theme.fontSize(11);horizontalAlignment: Text.AlignHCenter;elide: Text.ElideRight }
                 MouseArea { id: hit;anchors.fill: parent;hoverEnabled: true;enabled: segments.enabled;onClicked: {Orbit.hideTooltip();segments.selected(modelData.value);}onEntered: {Orbit.queueItemTooltip(hit,modelData.label,width/2,height);}onExited: Orbit.hideTooltip() }
                 Accessible.name: modelData.label;Accessible.role: Accessible.RadioButton
                 Accessible.checked: segments.value===modelData.value

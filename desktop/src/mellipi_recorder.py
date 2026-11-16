@@ -238,6 +238,7 @@ class Recorder(AppWindow):
         library_actions.addWidget(self.rename_button)
         library_actions.addWidget(self.trash_button)
         self.content.addLayout(library_actions)
+        self.space_controls(actions, library_header, library_actions)
 
         self.status = RecordingStatus()
         self.status.setObjectName('muted')

@@ -655,7 +655,7 @@ class Files(QMainWindow):
             up.setText('')
         up.setAccessibleName('Parent folder')
         up.setToolTip('Parent folder')
-        top = QHBoxLayout()
+        top = self.navigation_layout = QHBoxLayout()
         top.setSpacing(4)
         self.identity_badge = AppIdentityBadge(self)
         top.addWidget(self.identity_badge)
@@ -724,17 +724,13 @@ class Files(QMainWindow):
         devices.setMenu(self.device_menu)
         self.sidebar.addWidget(devices)
         self.sidebar.addStretch()
-        body = QHBoxLayout()
+        body = self.browse_layout = QHBoxLayout()
         self.places_panel = QWidget()
         self.places_panel.setObjectName('places')
         self.places_panel.setLayout(self.sidebar)
         self.sidebar.setSpacing(2)
-        body.setSpacing(0)
+        body.setSpacing(6)
         body.addWidget(self.places_panel)
-        divider = QFrame()
-        divider.setObjectName('divider')
-        divider.setFixedWidth(1)
-        body.addWidget(divider)
         body.addWidget(self.view, 1)
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -1222,6 +1218,9 @@ class Files(QMainWindow):
             if button.objectName() == 'navigation':
                 button.setFixedWidth(32 if button.menu() is None else 36)
         padding = palette['padding']
+        self.navigation_layout.setSpacing(max(3, padding - 2))
+        self.sidebar.setSpacing(max(2, padding // 2))
+        self.browse_layout.setSpacing(padding)
         sidebar_width = {'comfortable': 148, 'compact': 132, 'extra': 116}[density]
         text_scale = preferences.values['textScale']
         self.sidebar.setContentsMargins(padding, padding, padding, padding)
@@ -1282,7 +1281,7 @@ class Files(QMainWindow):
             button.setMinimumHeight(max(28, palette['font_size'] + 8))
         if hasattr(self, 'folder'):
             self.breadcrumb_timer.start(0)
-        self.places_panel.setFixedWidth(max(round(sidebar_width * max(1, text_scale)), self.sidebar.minimumSize().width()))
+        self.places_panel.setFixedWidth(max(sidebar_width + round(44 * max(0, text_scale - 1)), self.sidebar.minimumSize().width()))
         self.update_list_columns()
 
     def update_list_columns(self):

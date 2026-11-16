@@ -139,3 +139,30 @@ class CalendarImportTests(unittest.TestCase):
             'UID:timezone\r\nDTSTART;TZID=America/New_York:20261201T080000\r\nRRULE:FREQ=DAILY',
         ))
         self.assertEqual((changes, unsupported, invalid), ({}, 2, 0))
+
+
+class CalendarSpacingTests(unittest.TestCase):
+    def test_large_text_at_minimum_width_keeps_the_last_weekday_visible(self):
+        import os
+        from unittest.mock import patch
+        from PyQt6.QtWidgets import QApplication, QTableView
+        from mellipi_calendar import Calendar
+        from preferences import Preferences
+
+        app = QApplication.instance() or QApplication([])
+        with TemporaryDirectory() as tmp:
+            settings = Path(tmp) / 'settings.json'
+            preferences = Preferences(settings)
+            preferences.update({'density': 'comfortable', 'textScale': 1.5})
+            with patch.dict(os.environ, {'ORBIT_SETTINGS_FILE': str(settings), 'ORBIT_DATA': tmp}):
+                window = Calendar()
+                try:
+                    window.resize(450, 300)
+                    window.show()
+                    for _ in range(5):
+                        app.processEvents()
+                    table = window.month.findChild(QTableView, 'qt_calendar_calendarview')
+                    self.assertEqual(table.horizontalHeader().count(), 7)
+                    self.assertLessEqual(table.horizontalHeader().length(), table.viewport().width())
+                finally:
+                    window.close()

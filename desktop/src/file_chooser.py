@@ -1,8 +1,8 @@
 """Mellipi's shared file and folder chooser for Qt applications."""
 from pathlib import Path
 
-from PyQt6.QtCore import QIdentityProxyModel, QSize, QStandardPaths, Qt, QUrl
-from PyQt6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFileDialog, QLineEdit, QListView, QStyledItemDelegate, QToolButton, QTreeView
+from PyQt6.QtCore import QEvent, QIdentityProxyModel, QSize, QStandardPaths, QTimer, Qt, QUrl
+from PyQt6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFileDialog, QHeaderView, QLineEdit, QListView, QStyledItemDelegate, QToolButton, QTreeView
 
 from files_icons import file_icon, icon, place_icon
 from qt_app import BASE_STYLE, ThemeWatch, exec_owned_dialog, widget_palette
@@ -81,6 +81,13 @@ class FileChooser(QFileDialog):
             for button in box.buttons():
                 if box.buttonRole(button) == QDialogButtonBox.ButtonRole.AcceptRole:
                     button.setProperty('mellipiPrimary', True)
+        self._columns_timer = QTimer(self)
+        self._columns_timer.setSingleShot(True)
+        self._columns_timer.timeout.connect(self.fit_detail_columns)
+        view = self.findChild(QTreeView, 'treeView')
+        self._detail_viewport = view.viewport() if view is not None else None
+        if self._detail_viewport is not None:
+            self._detail_viewport.installEventFilter(self)
         self.apply_theme()
         self.theme_watch.changed.connect(self.apply_theme)
         self.resize(730, 480)
@@ -88,6 +95,9 @@ class FileChooser(QFileDialog):
     def apply_theme(self):
         tokens = self.theme_watch.tokens
         self.setPalette(widget_palette(tokens))
+        gap = max(4, tokens['padding'])
+        self.layout().setContentsMargins(gap + 2, gap + 2, gap + 2, gap + 2)
+        self.layout().setSpacing(gap)
         self.setStyleSheet((BASE_STYLE + """
             QTreeView, QListView { background: %(surface)s; color: %(text)s; border: %(outline_width)dpx solid %(control_border)s; }
             QTreeView::item, QListView::item { padding: 4px 3px; }
@@ -115,6 +125,35 @@ class FileChooser(QFileDialog):
             if view is not None:
                 view.setIconSize(QSize(18, 18) if name == 'sidebar' else QSize(20, 20))
                 view.viewport().update()
+        self._columns_timer.start(0)
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, '_detail_viewport', None) and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+            self._columns_timer.start(0)
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_columns_timer'):
+            self._columns_timer.start(0)
+
+    def fit_detail_columns(self):
+        view = self.findChild(QTreeView, 'treeView')
+        if view is None:
+            return
+        header = view.header()
+        metrics = header.fontMetrics()
+        # Keep the name usable first; show metadata when it has breathing room.
+        widths = [metrics.horizontalAdvance(text) + 24 for text in
+                  ('Document name', '32.0 MiB', 'Document', '2026-12-31 12:00')]
+        compact = view.viewport().width() < sum(widths)
+        for column in range(1, header.count()):
+            view.setColumnHidden(column, compact)
+            if not compact and column < len(widths):
+                view.setColumnWidth(column, widths[column])
+        header.setStretchLastSection(False)
+        if header.count():
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
 
     @classmethod
     def _choose(cls, parent, caption, directory, filters, mode, save, options):

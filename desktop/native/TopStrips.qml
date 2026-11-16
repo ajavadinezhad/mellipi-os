@@ -12,6 +12,9 @@ Window {
     property date clockNow: new Date()
     property bool ready: false
     property Component systemWidget
+    readonly property int edgeMargin: Math.min(8,Math.floor(width/8))
+    readonly property int stripGap: Math.min(12,Math.floor(width/12))
+    readonly property real usableWidth: Math.max(0,width-2*edgeMargin-stripGap)
     readonly property rect workspaceRegion: Qt.rect(spaces.x,spaces.y,spaces.width,spaces.height)
     readonly property var workspaceDropTargets: spaces.workspaceDropTargets.map(target =>
         ({id:target.id,x:target.x+spaces.x,y:target.y+spaces.y,width:target.width,height:target.height}))
@@ -29,8 +32,8 @@ Window {
         id: spaces
         section: "spaces"
         outputName: strips.orbitOutputName
-        x: 8; y: 4; height: 38
-        width: Math.max(1,Math.min(142,Math.floor(strips.width*.35)-12))
+        x: strips.edgeMargin; y: 4; height: 38
+        width: Math.max(0,Math.min(preferredWorkspaceWidth,Math.floor(strips.usableWidth*.35)))
     }
     OrbitSpine {
         id: utilities
@@ -38,14 +41,15 @@ Window {
         outputName: strips.orbitOutputName
         clockText: ClockFormat.shortTime(strips.clockNow,Orbit.appearance.clock24)
         clockNow: strips.clockNow
-        x: strips.width-width-8; y: 4; height: 38
-        width: Math.min(340,Math.max(1,strips.width-spaces.width-28),Math.max(140,Math.floor(strips.width*.58)))
+        x: strips.width-width-strips.edgeMargin; y: 4; height: 38
+        width: Math.max(0,Math.min(preferredUtilityWidth+(strips.systemWidget ? 112 : 0),strips.usableWidth-spaces.width))
     }
     Loader {
         // Optional native widget; retain room for the existing controls first.
         x: utilities.x+10; y: utilities.y
         width: Math.max(0,utilities.utilityLeadingSpace-18);height: utilities.height
         active: strips.systemWidget !== null && width>=48
+        clip: true
         sourceComponent: strips.systemWidget
     }
 

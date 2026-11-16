@@ -479,9 +479,7 @@ class AppWindow(QMainWindow):
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle(title)
         self.setCentralWidget(QWidget())
-        layout = QVBoxLayout(self.centralWidget())
-        layout.setContentsMargins(8, 0, 8, 8)
-        layout.setSpacing(8)
+        layout = self.window_layout = QVBoxLayout(self.centralWidget())
         self.header = QHBoxLayout()
         self.identity_name = title
         self.identity_badge = AppIdentityBadge(self)
@@ -491,12 +489,51 @@ class AppWindow(QMainWindow):
         self.header.addWidget(self.title, 1)
         self.titlebar = TitleBar(self, self.header)
         layout.addWidget(self.titlebar)
+        self._control_layouts = []
         self.content = QVBoxLayout()
-        self.content.setSpacing(8)
         layout.addLayout(self.content, 1)
         self.theme_watch = ThemeWatch(self)
         self.theme_watch.changed.connect(self._apply_appearance)
         self._apply_appearance()
+
+    def layout_spacing(self):
+        """Keep density and available space independent of text/control size."""
+        inset, section, control = {
+            'comfortable': (12, 12, 8), 'compact': (8, 8, 6), 'extra': (6, 6, 4),
+        }[self.theme['density']]
+        # At large text the same width holds fewer buttons. Keep enough space
+        # for the controls themselves before spending it on outer gutters.
+        narrow = self.width() < round(500 * self.theme['text_scale'])
+        short = self.height() < round(360 * self.theme['text_scale'])
+        return (min(8, inset) if narrow else inset,
+                min(6, section) if short else section,
+                min(4, control) if narrow else control)
+
+    def update_content_spacing(self):
+        if not hasattr(self, 'theme'):
+            return
+        inset, section, control = self.layout_spacing()
+        margins = (inset, 0, inset, inset)
+        current = self.window_layout.contentsMargins()
+        if (current.left(), current.top(), current.right(), current.bottom()) != margins:
+            self.window_layout.setContentsMargins(*margins)
+        groups = ((self.window_layout, section), (self.content, section), (self.header, control))
+        for layout, spacing in (*groups, *((layout, control) for layout in self._control_layouts)):
+            if layout.spacing() != spacing:
+                layout.setSpacing(spacing)
+
+    def space_controls(self, *layouts):
+        self._control_layouts.extend(layouts)
+        self.update_content_spacing()
+
+    def viewport_width(self):
+        """Use the window's current width, even before child layouts settle."""
+        margins = self.window_layout.contentsMargins()
+        return max(0, self.contentsRect().width() - margins.left() - margins.right())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_content_spacing()
 
     def empty_stage(self, heading, hint, action, callback):
         stage = QWidget(self)
@@ -525,6 +562,7 @@ class AppWindow(QMainWindow):
 
     def _apply_appearance(self):
         self.theme = self.theme_watch.tokens
+        self.update_content_spacing()
         palette = widget_palette(self.theme)
         self.setPalette(palette)
         QApplication.instance().setPalette(palette)

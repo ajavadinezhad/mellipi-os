@@ -382,6 +382,11 @@ class Browser(AppWindow):
 
     def update_toolbar_layout(self):
         scale = self.theme['text_scale']
+        _, section, control = self.layout_spacing()
+        self.toolbar.setHorizontalSpacing(section)
+        self.toolbar.setVerticalSpacing(control)
+        for group in (self.navigation, self.actions):
+            group.setSpacing(control)
         side = max(32, round(30 * scale), self.address.sizeHint().height())
         icon = round(16 * scale)
         if self.toolbar_buttons[0].minimumWidth() != side or self.toolbar_buttons[0].iconSize().width() != icon:
@@ -397,7 +402,7 @@ class Browser(AppWindow):
         required = (self.navigation.sizeHint().width() + self.actions.sizeHint().width()
                     + 2 * self.toolbar.horizontalSpacing() + round(280 * scale))
         # During resizeEvent the child layout can still report its old width.
-        narrow = max(0, self.contentsRect().width() - 16) < required
+        narrow = self.viewport_width() < required
         if narrow == self.narrow_toolbar:
             return
         self.narrow_toolbar = narrow

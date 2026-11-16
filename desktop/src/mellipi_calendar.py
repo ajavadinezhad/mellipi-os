@@ -20,7 +20,7 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QShortcut, Q
 from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCalendarWidget, QCheckBox, QDateEdit,
                               QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-                              QStackedWidget, QSizePolicy, QScrollArea, QTimeEdit, QToolButton, QVBoxLayout, QWidget)
+                              QStackedWidget, QSizePolicy, QScrollArea, QTableView, QTimeEdit, QToolButton, QVBoxLayout, QWidget)
 
 from file_chooser import FileChooser
 from installed_launcher import user_environment
@@ -472,6 +472,11 @@ class Calendar(AppWindow):
         self.month = QCalendarWidget()
         self.month.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.month.setAccessibleName('Choose a day')
+        # Qt's hidden header otherwise imposes a 64px minimum per day in
+        # comfortable 150% layouts, clipping Sunday despite a stretchy grid.
+        month_view = self.month.findChild(QTableView, 'qt_calendar_calendarview')
+        if month_view is not None:
+            month_view.horizontalHeader().setMinimumSectionSize(28)
         for control_name, icon, description in (
             ('qt_calendar_prevmonth', 'go-previous', 'Previous month'),
             ('qt_calendar_nextmonth', 'go-next', 'Next month'),
@@ -533,7 +538,7 @@ class Calendar(AppWindow):
         self.content.addLayout(actions)
 
         agenda = QVBoxLayout()
-        agenda.setSpacing(8)
+        self.space_controls(actions, agenda)
         date_row = QHBoxLayout()
         date_row.addWidget(self.agenda_date, 1)
         date_row.addWidget(self.edit_button)
@@ -608,7 +613,7 @@ class Calendar(AppWindow):
 
     def update_layout(self):
         # Reserve a readable agenda column before choosing the side-by-side layout.
-        narrow = self.width() < 640 + max(0, self.theme['font_size']-14) * 15
+        narrow = self.viewport_width() < 624 + max(0, self.theme['font_size']-14) * 15
         direction = QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight
         if self.day_layout.direction() != direction:
             self.day_layout.setDirection(direction)

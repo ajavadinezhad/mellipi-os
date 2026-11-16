@@ -16,7 +16,14 @@ Item {
     readonly property bool fit: !fixedTop && Orbit.appearance.taskbarLength==="fit"
     readonly property real availableLength: Math.max(0,(horizontal ? width : height)-2*inset-startInset)
     readonly property real footerLength: appBar ? 0 : horizontal ? footer.width+10 : footer.height+(Theme.compact ? 8 : 12)
-    readonly property real bodyLength: fit ? Math.min(availableLength,Math.ceil(spine.taskStart+spine.preferredTaskLength+8+footerLength)) : availableLength
+    readonly property real preferredBodyLength: appBar && !spine.tasks.length
+        ? (horizontal ? 2*home.x+home.width : 2*home.y+home.height)
+        : spine.taskStart+spine.preferredTaskLength+spine.taskEndPadding+footerLength
+    readonly property real bodyLength: fit ? Math.min(availableLength,Math.ceil(preferredBodyLength)) : availableLength
+    readonly property real preferredWorkspaceWidth: Math.max(40, Math.min(4,spine.spaces.length)*33+7)
+    readonly property real preferredUtilityWidth: 2*spine.utilityEdgePadding
+        + footerIcons.all.length*(footerIcons.buttonWidth+footerIcons.spacing)-footerIcons.spacing
+        + spine.utilityGroupGap+clockGroup.naturalWidth
     readonly property real utilityLeadingSpace: section==="utilities" ? footer.x : 0
     property string requestedFocus: ""
     function focusTaskbar(name) {
@@ -64,18 +71,30 @@ Item {
     readonly property real iconScale: (Orbit.appearance.taskbarIconScale || 100)/100
     readonly property int appIconSize: Math.round((Theme.extraCompact ? 20 : Theme.compact ? 24 : 28)*iconScale)
     readonly property int utilityIconSize: Math.round(16*iconScale)
-    readonly property int taskStart: frame.appBar ? (horizontal ? 52 : home.y+home.height+9) : horizontal ? workspaceColumn.x+workspaceColumn.width+10 : workspaceColumn.y+workspaceColumn.height+24
-    readonly property int taskSlotWidth: horizontal ? Math.max(appIconSize+10, Theme.extraCompact ? 34 : Theme.compact ? 40 : 46) : width-10
-    readonly property int taskSlotHeight: horizontal ? frame.thickness-12 : Math.max(appIconSize+8, Theme.extraCompact ? 30 : Theme.compact ? 35 : 41)
-    readonly property int taskSpacing: 2
-    readonly property int taskLaneLength: Math.max(0,(frame.appBar ? (horizontal ? width : height) : (horizontal ? footer.x : footer.y))-taskStart-8)
+    readonly property int groupGap: Theme.extraCompact ? 8 : Theme.compact ? 10 : 12
+    readonly property int taskEndPadding: groupGap
+    readonly property int utilityEdgePadding: 8
+    readonly property int utilityGroupGap: Theme.extraCompact ? 6 : 8
+    readonly property int taskStart: frame.appBar ? (horizontal ? home.x+home.width+groupGap : home.y+home.height+groupGap) : horizontal ? workspaceColumn.x+workspaceColumn.width+10 : workspaceColumn.y+workspaceColumn.height+24
+    readonly property int taskCrossInset: 5
+    readonly property int taskSlotWidth: horizontal ? Math.max(appIconSize+10, Theme.extraCompact ? 34 : Theme.compact ? 40 : 46) : width-2*taskCrossInset
+    readonly property int taskSlotHeight: horizontal ? frame.thickness-2*taskCrossInset : Math.max(appIconSize+8, Theme.extraCompact ? 30 : Theme.compact ? 35 : 41)
+    readonly property int taskSpacing: Theme.extraCompact ? 3 : Theme.compact ? 4 : 5
+    readonly property int taskLaneLength: Math.max(0,(frame.appBar ? (horizontal ? width : height) : (horizontal ? footer.x : footer.y))-taskStart-taskEndPadding)
     readonly property int taskSlotLength: horizontal ? taskSlotWidth : taskSlotHeight
-    readonly property int overflowLength: horizontal ? 30 : 25
-    readonly property int preferredTaskLength: Math.max(0,Math.min(tasks.length,10)*(taskSlotLength+taskSpacing)-taskSpacing)
-        + (tasks.length>10 ? taskSpacing+overflowLength : 0)
-    readonly property int fullTaskCapacity: Math.max(0,Math.min(10,Math.floor((taskLaneLength+taskSpacing)/(taskSlotLength+taskSpacing))))
+    readonly property int overflowLength: horizontal ? Math.max(32,Math.ceil(overflowMetrics.advanceWidth)+10) : Math.max(28,Math.ceil(overflowMetrics.height)+10)
+    readonly property int visibleTaskLimit: 64
+    readonly property int preferredTaskLength: Math.max(0,Math.min(tasks.length,visibleTaskLimit)*(taskSlotLength+taskSpacing)-taskSpacing)
+        + (tasks.length>visibleTaskLimit ? taskSpacing+overflowLength : 0)
+    readonly property int fullTaskCapacity: Math.max(0,Math.min(visibleTaskLimit,Math.floor((taskLaneLength+taskSpacing)/(taskSlotLength+taskSpacing))))
+    // Reserve the overflow target and its preceding gap before laying out app slots.
     readonly property int taskCapacity: tasks.length<=fullTaskCapacity ? fullTaskCapacity
         : Math.max(0,Math.min(fullTaskCapacity,Math.floor((taskLaneLength-overflowLength)/(taskSlotLength+taskSpacing))))
+    TextMetrics {
+        id: overflowMetrics
+        font: taskOverflow.font
+        text: "+"+Math.min(999,spine.tasks.length)
+    }
     readonly property int hiddenTaskCount: Math.max(0,tasks.length-taskCapacity)
     readonly property int backgroundCount: Tray.items.length+Background.items.length+Tray.legacyCount
     function isCurrentSpace(space) {
@@ -184,9 +203,9 @@ Item {
     Flow {
         id: taskColumn
         visible: !frame.fixedTop
-        x: spine.horizontal ? spine.taskStart : 5;y: spine.horizontal ? (Theme.extraCompact ? 3 : 4) : spine.taskStart
-        width: spine.horizontal ? spine.taskLaneLength : parent.width-10
-        height: spine.horizontal ? frame.thickness-8 : spine.taskLaneLength
+        x: spine.horizontal ? spine.taskStart : spine.taskCrossInset;y: spine.horizontal ? spine.taskCrossInset : spine.taskStart
+        width: spine.horizontal ? spine.taskLaneLength : spine.taskSlotWidth
+        height: spine.horizontal ? spine.taskSlotHeight : spine.taskLaneLength
         flow: spine.horizontal ? Flow.LeftToRight : Flow.TopToBottom
         spacing: spine.taskSpacing;clip: true
         Repeater {
@@ -274,7 +293,7 @@ Item {
             visible: spine.hiddenTaskCount>0 && spine.taskLaneLength>=spine.overflowLength
             width: spine.horizontal ? spine.overflowLength : taskColumn.width
             height: spine.horizontal ? spine.taskSlotHeight : spine.overflowLength
-            text: "+"+spine.hiddenTaskCount;quiet: true
+            text: "+"+Math.min(999,spine.hiddenTaskCount);quiet: true;padding: 4
             hint: spine.hiddenTaskCount+(spine.hiddenTaskCount===1 ? " more app" : " more apps")
             Accessible.name: hint
             onClicked: Orbit.openTaskbarOverflow(taskOverflow,spine.tasks.slice(spine.taskCapacity).map(t=>t.id),false)
@@ -282,9 +301,11 @@ Item {
     }
     Item {
         id: footer;visible: !frame.appBar && frame.section!=="spaces";objectName: "spineFooter"
-        x: spine.horizontal ? Math.max(3,spine.width-width-8) : 2
+        x: spine.horizontal ? Math.max(0,spine.width-width-spine.utilityEdgePadding) : 2
         y: spine.horizontal ? 0 : spine.height-height-6
-        width: spine.horizontal ? footerIcons.width+10+clockGroup.naturalWidth : frame.thickness-4
+        readonly property bool showClock: !frame.fixedTop || spine.width >= 2*spine.utilityEdgePadding
+            + footerIcons.buttonWidth + spine.utilityGroupGap + clockGroup.naturalWidth
+        width: spine.horizontal ? footerIcons.width+(showClock ? spine.utilityGroupGap+clockGroup.naturalWidth : 0) : frame.thickness-4
         height: spine.horizontal ? frame.thickness : footerIcons.height+clockGroup.height+14
         Rectangle {visible: !spine.horizontal;width: parent.width;height: 1;color: Theme.separator}
         Grid {
@@ -293,7 +314,7 @@ Item {
             y:spine.horizontal ? Math.max(0,Math.round((footer.height-height)/2)) : 4
             readonly property int buttonWidth: Math.max(24,spine.utilityIconSize+4,Theme.compact ? 24 : 30)
             readonly property int buttonHeight: buttonWidth
-            readonly property int across: Math.max(1,Math.min(2,Math.floor((frame.thickness-4)/buttonWidth)))
+            readonly property int across: Math.max(1,Math.min(2,Math.floor((frame.thickness-4+spacing)/(buttonWidth+spacing))))
             readonly property var primary: [{key:"music",item:"Sound",glyph:System.values.muted ? "mute" : "volume",hint:"Volume and playback"},{key:"quick",item:"Controls",glyph:"settings",hint:"Quick controls"}]
             readonly property var secondary: [
                 {key:"screenshot",item:"Capture",glyph:"camera",hint:"Screenshot"},
@@ -301,16 +322,25 @@ Item {
                 {key:"tray",item:"Background",glyph:spine.edge==="left" ? "chevron-right" : spine.edge==="right" ? "chevron-left" : spine.edge==="top" ? "chevron-down" : "chevron-up",hint:"Background apps"},
                 {key:"usage",item:"Usage",glyph:"usage",hint:"System Monitor"}
             ].concat(Orbit.nativePlacementSupported===true ? [{key:"window-placement",item:"AutoSnap",glyph:"start-spaces",hint:"Auto-snap · "+(Orbit.windowPlacementEnabled ? "On" : "Off")}] : [])
+            readonly property var all: secondary.concat(primary)
+            readonly property int horizontalSlots: Math.floor((frame.availableLength
+                - (frame.fixedTop ? 2*spine.utilityEdgePadding : spine.taskStart+88)
+                - (footer.showClock ? spine.utilityGroupGap+clockGroup.naturalWidth : 0)
+                + spacing)/(buttonWidth+spacing))
             readonly property int capacity: spine.horizontal ?
-                Math.max(3,Math.floor((frame.availableLength-(frame.fixedTop ? 22 : spine.taskStart+88)-clockGroup.naturalWidth)/buttonWidth)) :
-                Math.max(3,across*Math.floor((frame.availableLength-spine.taskStart-clockGroup.height-88)/buttonHeight))
-            readonly property int shownSecondary: Math.max(0,Math.min(secondary.length,capacity-primary.length-
-                (secondary.length+primary.length>capacity ? 1 : 0)))
-            readonly property var hidden: secondary.slice(shownSecondary)
-            readonly property var visibleItems: secondary.slice(0,shownSecondary).concat(primary,hidden.length ?
-                [{key:"overflow",item:"UtilityOverflow",glyph:"more",hint:"More taskbar controls"}] : [])
-            columns:spine.horizontal ? visibleItems.length : across
-            spacing:0
+                Math.max(frame.fixedTop ? 0 : 3,horizontalSlots) :
+                Math.max(3,across*Math.floor((frame.availableLength-spine.taskStart-clockGroup.height-88+spacing)/(buttonHeight+spacing)))
+            // At very narrow widths, the overflow menu also carries any hidden primary controls.
+            readonly property int primaryCount: Math.min(primary.length,Math.max(0,capacity-1))
+            readonly property int shownSecondary: capacity>=all.length ? secondary.length
+                : Math.max(0,capacity-primaryCount-1)
+            readonly property var hidden: capacity>=all.length ? []
+                : secondary.slice(shownSecondary).concat(primary.slice(0,primary.length-primaryCount))
+            readonly property var visibleItems: capacity>=all.length ? all : capacity===0 ? []
+                : secondary.slice(0,shownSecondary).concat(primary.slice(primary.length-primaryCount),
+                    [{key:"overflow",item:"UtilityOverflow",glyph:"more",hint:"More taskbar controls"}])
+            columns:spine.horizontal ? Math.max(1,visibleItems.length) : across
+            spacing: Theme.extraCompact ? 2 : 3
             Repeater {
                 id:utilityItems;model:footerIcons.visibleItems
                 IconButton {
@@ -335,6 +365,7 @@ Item {
             }
         }
         Rectangle {
+            visible: footer.showClock
             anchors.fill: clockGroup
             anchors.margins: -2
             radius: Theme.corner(6)
@@ -344,6 +375,7 @@ Item {
         }
         MouseArea {
             id: clockHit
+            visible: footer.showClock
             anchors.fill: clockGroup
             hoverEnabled: true
             z: 1
@@ -354,7 +386,7 @@ Item {
             onExited: Orbit.hideTooltip()
         }
         Column {
-            id: clockGroup;x: spine.horizontal ? footerIcons.width+10 : (parent.width-width)/2;y: spine.horizontal ? Math.round((frame.thickness-height)/2) : footerIcons.y+footerIcons.height+6
+            id: clockGroup;visible: footer.showClock;x: spine.horizontal ? footerIcons.width+spine.utilityGroupGap : (parent.width-width)/2;y: spine.horizontal ? Math.round((frame.thickness-height)/2) : footerIcons.y+footerIcons.height+6
             readonly property int naturalWidth: Math.ceil(Math.max(clockLabel.implicitWidth,
                 showDateRow ? dateLabel.implicitWidth : 0))+8
             readonly property bool showDateRow: !!dateLabel.text && (!spine.horizontal ||

@@ -32,7 +32,10 @@ ColumnLayout {
     }
     readonly property bool motionDisabled:Theme.reducedMotion
     onMotionDisabledChanged:if(motionDisabled){tabFade.stop();content.opacity=1;}
-    readonly property int rowGap: Theme.extraCompact ? 6 : 9
+    readonly property int rowGap: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
+    readonly property int surfaceInset: Theme.extraCompact || width<280 ? 6 : Theme.compact ? 8 : 10
+    readonly property int networkRowHeight: Math.max(34, Math.ceil(networkMetrics.height) + 12)
+    FontMetrics {id: networkMetrics;font.pixelSize: Theme.fontSize(11)}
     spacing: rowGap
     implicitHeight: tabs.implicitHeight+content.implicitHeight+settingsLink.implicitHeight+spacing*2
     onSectionChanged: {
@@ -57,11 +60,11 @@ ColumnLayout {
             id: content;width: body.availableWidth;spacing: quick.rowGap
         Rectangle {
             visible: quick.section===0;Layout.fillWidth: true
-            implicitHeight: levels.implicitHeight+16
+            implicitHeight: levels.implicitHeight+2*quick.surfaceInset
             radius: Theme.corner(12);color: Theme.surface
             border.color: Theme.controlBorder;border.width: Theme.surfaceOutline
             ColumnLayout {
-                id: levels;x:8;y:8;width:Math.max(0,parent.width-16);spacing:quick.rowGap
+                id: levels;x:quick.surfaceInset;y:quick.surfaceInset;width:Math.max(0,parent.width-2*quick.surfaceInset);spacing:quick.rowGap
                 QuickLevel {
                     objectName:"quickSoundControls";title:"Volume";valueName:"Output volume"
                     value: System.values.volume || 0; available: !!System.values.audioAvailable
@@ -97,8 +100,13 @@ ColumnLayout {
                     SettingToggle { label: "Wi-Fi power";checked: System.values.wifiEnabled;enabled: System.values.networkAvailable && !quick.wifiBusy;onClicked: System.setWifi(checked) }
                 }
                 ListView {
-                    id: networks;visible: System.values.wifiEnabled && count>0
-                    Layout.fillWidth: true;Layout.preferredHeight: Math.min(count,4)*36;clip: true;model: System.values.wifiNetworks;reuseItems: true
+                    id: networks;objectName: "quickNetworks";visible: System.values.wifiEnabled && count>0
+                    Layout.fillWidth: true;Layout.minimumWidth: 0
+                    Layout.preferredHeight: Math.min(count,4)*quick.networkRowHeight+Math.max(0,Math.min(count,4)-1)*spacing
+                    spacing: 2;boundsBehavior: Flickable.StopAtBounds
+                    clip: true;model: System.values.wifiNetworks || [];reuseItems: true
+                    readonly property int gutter: count>4 ? Math.ceil(networkScroll.implicitWidth)+2 : 0
+                    ScrollBar.vertical: ScrollBar {id: networkScroll;policy: networks.count>4 ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff}
                     delegate: Rectangle {
                         objectName: "wifiNetwork_"+modelData.ssid
                         required property var modelData
@@ -113,12 +121,18 @@ ColumnLayout {
                         Keys.onEnterPressed: selectNetwork()
                         Keys.onSpacePressed: selectNetwork()
                         border.color: activeFocus ? Theme.focusColor : "transparent"
-                        width: networks.width;height: 34;radius: Theme.corner(6)
+                        onActiveFocusChanged: if(activeFocus)networks.positionViewAtIndex(index,ListView.Contain)
+                        required property int index
+                        width: Math.max(0,networks.width-networks.gutter);height: quick.networkRowHeight;radius: Theme.corner(6)
                         color: wifiHit.containsMouse || quick.selectedSsid===modelData.ssid ? Theme.hover : "transparent"
                         RowLayout {
-                            anchors.fill: parent;anchors.leftMargin: 8;anchors.rightMargin: 8
-                            Text { text: modelData.ssid;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.fontSize(11);textFormat: Text.PlainText }
-                            Text {text: modelData.active ? "Connected" : (modelData.secure ? "Secured · " : "")+modelData.signal+"%";color: Theme.muted;font.pixelSize: Theme.fontSize(10)}
+                            anchors.fill: parent;anchors.leftMargin: quick.surfaceInset;anchors.rightMargin: quick.surfaceInset;spacing: quick.rowGap
+                            Text { text: modelData.ssid;Layout.fillWidth: true;Layout.minimumWidth: 0;elide: Text.ElideRight;color: Theme.text;font.pixelSize: Theme.fontSize(11);textFormat: Text.PlainText }
+                            Text {
+                                text: modelData.active ? "Connected" : (modelData.secure && parent.width>=230 ? "Secured · " : "")+modelData.signal+"%"
+                                Layout.maximumWidth: Math.floor(parent.width*0.48)
+                                elide: Text.ElideRight;color: Theme.muted;font.pixelSize: Theme.fontSize(10)
+                            }
                         }
                         MouseArea { id: wifiHit;anchors.fill: parent;hoverEnabled: true;onClicked: parent.selectNetwork() }
                     }
@@ -141,7 +155,7 @@ ColumnLayout {
                 }
                 ColumnLayout {
                     enabled: !quick.wifiBusy
-                    visible: quick.selectedSsid!=="";Layout.fillWidth: true;Layout.margins: 4;spacing: 4
+                    visible: quick.selectedSsid!=="";Layout.fillWidth: true;Layout.margins: 4;spacing: quick.rowGap
                     Text { text: "Connect to "+quick.selectedSsid;Layout.fillWidth: true;elide: Text.ElideRight;color: Theme.muted;font.pixelSize: Theme.fontSize(10);textFormat: Text.PlainText }
                     RowLayout {
                         readonly property int fieldHeight:Math.max(30,Theme.fontSize(12)+16)
@@ -179,7 +193,7 @@ ColumnLayout {
         }
     }
     RowLayout {
-        id:settingsLink;Layout.fillWidth:true;spacing:6
+        id:settingsLink;Layout.fillWidth:true;spacing:quick.rowGap
         Item {Layout.fillWidth: true}
         IconButton {objectName:"systemSettingsLink";iconName:"settings";hint:"Open Settings";implicitHeight:28;onClicked:Orbit.showPanel("system-settings")}
         IconButton {
