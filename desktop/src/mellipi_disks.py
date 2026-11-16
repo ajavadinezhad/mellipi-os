@@ -10,8 +10,8 @@ os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
 from PyQt6.QtCore import Qt, QEvent, QSize, QThread, QUrl, pyqtSignal
 from PyQt6.QtGui import QShortcut, QDesktopServices, QIcon, QKeySequence
-from PyQt6.QtWidgets import (QApplication, QDialog, QGridLayout,
-                             QHeaderView, QLabel, QProgressBar, QPushButton, QScrollArea,
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QDialog, QFrame, QGridLayout,
+                             QHeaderView, QLabel, QMenu, QProgressBar, QPushButton, QScrollArea,
                              QSizePolicy, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from file_chooser import FileChooser
@@ -154,6 +154,8 @@ class Disks(AppWindow):
         QTreeWidget::item { padding: 4px 3px; }
         QTreeWidget::item:selected { background: %(selected_surface)s; color: %(text)s; }
         QTreeWidget:focus { border: 1px solid %(focus)s; }
+        QFrame#driveInspector { background: %(raised)s; border-radius: %(radius)dpx; }
+        QLabel#selectedDevice { color: %(accent_ink)s; font-weight: 700; }
         QPushButton[diskPrimary="true"]:enabled {
             background: %(selected_surface)s; color: %(accent_ink)s; font-weight: 600;
         }
@@ -175,7 +177,6 @@ class Disks(AppWindow):
         self.header.addWidget(self.refresh_button)
         self.details_button = self.button('dialog-information', 'Details', self.show_details, icon_only=True)
         self.details_button.setToolTip('Drive details (Ctrl+I)')
-        self.header.addWidget(self.details_button)
 
         self.volumes = QTreeWidget()
         self.volumes.setHeaderLabels(['Drive or volume', 'Size', 'Format', 'Device'])
@@ -191,22 +192,46 @@ class Disks(AppWindow):
         self.volumes.viewport().installEventFilter(self)
         self.volumes.currentItemChanged.connect(self.update_controls)
         self.themeChanged.connect(self.apply_device_appearance)
-        self.content.addWidget(self.volumes, 1)
+        self.selection = QLabel('No drive selected', objectName='selectedDevice')
+        self.selection.setTextFormat(Qt.TextFormat.PlainText)
+        self.selection.setWordWrap(True)
+        self.selection.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.device_summary = QLabel(objectName='muted')
+        self.mount_status = QLabel(objectName='muted')
+        for label in (self.device_summary, self.mount_status):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setWordWrap(True)
+        self.open_button = self.button('folder-open', 'Open', self.open_volume)
+        self.open_button.setToolTip('Open mounted volume')
+        self.mount_button = self.button('media-eject', 'Mount', self.mount_volume)
+        self.more_button = QPushButton('More')
+        self.more_button.setAccessibleName('More drive actions')
+        menu = QMenu(self.more_button)
+        self.format_action = menu.addAction('Format…', self.format_volume)
+        self.image_action = menu.addAction('Write Image…', self.write_image)
+        self.more_button.setMenu(menu)
+        self.action_buttons = (self.open_button, self.mount_button, self.details_button, self.more_button)
+        self.actions = QGridLayout()
+        self.space_controls(self.actions)
+        self.inspector = QFrame(objectName='driveInspector')
+        self.inspector_layout = QVBoxLayout(self.inspector)
+        self.inspector_heading = QLabel('Selected device', objectName='muted')
+        self.inspector_layout.addWidget(self.inspector_heading)
+        self.inspector_layout.addWidget(self.selection)
+        self.inspector_layout.addWidget(self.device_summary)
+        self.inspector_layout.addWidget(self.mount_status)
+        self.inspector_layout.addLayout(self.actions)
+        self.inspector_layout.addStretch(1)
+        self.body = QBoxLayout(QBoxLayout.Direction.RightToLeft)
+        self.body.addWidget(self.inspector, 2)
+        self.body.addWidget(self.volumes, 3)
+        self.content.addLayout(self.body, 1)
+        self.inspector_wide = None
         self.hint = QLabel()
         self.hint.setTextFormat(Qt.TextFormat.PlainText)
         self.hint.setWordWrap(True)
         self.hint.setObjectName('muted')
         self.content.addWidget(self.hint)
-
-        self.actions = QGridLayout()
-        self.space_controls(self.actions)
-        self.open_button = self.button('folder-open', 'Open mounted volume', self.open_volume, icon_only=True)
-        self.mount_button = self.button('media-eject', 'Mount', self.mount_volume)
-        self.format_button = self.button('edit-clear', 'Format…', self.format_volume)
-        self.image_button = self.button('media-optical', 'Write Image…', self.write_image)
-        self.action_buttons = (self.open_button, self.mount_button, self.format_button, self.image_button)
-        self._stacked_actions = None
-        self.content.addLayout(self.actions)
         self.progress = QProgressBar()
         self.progress.hide()
         self.content.addWidget(self.progress)
@@ -220,8 +245,11 @@ class Disks(AppWindow):
     def apply_device_appearance(self):
         size = round(16 * self.theme['text_scale'])
         self.volumes.setIconSize(QSize(size + 2, size + 2))
-        for button in (*self.action_buttons, self.details_button, self.refresh_button):
+        for button in (*self.action_buttons, self.refresh_button):
             button.setIconSize(QSize(size, size))
+            button.setMinimumHeight(max(32, size + 14))
+        for action, name in ((self.format_action, 'edit-clear'), (self.image_action, 'media-optical')):
+            action.setIcon(symbolic_icon(name, self.theme['accent_ink']))
         self.repaint_device_icons()
         self.reflow()
 
@@ -239,17 +267,21 @@ class Disks(AppWindow):
                 size = metric.horizontalAdvance(sample) + 18
                 if self.volumes.columnWidth(col) != size:
                     self.volumes.setColumnWidth(col, size)
-        stack = self.width() < sum(button.sizeHint().width() for button in self.action_buttons) + 48
-        if stack == self._stacked_actions:
+        wide = self.viewport_width() >= 650 + max(0, self.theme['font_size'] - 14) * 12
+        if self.inspector_wide == wide:
             return
-        self._stacked_actions = stack
-        for button in self.action_buttons:
-            self.actions.removeWidget(button)
-        for col in range(4):
-            self.actions.setColumnStretch(col, 1 if col < (2 if stack else 4) else 0)
+        self.inspector_wide = wide
+        self.body.setDirection(QBoxLayout.Direction.RightToLeft if wide else QBoxLayout.Direction.TopToBottom)
+        self.body.setStretch(0, 2 if wide else 0)
+        self.body.setStretch(1, 3 if wide else 1)
+        self.inspector_heading.setVisible(wide)
+        self.details_button.setText('Details' if wide else '')
+        self.describe_device(self.current())
         for index, button in enumerate(self.action_buttons):
-            row, col = divmod(index, 2) if stack else (0, index)
+            self.actions.removeWidget(button)
+            row, col = divmod(index, 2) if wide else (0, index)
             self.actions.addWidget(button, row, col)
+        self.actions.setColumnStretch(4, 0 if wide else 1)
 
     def eventFilter(self, target, event):
         if target is self.volumes.viewport() and event.type() == QEvent.Type.Resize:
@@ -298,14 +330,33 @@ class Disks(AppWindow):
                 button.style().unpolish(button)
                 button.style().polish(button)
         self.reflow()
-        self.format_button.setEnabled(bool(ready and row and row.writable_usb
+        self.format_action.setEnabled(bool(ready and row and row.writable_usb
                                            and (row.partition or not row.partitioned)))
-        self.image_button.setEnabled(bool(ready and row and row.writable_usb and not row.partition))
-        if ready and row:
-            self.hint.setText(', '.join(row.mounts) if row.mounts else 'Not mounted')
-        elif ready:
+        self.image_action.setEnabled(bool(ready and row and row.writable_usb and not row.partition))
+        self.more_button.setEnabled(self.format_action.isEnabled() or self.image_action.isEnabled())
+        self.selection.setText(row.name if row else 'No drive selected')
+        self.selection.setToolTip(f'{row.name}\n{row.node}' if row else '')
+        self.describe_device(row)
+        if ready and not row:
             self.hint.setText(f'Select a USB drive for “{Path(self.image).name}”.' if self.image else
                               'Connect a drive, then select a volume.')
+        elif ready:
+            self.hint.clear()
+
+    def describe_device(self, row):
+        parts = []
+        location = ''
+        if row:
+            parts = [size_label(row.size), row.filesystem or
+                     ('Partitioned drive' if row.partitioned else 'No filesystem')]
+            location = ', '.join(row.mounts) if row.mounts else 'Not mounted'
+            if not self.inspector_wide and row.filesystem:
+                parts.append('Mounted' if row.mounts else 'Not mounted')
+        self.device_summary.setText(' · '.join(parts))
+        self.device_summary.setVisible(bool(parts))
+        self.device_summary.setToolTip(location)
+        self.mount_status.setText(location)
+        self.mount_status.setVisible(bool(row) and bool(self.inspector_wide))
 
     def refresh(self):
         self.start('list')

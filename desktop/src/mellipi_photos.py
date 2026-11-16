@@ -17,7 +17,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
-    QFormLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
+    QFormLayout, QHBoxLayout, QLabel, QMenu, QPushButton, QScrollArea, QSizePolicy,
     QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -318,33 +318,43 @@ class PhotosWindow(AppWindow):
         self.revision = self.saved_revision = None
         self.slideshow = QTimer(self, interval=3500)
         self.slideshow.timeout.connect(self.advance_slideshow)
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(4)
+        self.viewer_bar = QWidget()
+        toolbar = QHBoxLayout(self.viewer_bar)
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        navigation, viewing, image_actions = (QHBoxLayout() for _ in range(3))
+        self.space_controls(toolbar, navigation, viewing, image_actions)
         self.open_button = action('Open image', 'document-open-symbolic', self.choose_file, self, QKeySequence.StandardKey.Open)
-        toolbar.addWidget(self.open_button)
-        self.open_button.hide()
+        navigation.addWidget(self.open_button)
         self.previous = action('Previous image', 'go-previous-symbolic', lambda: self.move(-1), self, Qt.Key.Key_Left)
         self.next = action('Next image', 'go-next-symbolic', lambda: self.move(1), self, Qt.Key.Key_Right)
-        toolbar.addWidget(self.previous)
-        toolbar.addWidget(self.next)
+        navigation.addWidget(self.previous)
+        navigation.addWidget(self.next)
         self.slideshow_button = action('Play slideshow', 'media-playback-start', self.toggle_slideshow, self, 'F5')
         self.slideshow_button.setCheckable(True)
-        toolbar.addWidget(self.slideshow_button)
-        toolbar.addWidget(action('Paste image', 'edit-paste', self.paste, self, QKeySequence.StandardKey.Paste))
-        toolbar.addStretch()
+        navigation.addWidget(self.slideshow_button)
+        toolbar.addLayout(navigation)
+        toolbar.addStretch(1)
         self.tools = [
             action('Zoom out', 'zoom-out-symbolic', lambda: self.canvas.zoom_by(.8), self, QKeySequence.StandardKey.ZoomOut),
             action('Zoom in', 'zoom-in-symbolic', lambda: self.canvas.zoom_by(1.25), self, QKeySequence.StandardKey.ZoomIn),
             action('Fit image', 'zoom-fit-best-symbolic', lambda: self.canvas.set_zoom(None), self, 'Ctrl+0'),
-            action('Rotate clockwise', 'object-rotate-right-symbolic', self.rotate, self, 'R'),
-            action('Copy image', 'edit-copy-symbolic', self.copy, self, QKeySequence.StandardKey.Copy),
         ]
         for button in self.tools:
-            toolbar.addWidget(button)
+            viewing.addWidget(button)
+        toolbar.addLayout(viewing)
+        toolbar.addSpacing(4)
         self.edit_toggle = action('Edit image', 'document-edit', self.toggle_edit, self, 'E')
         self.edit_toggle.setCheckable(True)
-        toolbar.addWidget(self.edit_toggle)
-        self.content.addLayout(toolbar)
+        image_actions.addWidget(self.edit_toggle)
+        self.more_button = action('More image actions', 'open-menu', lambda: None, self)
+        more = QMenu(self.more_button)
+        more.addAction('Copy image', self.copy)
+        more.addAction('Paste image', self.paste)
+        self.more_button.setMenu(more)
+        image_actions.addWidget(self.more_button)
+        toolbar.addLayout(image_actions)
+        self.viewer_bar.hide()
+        self.content.addWidget(self.viewer_bar)
         self.edit_bar = QWidget()
         self.edit_bar.setObjectName('photoEditBar')
         edit_stack = QVBoxLayout(self.edit_bar)
@@ -366,16 +376,17 @@ class PhotosWindow(AppWindow):
         self.pen_color.currentIndexChanged.connect(self.set_pen_color)
         self.pen_color.hide()
         edit.addWidget(self.pen_color)
+        edit.addWidget(action('Rotate clockwise', 'object-rotate-right-symbolic', self.rotate, self, 'R'))
         edit.addWidget(action('Resize image', 'view-restore', self.resize_dialog, self))
         edit.addStretch()
         edit_actions = QHBoxLayout()
-        self.space_controls(toolbar, edit, edit_actions)
+        self.space_controls(edit, edit_actions)
         edit_actions.addStretch()
         edit_stack.addLayout(edit_actions)
         self.apply_btn = action('Apply crop', 'check', self.crop, self, caption='Apply crop')
         self.apply_btn.hide()
         self.apply_btn.setEnabled(False)
-        edit_actions.addWidget(self.apply_btn)
+        edit.addWidget(self.apply_btn)
         self.undo_btn = action('Undo last edit', 'edit-undo', self.undo, self, QKeySequence.StandardKey.Undo)
         self.redo_btn = action('Redo last edit', 'edit-redo', self.redo, self, QKeySequence.StandardKey.Redo)
         self.save_btn = action('Save an edited copy', 'document-save-as', self.save_as, self, 'Ctrl+Shift+S', 'Save copy…')
@@ -392,8 +403,14 @@ class PhotosWindow(AppWindow):
         self.set_canvas_accent()
         QShortcut(QKeySequence('Escape'), self).activated.connect(self.escape)
         QShortcut(QKeySequence.StandardKey.Save, self).activated.connect(self.save_as)
+        QShortcut(QKeySequence.StandardKey.Copy, self).activated.connect(self.copy)
+        QShortcut(QKeySequence.StandardKey.Paste, self).activated.connect(self.paste)
 
-        self.start_stage = self.empty_stage('Photos', 'Drop an image here or paste from the clipboard.', 'Open image…', self.choose_file)
+        self.start_stage = self.empty_stage('Photos', 'Drop an image here.', 'Open image…', self.choose_file)
+        paste = QPushButton('Paste image')
+        paste.clicked.connect(self.paste)
+        self.start_stage.layout().insertWidget(self.start_stage.layout().count() - 1, paste,
+                                               alignment=Qt.AlignmentFlag.AlignHCenter)
         self.content.addWidget(self.start_stage, 1)
         self.canvas.hide()
         self.content.addWidget(self.canvas, 1)
@@ -455,7 +472,7 @@ class PhotosWindow(AppWindow):
 
     def display(self, path, image):
         self.start_stage.hide()
-        self.open_button.show()
+        self.viewer_bar.show()
         self.canvas.show()
         self.path = path
         self.history.clear()

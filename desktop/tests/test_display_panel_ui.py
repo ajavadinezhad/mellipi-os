@@ -22,7 +22,8 @@ class DisplayControls(QObject):
         dict(name='HDMI-A-1', active=True, current_mode=dict(width=3240, height=1356, refresh=60000),
              modes=[dict(width=2560, height=1080, refresh=75000), dict(width=3280, height=1376, refresh=57000)]),
         dict(name='DP-1', model='Second monitor', active=True,
-             current_mode=dict(width=1920, height=1080, refresh=60000)),
+             current_mode=dict(width=1920, height=1080, refresh=60000),
+             rect=dict(x=3240, y=0, width=1920, height=1080)),
     ]), notify=changed)
     state = Property('QVariantMap', lambda _self: dict(
         available=True, busy=False, pending=False, error=''), notify=changed)
@@ -70,4 +71,8 @@ class DisplayPanelUiTests(unittest.TestCase):
         panel.setProperty('chosenTransform', '270')
         self.app.processEvents()
         self.assertIn('1085 × 2592', summary.property('text'))
+        topology = panel.property('topology').toVariant()
+        self.assertEqual([(row['name'], row['x']) for row in topology],
+                         [('HDMI-A-1', 0), ('DP-1', 3240)])
+        self.assertEqual((topology[0]['w'], topology[0]['h']), (1085, 2592))
         self.assertEqual(warnings, [])

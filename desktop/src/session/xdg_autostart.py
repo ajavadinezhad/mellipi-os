@@ -24,7 +24,7 @@ OWNED_EXECUTABLES=frozenset(('orbit-shell','orbit-compositor','sway','swayidle',
  'light-locker','xscreensaver','xfce4-session','xfwm4','xfsettingsd',
  'xfce4-power-manager','xfce4-notifyd','nm-applet','blueman-applet'))
 INTERPRETERS=frozenset(('python','python3','bash','sh','dash','perl','ruby','node','env'))
-POLKIT_EXECUTABLES=frozenset(('polkit-gnome-authentication-agent-1','polkit-mate-authentication-agent-1',
+POLKIT_EXECUTABLES=frozenset(('mellipi-auth-agent','polkit-gnome-authentication-agent-1','polkit-mate-authentication-agent-1',
  'lxpolkit','lxqt-policykit-agent','polkit-kde-authentication-agent-1'))
 
 def log(name,reason):

@@ -10,11 +10,19 @@ POLKIT_CANDIDATES=(
  'lxqt-policykit-agent','lxpolkit',
 )
 
-def permission_agent():
+def permission_agent(environment=None):
+    env=os.environ if environment is None else environment
+    fallback=[]
     for name in POLKIT_CANDIDATES:
         path=shutil.which(name)
-        if path and Path(path).name==Path(name).name and Path(path).is_file() and os.access(path,os.X_OK):return [path]
-    return None
+        if path and Path(path).name==Path(name).name and Path(path).is_file() and os.access(path,os.X_OK):
+            fallback=[path]
+            break
+    wrapper=Path(__file__).with_name('mellipi-auth-agent')
+    if (env.get('MELLIPI_NATIVE_AUTH')=='1' and env.get('ORBIT_NATIVE_CONTROL')
+            and env.get('WAYLAND_DISPLAY') and not env.get('ORBIT_NESTED') and os.access(wrapper,os.X_OK)):
+        return [str(wrapper),*fallback]
+    return fallback or None
 
 def configured_input_method(environment=None):
     env=os.environ if environment is None else environment

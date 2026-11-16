@@ -8,7 +8,7 @@ Item {
     objectName: "foldWorkspace"
     implicitWidth: 728;implicitHeight: 490
     readonly property bool narrow: width<560
-    readonly property bool shortViewport: height<270
+    readonly property bool shortViewport: height < 270 + Math.max(0, Theme.textScale - 1) * 180
     readonly property string view: Fold.state.view || "work"
     readonly property var currentSpace: Orbit.desktops.find(space => space.active) || ({name:"Workspace",id:0})
     readonly property string workspaceName: /^\d+$/.test(String(currentSpace.name || "")) ? "Workspace "+currentSpace.name : currentSpace.name || "Workspace "+(currentSpace.id+1)

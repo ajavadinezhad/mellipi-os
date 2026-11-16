@@ -241,3 +241,73 @@ class SoftwareManagementTests(unittest.TestCase):
         for name in ('mellipi-shell', 'abstract-shell', 'orbit-native', 'app:amd64;'):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 manage_arguments(Package('apt', name, name, '', installed=True), 'remove')
+
+
+class TransactionPhasesTests(unittest.TestCase):
+    def test_distinguishes_declined_authorization_from_package_output(self):
+        import sys
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from software_sources import AuthorizationDeclined, transaction
+
+        with TemporaryDirectory() as directory, patch('software_sources.PKEXEC', sys.executable):
+            script = Path(directory) / 'fake-package-manager.py'
+            script.write_text("import sys; print('canceled', file=sys.stderr); sys.exit(126)")
+            phases = []
+            with self.assertRaises(AuthorizationDeclined):
+                transaction([sys.executable, str(script)], phases.append)
+            self.assertEqual(phases, ['authorization'])
+
+            script.write_text("import sys; print('started'); print('network offline', file=sys.stderr); sys.exit(1)")
+            phases.clear()
+            with self.assertRaisesRegex(RuntimeError, 'network offline'):
+                transaction([sys.executable, str(script)], phases.append)
+            self.assertEqual(phases, ['authorization', 'applying'])
+
+            script.write_text("print('package changed')")
+            phases.clear()
+            self.assertEqual(transaction([sys.executable, str(script)], phases.append).strip(), 'package changed')
+            self.assertEqual(phases, ['authorization', 'applying'])
+
+    def test_software_can_minimize_during_a_transaction_and_keep_its_receipt(self):
+        from threading import Event
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QApplication
+        from mellipi_software import SoftwareWindow
+        from software_sources import AuthorizationDeclined
+
+        app = self.application = QApplication.instance() or QApplication([])
+        release = Event()
+        with patch.object(SoftwareWindow, 'start_search'):
+            window = SoftwareWindow()
+            window.show()
+            app.processEvents()
+        self.addCleanup(window.close)
+        results = []
+
+        def operation(observe):
+            observe('authorization')
+            if not release.wait(3):
+                raise RuntimeError('The test timed out waiting for the simulated prompt.')
+            raise AuthorizationDeclined('Administrator authorization was canceled.')
+
+        def wait_for(predicate):
+            for _ in range(100):
+                if predicate():
+                    return
+                QTest.qWait(10)
+            self.fail('Software did not update the transaction state')
+
+        window.start_job(operation, lambda _value, error: results.append(error), 'Install Example')
+        try:
+            wait_for(lambda: 'Waiting for administrator authorization' in window.transaction_status.text())
+            self.assertFalse(window.close())
+            self.assertTrue(window.isMinimized())
+            self.assertIsNotNone(window.job)
+        finally:
+            release.set()
+        wait_for(lambda: window.job is None)
+        window.showNormal()
+        self.assertIn('Authorization not granted', window.transaction_status.text())
+        self.assertTrue(window.transaction_details.isVisible())
+        self.assertEqual(results, ['Administrator authorization was canceled.'])

@@ -40,18 +40,37 @@ class FilesPointerTests(unittest.TestCase):
             child.mkdir()
             window = Files(root)
             try:
-                window.resize(494, 350)
                 window.show()
                 window.show_search()
-                self.application.processEvents()
-                self.assertTrue(window.search.isVisible())
-                self.assertEqual(window.search_row.x(), window.view.x())
-                self.assertGreater(window.search_row.x(), window.places_panel.geometry().right())
-                self.assertEqual(window.search_row.width(), window.view.width())
+                for width, places in ((800, window.places_panel), (430, window.places_button)):
+                    window.resize(width, 350)
+                    self.application.processEvents()
+                    self.assertTrue(places.isVisible())
+                    self.assertTrue(window.search.isVisible())
+                    self.assertEqual(window.search_row.x(), window.view.x())
+                    self.assertGreater(window.search_row.x(), places.geometry().right())
+                    self.assertEqual(window.search_row.width(), window.view.width())
                 window.search.setText('Subfolder')
                 self.assertTrue(window.navigate(child))
                 self.assertFalse(window.search_row.isVisible())
                 self.assertEqual(window.search.text(), '')
+            finally:
+                window.close()
+                self.application.processEvents()
+
+    def test_compact_places_can_navigate_without_the_sidebar(self):
+        with TemporaryDirectory() as directory:
+            window = Files(Path(directory))
+            try:
+                window.resize(430, 350)
+                window.show()
+                self.application.processEvents()
+                self.assertTrue(window.places_panel.isHidden())
+                window.places_menu.popup(window.places_button.mapToGlobal(window.places_button.rect().bottomLeft()))
+                self.assertTrue(window.places_menu.isVisible())
+                QTest.keyClick(window.places_menu, Qt.Key.Key_Down)
+                QTest.keyClick(window.places_menu, Qt.Key.Key_Return)
+                self.assertEqual(window.folder, Path.home())
             finally:
                 window.close()
                 self.application.processEvents()

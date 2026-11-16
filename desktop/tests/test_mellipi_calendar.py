@@ -164,5 +164,21 @@ class CalendarSpacingTests(unittest.TestCase):
                     table = window.month.findChild(QTableView, 'qt_calendar_calendarview')
                     self.assertEqual(table.horizontalHeader().count(), 7)
                     self.assertLessEqual(table.horizontalHeader().length(), table.viewport().width())
+                    # At the smallest height the agenda can be below the fold.
+                    # Its main action must still be visible, with no duplicate.
+                    self.assertGreaterEqual(window.mode_row.indexOf(window.add_button), 0)
+                    self.assertTrue(window.add_button.isVisible())
+                    self.assertLessEqual(window.add_button.mapTo(window, window.add_button.rect().topRight()).x(),
+                                         window.width() - 1)
+                    window.show_clocks()
+                    self.assertTrue(window.clock_button.isChecked())
+                    self.assertFalse(window.add_button.isVisible())
+                    window.show_clocks(False)
+                    window.resize(900, 470)
+                    for _ in range(5):
+                        app.processEvents()
+                    self.assertEqual(window.mode_row.indexOf(window.add_button), -1)
+                    self.assertGreaterEqual(window.agenda_row.indexOf(window.add_button), 0)
+                    self.assertTrue(window.add_button.isVisible())
                 finally:
                     window.close()

@@ -126,3 +126,108 @@ class ShellControlLayoutTests(unittest.TestCase):
                 delete(root)
             delete(component)
             delete(engine)
+
+    def test_quick_wifi_last_result_scrolls_into_view_and_accepts_enter(self):
+        from PyQt6.QtCore import Qt, pyqtSignal
+        from PyQt6.QtQuick import QQuickItem
+        from native_app import Icons
+
+        class QuickOrbit(OrbitFixture):
+            settingsChanged = pyqtSignal()
+
+        orbit = QuickOrbit()
+        engine = QQmlApplicationEngine()
+        engine.rootContext().setContextProperty('Orbit', orbit)
+        engine.addImageProvider('icons', Icons())
+        warnings = []
+        engine.warnings.connect(lambda rows: warnings.extend(row.toString() for row in rows))
+        fixture = QQmlComponent(engine)
+        fixture.setData(b'''
+            import QtQuick 2.15
+            QtObject {
+                property QtObject network: QtObject {
+                    property var values: ({audioAvailable: true, volume: 30, networkAvailable: true, networkState: "Connected",
+                        wifiEnabled: true, wifiNetworks: Array.from({length: 12}, (_, i) =>
+                            ({ssid: "Network " + (i+1), secure: true, signal: 80, active: false}))})
+                    function refreshWifi() {}
+                }
+                property QtObject device: QtObject {
+                    property var state: ({available: false, powered: false, percentageAvailable: false,
+                        batteryPresent: false})
+                    property var devices: []
+                }
+            }
+        ''', QUrl.fromLocalFile(str(NATIVE / 'quick-networks-data-fixture.qml')))
+        data = fixture.create()
+        self.assertIsNotNone(data)
+        for name, key in (('System', 'network'), ('Brightness', 'device'),
+                          ('Power', 'device'), ('Bluetooth', 'device')):
+            engine.rootContext().setContextProperty(name, data.property(key))
+        component = QQmlComponent(engine)
+        component.setData(b'''
+            import QtQuick 2.15
+            import QtQuick.Window 2.15
+            import "."
+            Window { width: 295; height: 275; visible: true
+                QuickPanel { anchors.fill: parent; section: 1 }
+            }
+        ''', QUrl.fromLocalFile(str(NATIVE / 'quick-networks-fixture.qml')))
+        window = component.create()
+        try:
+            self.assertIsNotNone(window, [e.toString() for e in component.errors()])
+            window.requestActivate()
+            QTest.qWait(80)
+            pending = [window.contentItem()]
+            rows = {}
+            while pending:
+                item = pending.pop()
+                rows[item.objectName()] = item
+                pending.extend(item.childItems())
+            last = rows['wifiNetwork_Network 12']
+            first = rows['wifiNetwork_Network 1']
+            scroller = rows['quickScrollBody'].property('contentItem')
+            self.assertEqual(scroller.property('contentY'), 0)
+            self.assertGreater(last.y(), first.y() + 300)
+            last.forceActiveFocus()
+            QTest.qWait(50)
+            self.assertTrue(last.hasActiveFocus())
+            self.assertGreater(scroller.property('contentY'), 0)
+            QTest.keyClick(window, Qt.Key.Key_Return)
+            QTest.qWait(40)
+            password = window.findChild(QQuickItem, 'wifiPassword')
+            self.assertTrue(password.hasActiveFocus())
+            self.assertEqual(scroller.property('contentY'), 0)
+            back = window.findChild(QQuickItem, 'quickDetailBack')
+            back.forceActiveFocus()
+            QTest.keyClick(window, Qt.Key.Key_Return)
+            QTest.qWait(40)
+            root = window.findChild(QQuickItem, 'quickPanel')
+            self.assertEqual(root.property('section'), 0)
+            self.assertTrue(window.findChild(QQuickItem, 'quickSoundControls').isVisible())
+            connection = window.findChild(QQuickItem, 'quickConnectionStatus')
+            connection.forceActiveFocus()
+            QTest.keyClick(window, Qt.Key.Key_Return)
+            QTest.qWait(40)
+            self.assertEqual(root.property('section'), 1)
+            self.assertTrue(back.hasActiveFocus())
+            QTest.keyClick(window, Qt.Key.Key_Return)
+            QTest.qWait(40)
+            self.assertTrue(connection.hasActiveFocus())
+            devices = window.findChild(QQuickItem, 'audioDevicesLink')
+            devices.forceActiveFocus()
+            QTest.keyClick(window, Qt.Key.Key_Return)
+            QTest.qWait(40)
+            self.assertEqual(root.property('section'), 3)
+            self.assertTrue(window.findChild(QQuickItem, 'quickOutputPicker').isVisible())
+            QTest.keyClick(window, Qt.Key.Key_Return)
+            QTest.qWait(40)
+            self.assertTrue(devices.hasActiveFocus())
+            self.assertEqual(warnings, [])
+        finally:
+            if window:
+                window.close()
+                delete(window)
+            delete(component)
+            delete(data)
+            delete(fixture)
+            delete(engine)

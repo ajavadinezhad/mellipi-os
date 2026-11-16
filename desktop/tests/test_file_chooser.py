@@ -39,3 +39,29 @@ class FileChooserTests(unittest.TestCase):
             self.assertEqual(save.selectedFiles(), [path])
             self.assertFalse(Path(path).exists())
             save.deleteLater()
+
+    def test_narrow_details_preserve_modified_date_when_it_fits(self):
+        from PyQt6.QtWidgets import QTreeView
+
+        dialog = FileChooser()
+        try:
+            view = dialog.findChild(QTreeView, 'treeView')
+            metrics = view.header().fontMetrics()
+            def required(text):
+                return metrics.horizontalAdvance(text) + 24
+
+            # Exercise the viewport directly: a narrow splitter next to Places
+            # can leave much less width than the chooser's outer window.
+            width = required('Document name') + required('2026-12-31 12:00')
+            view.viewport().resize(width, 100)
+            dialog.fit_detail_columns()
+            self.assertFalse(view.isColumnHidden(0))
+            self.assertFalse(view.isColumnHidden(3))
+            self.assertTrue(view.isColumnHidden(1))
+            self.assertTrue(view.isColumnHidden(2))
+
+            view.viewport().resize(width + required('32.0 MiB') + required('Document'), 100)
+            dialog.fit_detail_columns()
+            self.assertTrue(all(not view.isColumnHidden(index) for index in range(4)))
+        finally:
+            dialog.deleteLater()

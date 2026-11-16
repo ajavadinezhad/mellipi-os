@@ -17,23 +17,26 @@ from PyQt6.QtWidgets import (
 
 from qt_app import AppWindow, themed_prompt
 from files_icons import icon
-from software_sources import (APPSTREAM_CLI, APT_GET, BROWSE_CATEGORIES, PKEXEC, SOURCES,
+from software_sources import (APPSTREAM_CLI, APT_GET, BROWSE_CATEGORIES, PKEXEC, SOURCES, AuthorizationDeclined,
                               available_updates, browse_system_apps, can_manage, executable, friendly_error, install,
                               installed_software, manage, rank, refresh_apt, search)
 
 
 class Job(QThread):
     sourceReady = pyqtSignal(str, object)
+    phaseChanged = pyqtSignal(str)
     def __init__(self, operation, parent):
         super().__init__(parent)
         self.operation = operation
         self.value = None
         self.error = ''
+        self.authorization_declined = False
 
     def run(self):
         try:
             self.value = self.operation()
         except Exception as error:
+            self.authorization_declined = isinstance(error, AuthorizationDeclined)
             self.error = friendly_error(error)
 
 
@@ -65,6 +68,7 @@ class SoftwareWindow(AppWindow):
         self.checking_updates = False
         self.updates_only = False
         self.operation_notice = ''
+        self.transaction_error = ''
         self.term = ''
         self.active_category = ''
         self.installed_only = False
@@ -74,7 +78,6 @@ class SoftwareWindow(AppWindow):
         layout = self.content
 
         toolbar = self.toolbar = QGridLayout()
-        self.toolbar_stacked = None
         toolbar.setColumnStretch(0, 1)
         self.query = QLineEdit()
         self.query.setPlaceholderText('Search software')
@@ -98,6 +101,7 @@ class SoftwareWindow(AppWindow):
         toolbar.addWidget(self.search_button, 0, 1)
         self.check_button = QPushButton('Check for updates')
         self.check_button.setObjectName('checkUpdates')
+        self.check_button.setAccessibleName('Check for updates')
         self.check_button.setToolTip('Check configured sources without installing updates')
         self.check_button.setProperty('mellipiSymbolicIcon', 'view-refresh')
         self.check_button.clicked.connect(self.start_check_updates)
@@ -169,6 +173,7 @@ class SoftwareWindow(AppWindow):
         actions = QHBoxLayout()
         actions.addWidget(self.install_button)
         self.update_button = QPushButton('Update')
+        self.update_button.setObjectName('install')
         self.update_button.setProperty('mellipiSymbolicIcon', 'view-refresh')
         self.update_button.setToolTip('Install the available update from this package source')
         self.update_button.clicked.connect(lambda: self.confirm_manage('update'))
@@ -187,6 +192,23 @@ class SoftwareWindow(AppWindow):
         self.progress.setFixedHeight(4)
         self.progress.hide()
         layout.addWidget(self.progress)
+        self.transaction_row = QWidget()
+        transaction_controls = QHBoxLayout(self.transaction_row)
+        transaction_controls.setContentsMargins(0, 0, 0, 0)
+        self.transaction_status = label(wrap=True)
+        self.transaction_status.setAccessibleName('Package transaction status')
+        transaction_controls.addWidget(self.transaction_status, 1)
+        self.transaction_details = QPushButton('Details')
+        self.transaction_details.clicked.connect(self.show_transaction_error)
+        self.transaction_details.hide()
+        transaction_controls.addWidget(self.transaction_details)
+        self.transaction_hide = QPushButton('Hide')
+        self.transaction_hide.setAccessibleName('Hide transaction receipt')
+        self.transaction_hide.clicked.connect(self.hide_transaction_view)
+        self.transaction_hide.hide()
+        transaction_controls.addWidget(self.transaction_hide)
+        self.transaction_row.hide()
+        layout.addWidget(self.transaction_row)
         self.status = label(wrap=True)
         self.status.hide()
         self.status.setAccessibleName('Software status')
@@ -200,23 +222,14 @@ class SoftwareWindow(AppWindow):
         self.refresh_button.setToolTip('Refresh the system package index and check again. Administrator approval is required.')
         self.refresh_button.setMinimumSize(32, 32)
         self.refresh_button.setAccessibleName('Refresh the system package index')
-        self.refresh_button.setProperty('mellipiSymbolicIcon', 'view-refresh')
+        self.refresh_button.setProperty('mellipiSymbolicIcon', 'package-x-generic')
         self.refresh_button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.refresh_button.clicked.connect(self.start_refresh)
         self.refresh_button.hide()
-        update_actions = QHBoxLayout()
-        update_actions.setSpacing(6)
-        update_actions.addWidget(self.refresh_button)
-        self.update_result_button = QPushButton('Update')
-        self.update_result_button.setAccessibleName('Update selected software')
-        self.update_result_button.setToolTip('Install the update for the selected item')
-        self.update_result_button.setProperty('mellipiSymbolicIcon', 'view-refresh')
-        self.update_result_button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        self.update_result_button.clicked.connect(lambda: self.confirm_manage('update'))
-        self.update_result_button.hide()
-        update_actions.addWidget(self.update_result_button)
-        layout.addLayout(source_info)
-        source_info.addLayout(update_actions)
+        source_info.addWidget(self.refresh_button)
+        # Source maintenance and its status belong together above the results;
+        # selection actions stay with the selected package in both modes.
+        layout.insertLayout(layout.indexOf(self.list), source_info)
 
         self.list.header().geometriesChanged.connect(self.fit_result_columns)
         self.themeChanged.connect(self.fit_layout)
@@ -264,8 +277,7 @@ class SoftwareWindow(AppWindow):
         self.installed_button.setVisible(not self.updates_only)
         self.category.setVisible(self.category_available and not self.updates_only)
         direction = QBoxLayout.Direction.LeftToRight if wide else QBoxLayout.Direction.TopToBottom
-        self.detail_layout.setDirection(direction)
-        self.source_layout.setDirection(direction)
+        self.detail_layout.setDirection(QBoxLayout.Direction.LeftToRight if self.updates_only else direction)
         glyph = max(16, min(24, self.theme['font_size'] + 2))
         control_height = max(glyph + 14, self.query.sizeHint().height(),
                              self.source.sizeHint().height(), self.installed_button.sizeHint().height(),
@@ -273,29 +285,21 @@ class SoftwareWindow(AppWindow):
         for control in (self.query, self.source, self.installed_button, self.category, self.check_button):
             if control.minimumHeight() != control_height:
                 control.setFixedHeight(control_height)
-        for button in (self.search_button, self.refresh_button, self.check_button, self.update_result_button):
+        for button in (self.search_button, self.refresh_button, self.check_button):
             button.setIconSize(QSize(glyph, glyph))
         self.search_button.setFixedSize(control_height, control_height)
+        # Compact controls in place instead of moving the list down by two rows.
         field_width = self.query.fontMetrics().horizontalAdvance(self.query.placeholderText()) + 24
-        required = field_width + control_height + self.check_button.sizeHint().width() + 2*control_spacing
-        stacked_toolbar = required > available
-        if self.toolbar_stacked is not stacked_toolbar:
-            self.toolbar_stacked = stacked_toolbar
-            for widget in (self.query, self.search_button, self.check_button):
-                self.toolbar.removeWidget(widget)
-            self.toolbar.addWidget(self.query, 0, 0)
-            self.toolbar.addWidget(self.search_button, 0, 1)
-            if stacked_toolbar:
-                self.toolbar.addWidget(self.check_button, 1, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
-            else:
-                self.toolbar.addWidget(self.check_button, 0, 2)
+        check_width = self.check_button.fontMetrics().horizontalAdvance('Check for updates') + glyph + 30
+        compact_tools = field_width + control_height + check_width + 2 * control_spacing > available
+        self.check_button.setText('' if compact_tools else 'Check for updates')
+        self.check_button.setMinimumWidth(control_height)
 
-        # The update view presents the authorized APT refresh as a distinct,
-        # visible action; keep the small icon for normal catalog browsing.
-        self.refresh_button.setText('Refresh system index' if self.updates_only else '')
-        refresh_width = max(control_height, self.refresh_button.sizeHint().width()) if self.updates_only else control_height
+        # Keep source status and refresh together. The accessible name and
+        # tooltip carry the action text when the label would crowd the list.
+        self.refresh_button.setText('Refresh system index' if self.updates_only and wide else '')
+        refresh_width = max(control_height, self.refresh_button.sizeHint().width()) if self.refresh_button.text() else control_height
         self.refresh_button.setFixedSize(refresh_width, control_height)
-        self.update_result_button.setFixedHeight(control_height)
         self.suggestions.setVisible(wide and not self.term and not self.installed_only and not self.updates_only
                                     and not self.category.currentData())
         self.fit_result_columns()
@@ -322,28 +326,30 @@ class SoftwareWindow(AppWindow):
 
     def show_selection(self, *_):
         package = self.selected()
-        self.detail.setVisible(package is not None and not self.updates_only)
-        self.update_result_button.setVisible(self.updates_only and package is not None)
-        self.update_result_button.setEnabled(not self.job and package is not None and
-                                             can_manage(package, 'update'))
-        if not package or self.updates_only:
+        self.detail.setVisible(package is not None)
+        if not package:
             return
         self.name.setText(package.name)
-        info = [package.identifier, package.origin]
-        if package.version:
+        info = [] if self.updates_only else [package.identifier, package.origin]
+        if self.updates_only and package.update_version:
+            info.append(f'{package.version} → {package.update_version}' if package.version else package.update_version)
+        elif package.version:
             info.append(package.version)
-        if package.branch:
+        if package.branch and not self.updates_only:
             info.append(package.branch)
         self.info.setText(' · '.join(info))
+        self.info.setVisible(bool(info))
         self.info.setToolTip(f'{package.identifier} · {package.origin}')
         description = package.description
         if package.classic:
             description = f'{description}\nClassic confinement is required for this package.'.lstrip()
         self.description.setText(description)
-        self.description.setVisible(bool(description))
+        self.description.setVisible(bool(description) and not self.updates_only)
         self.install_button.setVisible(not package.installed and not (self.installed_only or self.updates_only))
         for action, button in (('update', self.update_button), ('remove', self.remove_button)):
-            button.setVisible(package.installed and self.installed_only)
+            allowed = self.installed_only or (self.updates_only and action == 'update')
+            button.setVisible(package.installed and allowed and
+                              (not self.updates_only or can_manage(package, action)))
             button.setEnabled(not self.job and can_manage(package, action))
         self.remove_button.setToolTip('Remove the selected app' if can_manage(package, 'remove')
                                       else 'This app is protected or cannot be removed from Software')
@@ -390,6 +396,7 @@ class SoftwareWindow(AppWindow):
         self.category.setEnabled(not installed)
         self.list.clear()
         self.source_status.clear()
+        self.source_status.hide()
         self.refresh_button.hide()
         self.set_status('Reading installed software…' if installed else 'Searching software…')
         self.start_search()
@@ -425,7 +432,6 @@ class SoftwareWindow(AppWindow):
         job.finished.connect(lambda: self.finish_job(self.search_finished))
         self.install_button.setEnabled(False)
         self.update_button.setEnabled(False)
-        self.update_result_button.setEnabled(False)
         self.remove_button.setEnabled(False)
         self.refresh_button.setEnabled(False)
         self.check_button.setEnabled(False)
@@ -440,9 +446,27 @@ class SoftwareWindow(AppWindow):
         if self.searching and not self.operation_notice:
             self.set_status('Searching remaining sources…')
 
-    def start_job(self, operation, finished):
-        self.job = Job(operation, self)
-        self.job.finished.connect(lambda: self.finish_job(finished))
+    def start_job(self, operation, finished, transaction_title=''):
+        if transaction_title:
+            job = Job(lambda: operation(job.phaseChanged.emit), self)
+            self.job = job
+            job.phaseChanged.connect(lambda phase: self.show_transaction_phase(job, transaction_title, phase))
+            self.transaction_error = ''
+            self.transaction_details.hide()
+            self.transaction_hide.setText('Minimize')
+            self.transaction_hide.setAccessibleName('Minimize Software while the transaction continues')
+            self.transaction_hide.show()
+            self.transaction_status.setText(f'{transaction_title} · Preparing…')
+            self.transaction_row.show()
+
+            def report(value, error):
+                self.finish_transaction(transaction_title, error, job.authorization_declined)
+                finished(value, error)
+            callback = report
+        else:
+            self.job = Job(operation, self)
+            callback = finished
+        self.job.finished.connect(lambda: self.finish_job(callback))
         self.query.setEnabled(False)
         self.search_button.setEnabled(False)
         self.source.setEnabled(False)
@@ -454,10 +478,38 @@ class SoftwareWindow(AppWindow):
         self.list.setEnabled(False)
         self.install_button.setEnabled(False)
         self.update_button.setEnabled(False)
-        self.update_result_button.setEnabled(False)
         self.remove_button.setEnabled(False)
         self.progress.show()
         self.job.start()
+
+    def hide_transaction_view(self):
+        if self.job is not None and self.transaction_hide.text() == 'Minimize':
+            self.showMinimized()
+        else:
+            self.transaction_row.hide()
+
+    def show_transaction_phase(self, job, title, phase):
+        if self.job is not job:
+            return
+        state = {
+            'authorization': 'Waiting for administrator authorization…',
+            'applying': 'Applying changes…',
+            'system-flatpak': 'Applying changes; administrator authorization may be requested…',
+        }[phase]
+        self.transaction_status.setText(f'{title} · {state}')
+
+    def finish_transaction(self, title, error, authorization_declined):
+        self.transaction_error = error
+        state = ('Authorization not granted' if authorization_declined else
+                 'Could not complete' if error else 'Finished')
+        self.transaction_status.setText(f'{title} · {state}')
+        self.transaction_details.setVisible(bool(error))
+        self.transaction_hide.setText('Hide')
+        self.transaction_hide.setAccessibleName('Hide transaction receipt')
+
+    def show_transaction_error(self):
+        if self.transaction_error:
+            themed_prompt(self, 'Software operation details', self.transaction_error, 'OK')
 
     def finish_job(self, finished):
         job, self.job = self.job, None
@@ -505,6 +557,7 @@ class SoftwareWindow(AppWindow):
             self.set_status(error)
             return
         self.source_status.setText(' • '.join(result.status for result in results.values()))
+        self.source_status.setVisible(bool(self.source_status.text()))
         apt = results.get('apt')
         needs_refresh = apt is not None and apt.needs_refresh
         refresh_available = executable(APT_GET) and executable(PKEXEC)
@@ -562,6 +615,7 @@ class SoftwareWindow(AppWindow):
         self.query.clear()
         self.list.clear()
         self.source_status.clear()
+        self.source_status.hide()
         self.refresh_button.hide()
         self.set_status('Checking for updates…')
         self.fit_layout()
@@ -574,6 +628,7 @@ class SoftwareWindow(AppWindow):
             return
         self.source_status.setText(' • '.join(results[source].status for source in SOURCES
                                             if source in results))
+        self.source_status.setVisible(bool(self.source_status.text()))
         self.refresh_button.setVisible('apt' in results and bool(results['apt'].checked or
                                        results['apt'].check_failed) and
                                        executable(APT_GET) and executable(PKEXEC))
@@ -613,13 +668,12 @@ class SoftwareWindow(AppWindow):
         if self.job:
             return
         self.refreshing = True
-        self.set_status('Refreshing system packages…')
-        self.start_job(refresh_apt, self.refresh_finished)
+        self.set_status('')
+        self.start_job(refresh_apt, self.refresh_finished, 'Refresh system package index')
 
     def refresh_finished(self, _, error):
         self.refreshing = False
         if error:
-            self.set_status(f'Could not refresh system packages. {error}')
             return
         if self.updates_only:
             self.start_check_updates()
@@ -639,14 +693,13 @@ class SoftwareWindow(AppWindow):
             message += '\n\nSoftware uses your current package index. Refresh system packages first if needed.'
         if not themed_prompt(self, f'{title} software', message, title, 'Cancel'):
             return
-        self.set_status(f'{"Updating" if action == "update" else "Removing"} {package.name}…')
-        self.start_job(lambda: manage(package, action),
-                       lambda changed, error: self.manage_finished(package, action, changed, error))
+        self.set_status('')
+        self.start_job(lambda observe: manage(package, action, observe),
+                       lambda changed, error: self.manage_finished(package, action, changed, error),
+                       f'{title} {package.name}')
 
     def manage_finished(self, package, action, changed, error):
         if error:
-            self.set_status(f'Could not {action} {package.name}.')
-            themed_prompt(self, f'{action.title()} failed', error, 'OK')
             return
         if action == 'remove':
             self.operation_notice = f'{package.name} was removed.'
@@ -671,14 +724,13 @@ class SoftwareWindow(AppWindow):
                              'Install', 'Cancel'):
             return
         self.installing = True
-        self.set_status(f'Installing {package.name}…')
-        self.start_job(lambda: install(package), lambda _, error: self.install_finished(package, error))
+        self.set_status('')
+        self.start_job(lambda observe: install(package, observe), lambda _, error: self.install_finished(package, error),
+                       f'Install {package.name}')
 
     def install_finished(self, package, error):
         self.installing = False
         if error:
-            self.set_status(f'Could not install {package.name}.')
-            themed_prompt(self, 'Installation failed', error, 'OK')
             return
         item = self.list.currentItem()
         if item:
@@ -693,11 +745,9 @@ class SoftwareWindow(AppWindow):
             self.hide()
             event.ignore()
         elif self.job:
-            if self.refreshing:
-                self.set_status('Package refresh is still running.')
-            else:
-                self.set_status('Installation is still running.' if self.installing else 'A software operation is still running.')
+            # Keep the package-manager owner and its receipt alive in the taskbar.
             event.ignore()
+            self.showMinimized()
         else:
             super().closeEvent(event)
 

@@ -67,6 +67,42 @@ class UsbTargetTests(unittest.TestCase):
                 image.truncate(4096)
                 self.assertEqual(_image_size(image.fileno()).st_size, 4096)
 
+    def test_drive_menu_tracks_the_selected_target(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        from PyQt6.QtWidgets import QApplication
+        from mellipi_disks import Disks
+
+        app = QApplication.instance() or QApplication([])
+        with patch.object(Disks, 'refresh'):
+            window = Disks()
+        try:
+            system = replace(self.volume, path='/system', drive='/system-drive',
+                             writable_usb=False, mounts=('/',), system=True, filesystem='ext4')
+            window.populate([self.disk, self.volume, system], None)
+            self.assertTrue(window.image_action.isEnabled())
+            self.assertFalse(window.format_action.isEnabled())
+            window.volumes.setCurrentItem(window.volumes.topLevelItem(0).child(0))
+            self.assertFalse(window.image_action.isEnabled())
+            self.assertTrue(window.format_action.isEnabled())
+            window.volumes.setCurrentItem(window.volumes.topLevelItem(1))
+            self.assertFalse(window.more_button.isEnabled())
+            self.assertTrue(window.open_button.isEnabled())
+            self.assertFalse(window.mount_button.isEnabled())
+            window.show()
+            window.resize(900, 480)
+            app.processEvents()
+            self.assertGreater(window.inspector.x(), window.volumes.x())
+            self.assertEqual(window.mount_status.text(), '/')
+            window.resize(440, 300)
+            app.processEvents()
+            self.assertLess(window.inspector.y(), window.volumes.y())
+            self.assertIn('Mounted', window.device_summary.text())
+            self.assertTrue(window.inspector.rect().contains(window.mount_button.geometry()))
+        finally:
+            window.close()
+            app.processEvents()
+
 
 class DriveHealthTests(unittest.TestCase):
     def test_unavailable_disabled_and_unsampled_are_not_reported_healthy(self):

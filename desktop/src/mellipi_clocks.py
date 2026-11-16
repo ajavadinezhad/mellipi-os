@@ -75,6 +75,7 @@ class ClockPage(QWidget):
         layout.addWidget(self.tabs, 1)
 
         self.tab_layouts = []
+        self.tab_controls = []
         self.display_layout = None
         timer, self.timer_label = self._tab('Timer', 'Timer remaining')
         row = QHBoxLayout()
@@ -125,8 +126,10 @@ class ClockPage(QWidget):
         for tab in self.tab_layouts:
             tab.setContentsMargins(tab_margin, tab_margin, tab_margin, tab_margin)
             tab.setSpacing(3 if compact else 6)
+        for controls in self.tab_controls:
+            controls.setMaximumWidth(max(300, font_size * 22))
         for label, multiplier in ((self.timer_label, 3), (self.alarm_label, 2), (self.stopwatch_label, 3)):
-            size = round(font_size * (multiplier * .72 if compact else multiplier))
+            size = round(font_size * (multiplier * .60 if compact else multiplier))
             label.setStyleSheet(f'font-size: {size}px;')
 
     @staticmethod
@@ -139,14 +142,21 @@ class ClockPage(QWidget):
         layout = QVBoxLayout(widget)
         self.tab_layouts.append(layout)
         layout.addStretch(1)
+        controls = QWidget()
+        controls.setMaximumWidth(320)
+        self.tab_controls.append(controls)
+        group = QVBoxLayout(controls)
+        group.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(controls, alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(1)
         label = QLabel()
         label.setObjectName('clockValue')
         label.setAccessibleName(accessible)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setWordWrap(True)
-        layout.addWidget(label, 1)
+        group.addWidget(label)
         self.tabs.addTab(widget, title)
-        return layout, label
+        return group, label
 
     @staticmethod
     def _buttons(layout, first, first_callback, second, second_callback):
@@ -158,7 +168,6 @@ class ClockPage(QWidget):
             row.addWidget(button)
             buttons.append(button)
         layout.addLayout(row)
-        layout.addStretch(1)
         return buttons
 
     def _start_timer(self):
@@ -218,6 +227,7 @@ class ClockPage(QWidget):
         timing = self.state.timer_end is not None
         alarm = self.state.alarm_at is not None
         running = self.state.stopwatch_start is not None
+        self.feedback.setVisible(self.tabs.currentIndex() != 2 or self.feedback.text() != self.ALERT_HINT)
         self.start_timer.setEnabled(not timing and bool(self.minutes.value() or self.seconds.value()))
         self.cancel_timer.setEnabled(timing)
         self.minutes.setEnabled(not timing)

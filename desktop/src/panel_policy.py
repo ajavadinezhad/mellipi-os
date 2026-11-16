@@ -1,6 +1,6 @@
 """Layer-shell keyboard focus policy (none=0, exclusive=1, on-demand=2)."""
 
-CENTERED_PANELS=('launcher','overview','settings','system-settings','session-exit')
+CENTERED_PANELS=('launcher','overview','space-map','settings','system-settings','session-exit')
 
 SPINE_FOOTER_PANELS=('quick','music','usage','notifications','tray','bluetooth','battery','screenshot','window-placement')
 
@@ -9,7 +9,7 @@ UTILITY_PANELS=frozenset(('quick','music','usage','notifications','tray','blueto
 def keyboard_mode(panel):
     # Popovers retain keyboard navigation and close through the existing
     # transparent outside-click surface. Unknown/closed surfaces cannot grab.
-    return 1 if panel in ('fold','launcher','overview','shelf','ai','capture','switcher','window-capture','session-exit',*UTILITY_PANELS) else 2
+    return 1 if panel in ('fold','launcher','overview','space-map','shelf','ai','capture','switcher','window-capture','session-exit',*UTILITY_PANELS) else 2
 
 PANEL_EDGES=('left','right','top','bottom')
 PANEL_THICKNESS=64

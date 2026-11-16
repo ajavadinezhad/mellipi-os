@@ -1,0 +1,16 @@
+#!/bin/bash
+# Run one graphical authentication agent for this login, with distro fallback.
+set -u
+source_root=$(dirname -- "$(dirname -- "$0")")
+GDK_BACKEND=wayland /usr/bin/python3 "$source_root/mellipi_permission_agent.py" &
+agent=$!
+trap 'kill "$agent" 2>/dev/null; wait "$agent" 2>/dev/null; exit 0' TERM INT HUP
+wait "$agent"
+trap - TERM INT HUP
+if (($#)); then
+    if [[ "${1##*/}" == polkit-gnome-authentication-agent-1 && "${DISPLAY:-}" =~ ^:[0-9]+(\.[0-9]+)?$ ]]; then
+        export GDK_BACKEND=x11
+    fi
+    exec "$@"
+fi
+exit 1

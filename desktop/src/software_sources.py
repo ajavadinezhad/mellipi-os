@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import socket
 import subprocess
 from urllib.parse import urlencode
@@ -73,10 +74,68 @@ def run(arguments, timeout=15):
                             encoding='utf-8', errors='replace', timeout=timeout, env=env)
     if result.returncode:
         if arguments[0] == PKEXEC and result.returncode in (126, 127):
-            raise RuntimeError('Administrator authorization was canceled or unavailable.')
+            raise AuthorizationDeclined('Administrator authorization was canceled or unavailable.')
         detail = result.stderr.strip() or result.stdout.strip()
         raise RuntimeError(detail[-1600:] or 'The software source did not complete the request.')
     return result.stdout
+
+
+class AuthorizationDeclined(RuntimeError):
+    """pkexec exited without granting authorisation."""
+
+
+def transaction(arguments, observe=None):
+    """Report package phases without canceling or timing out a live write."""
+    if observe is None:
+        return run(arguments, timeout=None)
+
+    waiting = arguments[0] == PKEXEC
+    if waiting:
+        observe('authorization')
+    elif arguments[0] == FLATPAK and '--system' in arguments:
+        # The Flatpak service can request authorization at several points.
+        observe('system-flatpak')
+    else:
+        observe('applying')
+
+    # pkexec reports its own errors on stderr and execs (not forks) its target.
+    # Observe that transition where /proc permits it; stdout from the target
+    # also distinguishes it from the authorization phase. Neither is used as a
+    # security decision. In particular, only the trusted prompt cancels auth.
+    env = dict(os.environ, LC_ALL='C.UTF-8', NO_COLOR='1', TERM='dumb')
+    with subprocess.Popen(arguments, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, env=env) as process, selectors.DefaultSelector() as selector:
+        output = {process.stdout: bytearray(), process.stderr: bytearray()}
+        for stream in output:
+            selector.register(stream, selectors.EVENT_READ)
+        expected = Path(arguments[1]).name[:15] if waiting else ''
+        while selector.get_map():
+            if waiting:
+                try:
+                    applying = Path(f'/proc/{process.pid}/comm').read_text().strip() == expected
+                except OSError:
+                    applying = False
+                if applying:
+                    waiting = False
+                    observe('applying')
+            for key, _ in selector.select(timeout=.25 if waiting else None):
+                stream = key.fileobj
+                chunk = os.read(stream.fileno(), 8192)
+                if not chunk:
+                    selector.unregister(stream)
+                    continue
+                if waiting and stream is process.stdout:
+                    waiting = False
+                    observe('applying')
+                output[stream].extend(chunk)
+                del output[stream][:-8192]
+        code = process.wait()
+    if code in (126, 127) and arguments[0] == PKEXEC and waiting:
+        raise AuthorizationDeclined('Administrator authorization was canceled or unavailable.')
+    if code:
+        detail = (output[process.stderr] or output[process.stdout]).decode('utf-8', errors='replace').strip()
+        raise RuntimeError(detail[-1600:] or 'The software source did not complete the request.')
+    return output[process.stdout].decode('utf-8', errors='replace')
 
 
 def apt_search(query):
@@ -103,9 +162,9 @@ def apt_search(query):
     return SourceResult(rank(packages, query), 'APT is ready.')
 
 
-def refresh_apt():
-    return run([PKEXEC, APT_GET, '-o', 'APT::Update::Error-Mode=any', 'update'],
-               timeout=None)
+def refresh_apt(observe=None):
+    return transaction([PKEXEC, APT_GET, '-o', 'APT::Update::Error-Mode=any', 'update'], observe)
+
 
 
 def browse_system_apps(category, query='', on_result=None):
@@ -455,10 +514,10 @@ def install_arguments(package):
     raise ValueError('This package cannot be installed from Software.')
 
 
-def install(package):
+def install(package, observe=None):
     # A package transaction belongs to its system manager. Let it finish even
     # when a download or the administrator prompt takes longer than a search.
-    output = run(install_arguments(package), timeout=None)
+    output = transaction(install_arguments(package), observe)
     if package.source == 'apt':
         result = run([DPKG_QUERY, '-W', '-f=${db:Status-Status}', '--', package.identifier])
         if result.strip() != 'installed':
@@ -505,7 +564,7 @@ def manage_arguments(package, action):
     return [PKEXEC, SNAP, 'refresh' if action == 'update' else 'remove', '--', package.identifier]
 
 
-def manage(package, action):
+def manage(package, action, observe=None):
     arguments = manage_arguments(package, action)
     if package.source == 'apt':
         fields = r'${db:Status-Want}\t${db:Status-Status}\t${Essential}\t${Protected}\t${Priority}\t${Version}\n'
@@ -520,7 +579,7 @@ def manage(package, action):
             paths = run([DPKG_QUERY, '-L', '--', package.identifier]).splitlines()
             if not any(re.fullmatch(r'/usr/share/applications/[^/]+\.desktop', path) for path in paths):
                 raise RuntimeError('Software removes desktop apps only. Use the system package manager for this package.')
-    run(arguments, timeout=None)
+    transaction(arguments, observe)
     if package.source == 'apt' and action == 'update':
         # Check the installed version rather than interpreting localized apt output.
         after = run([DPKG_QUERY, '-W', '-f=${Version}', '--', package.identifier]).strip()

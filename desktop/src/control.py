@@ -102,7 +102,8 @@ def serve(bridge):
             elif data.startswith('qa-arrangement-') and os.environ.get('ORBIT_QA')=='1' and os.environ.get('ORBIT_NESTED')=='1':
                 action=data.removeprefix('qa-arrangement-');model=bridge.arrangements
                 if action=='state':
-                    connection.write(json.dumps(dict(layouts=model.layouts,preview=model.preview,undo=model.undoLabel,busy=model.busy)).encode());connection.flush()
+                    connection.write(json.dumps(dict(layouts=model.layouts,preview=model.preview,undo=model.undoLabel,busy=model.busy,
+                                                     checkpoints=model.checkpoints)).encode());connection.flush()
                 elif action=='save':model.save('QA layout')
                 elif action=='preview' and model.layouts:model.openPreview(model.layouts[0]['id'])
                 elif action=='apply':model.apply()
@@ -248,7 +249,7 @@ def serve(bridge):
             elif data.startswith('brightness-select:') and data[18:].isdigit():bridge.brightnessControls.selectExternal(int(data[18:]))
             elif data.startswith('brightness-set:') and data[15:].isdigit() and 1<=int(data[15:])<=100:bridge.brightnessControls.setBrightness(int(data[15:]))
             elif data=='quit':bridge.quit()
-            elif data in ('fold','launcher','ai','settings','system-settings','overview','quick','music','usage','notifications','tray','bluetooth','battery','screenshot','capture'):bridge.showPanel(data)
+            elif data in ('fold','launcher','ai','settings','system-settings','overview','space-map','quick','music','usage','notifications','tray','bluetooth','battery','screenshot','capture'):bridge.showPanel(data)
             connection.disconnectFromServer()
         key=id(connection)
         server._activeClients[key]=(connection,read)

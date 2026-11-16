@@ -17,11 +17,17 @@ ColumnLayout {
     readonly property bool pending: DisplayControls.state.pending
     readonly property bool editing: DisplayControls.state.available && !DisplayControls.state.busy && !pending
     spacing: 10
-    function focusConfirmation() {
-        if (pending && applyButton.visible && applyButton.enabled)
-            applyButton.forceActiveFocus(Qt.TabFocusReason);
-    }
-    onPendingChanged: if (pending) Qt.callLater(focusConfirmation)
+    readonly property var topology: DisplayControls.outputs.map(function(row) {
+        const selected = row.name === panel.outputName;
+        const mode = selected ? panel.selectedMode : row.modes.find(m => m.value === row.mode);
+        const transform = selected ? panel.chosenTransform : row.transform;
+        const scale = selected ? panel.chosenScale : row.scale;
+        const sideways = ["90","270","flipped-90","flipped-270"].includes(transform);
+        return {name: row.name, x: selected && xPosition.acceptableInput ? Number(xPosition.text) : row.x,
+            y: selected && yPosition.acceptableInput ? Number(yPosition.text) : row.y,
+            w: mode ? Math.ceil((sideways ? mode.height : mode.width) / scale) : Math.max(1,row.width),
+            h: mode ? Math.ceil((sideways ? mode.width : mode.height) / scale) : Math.max(1,row.height)};
+    })
     function loadOutput(name) {
         var row=DisplayControls.outputs.find(o => o.name===name) || DisplayControls.outputs[0];
         draft=false;
@@ -31,7 +37,6 @@ ColumnLayout {
     Component.onCompleted: {
         loadOutput("");
         DisplayControls.refresh();
-        if (pending) Qt.callLater(focusConfirmation);
     }
     Connections {
         target: DisplayControls
@@ -108,6 +113,39 @@ ColumnLayout {
                 title: "Arrangement"
                 visible: DisplayControls.outputs.length>1
                 enabled: panel.editing
+                Rectangle {
+                    id: map
+                    objectName: "displayTopology"
+                    Layout.fillWidth: true
+                    Layout.margins: 6
+                    implicitHeight: Math.max(104, 92 * Theme.textScale)
+                    color: Theme.surface
+                    radius: Theme.corner(6)
+                    clip: true
+                    readonly property real leftEdge: Math.min(0,...panel.topology.map(o => o.x))
+                    readonly property real topEdge: Math.min(0,...panel.topology.map(o => o.y))
+                    readonly property real totalWidth: Math.max(1,...panel.topology.map(o => o.x+o.w))-leftEdge
+                    readonly property real totalHeight: Math.max(1,...panel.topology.map(o => o.y+o.h))-topEdge
+                    readonly property real ratio: Math.max(0.0001,Math.min((width-12)/totalWidth,(height-12)/totalHeight))
+                    Repeater {
+                        model: map.visible ? panel.topology : []
+                        OrbitButton {
+                            required property var modelData
+                            z: modelData.name === panel.outputName ? 1 : 0
+                            x: (map.width-map.totalWidth*map.ratio)/2 + (modelData.x-map.leftEdge)*map.ratio
+                            y: (map.height-map.totalHeight*map.ratio)/2 + (modelData.y-map.topEdge)*map.ratio
+                            width: Math.max(2, modelData.w*map.ratio-2)
+                            height: Math.max(2, modelData.h*map.ratio-2)
+                            padding: 2
+                            text: width >= 36 && height >= 21 ? modelData.name : ""
+                            clip: true
+                            hint: modelData.name
+                            Accessible.name: "Select display "+modelData.name
+                            accent: modelData.name === panel.outputName
+                            onClicked: panel.loadOutput(modelData.name)
+                        }
+                    }
+                }
                 RowLayout {
                     Layout.fillWidth: true;Layout.margins: 6
                     Text {text: "X";color: Theme.muted;font.pixelSize: Theme.fontSize(11)}
@@ -124,25 +162,16 @@ ColumnLayout {
         color: Theme.muted;font.pixelSize: Theme.fontSize(11);wrapMode: Text.Wrap
         Layout.fillWidth: true;textFormat: Text.PlainText
     }
-    Text {
-        objectName: "displayCountdown";visible: panel.pending
-        text: "Keep these settings? Reverting in "+DisplayControls.state.secondsRemaining+" seconds."
-        color: Theme.text;font.pixelSize: Theme.fontSize(12);wrapMode: Text.Wrap;Layout.fillWidth: true
-    }
     RowLayout {
         Layout.fillWidth: true
         IconButton {objectName: "displayRefresh";iconName: "refresh";hint: "Refresh displays";enabled: !DisplayControls.state.busy && !panel.pending;onClicked: DisplayControls.refresh()}
         Item {Layout.fillWidth: true}
-        OrbitButton {objectName: "displayRevert";visible: panel.pending;text: "Revert";enabled: !DisplayControls.state.busy;onClicked: DisplayControls.revert()}
         OrbitButton {
-            id: applyButton;objectName: "displayApply";text: panel.pending ? "Keep settings" : "Apply";accent: true
-            enabled: !DisplayControls.state.busy && (panel.pending || (panel.editing && xPosition.acceptableInput && yPosition.acceptableInput))
+            id: applyButton;objectName: "displayApply";text: "Apply";accent: true
+            enabled: !DisplayControls.state.busy && !panel.pending && panel.editing && xPosition.acceptableInput && yPosition.acceptableInput
             onClicked: {
-                if (panel.pending) DisplayControls.confirm();
-                else {
-                    panel.draft=false;
-                    DisplayControls.apply(panel.outputName,panel.chosenMode,panel.chosenScale,panel.chosenTransform,Number(xPosition.text),Number(yPosition.text));
-                }
+                panel.draft=false;
+                DisplayControls.apply(panel.outputName,panel.chosenMode,panel.chosenScale,panel.chosenTransform,Number(xPosition.text),Number(yPosition.text));
             }
         }
     }

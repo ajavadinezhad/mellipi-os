@@ -1,6 +1,7 @@
 """Mellipi's local file browser, in a normal desktop window."""
 import argparse
 from collections import Counter
+from dataclasses import dataclass, replace
 from html import escape
 import os
 import sys
@@ -21,11 +22,11 @@ from PyQt6.QtWidgets import (
     QMainWindow, QMenu, QProgressBar, QPushButton, QScrollArea, QStackedWidget, QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 from gi.repository import Gio
-from qt_app import style_dialog, ThemedInput, AppIdentityBadge, BASE_STYLE, ThemeWatch, apply_titlebar, original_icon, themed_prompt, widget_palette
+from qt_app import style_dialog, ThemedInput, AppIdentityBadge, BASE_STYLE, ThemeWatch, apply_titlebar, original_icon, themed_prompt, widget_palette, exec_owned_dialog
 from qt_titlebar import TitleBar
 from desktop_icons import rename_no_replace, safe_name, trash_item
 from device_monitor import DeviceMonitor
-from file_transfers import MAX_SOURCES, Cancelled, CancelToken, Transfer
+from file_transfers import MAX_SOURCES, Cancelled, CancelToken, Transfer, new_receipt
 from file_archives import archive_suffix, compress, extract_here, preview_archive
 from storage_analyzer import analyze
 from files_icons import ACTIONS, PLACES, file_icon, icon as phosphor_icon, place_icon
@@ -51,10 +52,62 @@ class FileJob(QThread):
 class TransferJob(FileJob):
     progress = pyqtSignal(object)
 
-    def __init__(self, paths, folder, move, parent):
+    def __init__(self, paths, folder, move, parent, prior=None):
         self.token = CancelToken()
-        super().__init__(lambda: Transfer(folder.resolve(), rename_no_replace, trash_item,
-                                          self.token, self.progress.emit).run(paths, move), parent)
+        self.folder = Path(folder)
+        self.move = move
+        self.prior = prior
+        self.retries = [i for i, row in enumerate(prior.receipt) if row.retryable] if prior else []
+        self.receipt = new_receipt(paths)
+        self.target_identity = prior.target_identity if prior else None
+        if prior:
+            for row, i in zip(self.receipt, self.retries):
+                row.source_identity = prior.receipt[i].source_identity
+        super().__init__(self.perform, parent)
+
+    def perform(self):
+        try:
+            if self.prior is None:
+                self.folder = self.folder.resolve()
+            transfer = Transfer(self.folder, rename_no_replace, trash_item, self.token,
+                                self.progress.emit, expected_root=self.target_identity)
+            self.target_identity = transfer.root_identity
+            return transfer.run([row.source for row in self.receipt], self.move, self.receipt)
+        finally:
+            if self.prior:
+                rows = [replace(row) for row in self.prior.receipt]
+                for index, result in zip(self.retries, self.receipt):
+                    rows[index] = result
+                self.receipt = rows
+                self.prior = None
+
+
+
+@dataclass
+class TransferReceipt:
+    folder: Path
+    move: bool
+    target_identity: tuple | None
+    receipt: list
+    error: str = ''
+    canceled: bool = False
+
+    def summary(self):
+        if self.canceled:
+            title = 'Transfer canceled'
+        elif self.error:
+            title = 'Transfer stopped'
+        else:
+            title = 'Transfer finished'
+        counts = Counter(row.state for row in self.receipt)
+        transferred = counts['transferred'] + counts['copied']
+        status = f'{title} · {transferred} transferred'
+        if counts['skipped']:
+            status += f" · {counts['skipped']} skipped"
+        remaining = sum(row.retryable for row in self.receipt)
+        if remaining:
+            status += f' · {remaining} remaining'
+        return status
 
 
 class TransferStrip(QFrame):
@@ -659,6 +712,14 @@ class Files(QMainWindow):
         top.setSpacing(4)
         self.identity_badge = AppIdentityBadge(self)
         top.addWidget(self.identity_badge)
+        self.places_button = QPushButton('Places')
+        self.places_button.setObjectName('navigation')
+        self.places_button.setProperty('symbolicIcon', 'folder')
+        self.places_button.setAccessibleName('Places')
+        self.places_button.setToolTip('Places, bookmarks and devices')
+        self.places_button.setFixedSize(36, 32)
+        self.places_button.setIconSize(QSize(18, 18))
+        self.places_button.hide()
         for widget in (self.back, self.forward, up):
             widget.setObjectName('navigation')
             top.addWidget(widget)
@@ -734,6 +795,21 @@ class Files(QMainWindow):
         devices.setMenu(self.device_menu)
         self.sidebar.addWidget(devices)
         self.sidebar.addStretch()
+        self.places_menu = QMenu(self.places_button)
+        self.places_button.setMenu(self.places_menu)
+        self.compact_places = []
+        for path, button in self.places.items():
+            choice = self.places_menu.addAction(button.text(), button.click)
+            choice.setCheckable(True)
+            self.compact_places.append((path, button, choice))
+        trash_action = self.places_menu.addAction('Trash', self.show_trash)
+        self.compact_places.append((None, trash, trash_action))
+        self.places_menu.addSeparator()
+        self.bookmark_menu.setTitle('Bookmarks')
+        self.device_menu.setTitle('Devices')
+        self.places_menu.addMenu(self.bookmark_menu)
+        self.places_menu.addMenu(self.device_menu)
+        self.places_menu.aboutToShow.connect(self.update_places_menu)
         body = self.browse_layout = QHBoxLayout()
         self.places_panel = QWidget()
         self.places_panel.setObjectName('places')
@@ -741,6 +817,7 @@ class Files(QMainWindow):
         self.sidebar.setSpacing(2)
         body.setSpacing(6)
         body.addWidget(self.places_panel)
+        body.addWidget(self.places_button, alignment=Qt.AlignmentFlag.AlignTop)
         self.results_layout = QVBoxLayout()
         self.results_layout.setContentsMargins(0, 0, 0, 0)
         self.results_layout.addWidget(self.search_row)
@@ -768,6 +845,12 @@ class Files(QMainWindow):
         self.item_count = QLabel()
         self.item_count.setObjectName('itemCount')
         self.statusBar().addPermanentWidget(self.item_count)
+        self.transfer_receipt = None
+        self.receipt_button = QPushButton('Transfer receipt')
+        self.receipt_button.setToolTip('Review the last file transfer')
+        self.receipt_button.clicked.connect(self.show_transfer_receipt)
+        self.receipt_button.hide()
+        self.statusBar().addPermanentWidget(self.receipt_button)
         self.proxy.rowsInserted.connect(self.update_count)
         self.proxy.rowsRemoved.connect(self.update_count)
         self.model.directoryLoaded.connect(self.update_count)
@@ -833,6 +916,34 @@ class Files(QMainWindow):
         count = self.proxy.rowCount(self.view.rootIndex())
         noun = 'match' if self.proxy.query else 'item'
         self.item_count.setText(f'{count} {noun}' + ('' if count == 1 else 'es' if noun == 'match' else 's'))
+
+    def update_places_menu(self):
+        for path, button, choice in self.compact_places:
+            choice.setIcon(button.icon())
+            if path is not None:
+                choice.setChecked(button.isChecked())
+
+    def update_places_layout(self):
+        sidebar = self.places_panel.width()
+        # At tiled widths the filename is more useful than permanently visible places.
+        minimum_list = max(360, self.view.fontMetrics().horizontalAdvance('Document name') * 2 + 155)
+        compact = self.width() < sidebar + minimum_list + self.browse_layout.spacing() + 16
+        if self.places_panel.isHidden() == compact:
+            return
+        focused = QApplication.focusWidget()
+        had_focus = focused and self.places_panel.isAncestorOf(focused)
+        had_menu_focus = self.places_button.hasFocus()
+        self.places_panel.setVisible(not compact)
+        self.places_button.setVisible(compact)
+        if compact and had_focus:
+            self.places_button.setFocus()
+        elif not compact and had_menu_focus:
+            self.view.setFocus()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'places_panel'):
+            self.update_places_layout()
 
     def open_file_actions(self):
         self.archive_selection_changed()
@@ -1300,6 +1411,7 @@ class Files(QMainWindow):
         if hasattr(self, 'folder'):
             self.breadcrumb_timer.start(0)
         self.places_panel.setFixedWidth(max(sidebar_width + round(44 * max(0, text_scale - 1)), self.sidebar.minimumSize().width()))
+        self.update_places_layout()
         self.update_list_columns()
 
     def update_list_columns(self):
@@ -1309,8 +1421,11 @@ class Files(QMainWindow):
         sizes = {column: max(metrics.horizontalAdvance(value),
                              metrics.horizontalAdvance(str(self.model.headerData(column, Qt.Orientation.Horizontal)))) + 22
                  for column, value in ((1, '999.9 GiB'), (2, 'Plain Text'), (3, date))}
-        reserve_name = metrics.horizontalAdvance('Document name') + 32
-        available = self.view.viewport().width() - reserve_name
+        viewport = self.view.viewport().width()
+        # Keep newly freed width for filenames instead of immediately filling
+        # it with optional metadata at narrow sizes.
+        reserve_name = max(metrics.horizontalAdvance('Document name') + 32, round(viewport * .46))
+        available = viewport - reserve_name
         for column in (1, 2, 3):
             visible = available >= sizes[column]
             if self.view.isColumnHidden(column) == visible:
@@ -1483,7 +1598,7 @@ class Files(QMainWindow):
     def run_job(self, operation, completed=None):
         self.start_job(operation, completed)
 
-    def start_job(self, operation, completed=None, transfer=None):
+    def start_job(self, operation, completed=None, transfer=None, prior=None):
         if self.job is not None:
             self.statusBar().showMessage('A file operation is already running', 5000)
             return
@@ -1495,7 +1610,8 @@ class Files(QMainWindow):
             self.job = FileJob(operation, self)
         else:
             paths, folder, move = transfer
-            self.job = TransferJob(paths, folder, move, self)
+            self.job = TransferJob(paths, folder, move, self, prior)
+            self.receipt_button.setEnabled(False)
             self.transfer_strip.start(self.job, len(paths), move)
             self.job.progress.connect(self.transfer_strip.update_progress)
         self.statusBar().showMessage('Working…')
@@ -1507,16 +1623,84 @@ class Files(QMainWindow):
         status = job.error or 'Done'
         if isinstance(job, TransferJob):
             self.transfer_strip.finish()
-            if job.canceled:
-                status = 'Transfer canceled. Items already transferred were kept.'
-            elif not job.error:
-                count, skipped = len(job.value['paths']), len(job.value['skipped'])
-                status = f'Transferred: {count} · Skipped: {skipped}' if skipped else f'Transferred: {count}'
+            self.transfer_receipt = TransferReceipt(job.folder, job.move, job.target_identity,
+                                                    job.receipt, job.error, job.canceled)
+            status = self.transfer_receipt.summary()
+            self.receipt_button.setEnabled(True)
+            self.receipt_button.show()
         self.statusBar().showMessage(status, 8000)
         job.deleteLater()
         if not job.error and not job.canceled and completed:
             completed(job.value)
         self.finish_deferred_close(job.error)
+
+    def show_transfer_receipt(self):
+        receipt = self.transfer_receipt
+        if not receipt or self.job is not None:
+            return
+        dialog = QDialog(self)
+        style_dialog(dialog, self)
+        dialog.setWindowTitle('Transfer receipt')
+        dialog.resize(650, 360)
+        layout = QVBoxLayout(dialog)
+        summary = QLabel(receipt.summary())
+        summary.setTextFormat(Qt.TextFormat.PlainText)
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+        if receipt.error and all(row.detail != receipt.error for row in receipt.receipt):
+            error = QLabel(receipt.error)
+            error.setTextFormat(Qt.TextFormat.PlainText)
+            error.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            error.setWordWrap(True)
+            layout.addWidget(error)
+        tree = QTreeWidget()
+        tree.setAccessibleName('File transfer results')
+        tree.setHeaderLabels(['Item', 'Result'])
+        tree.setRootIsDecorated(False)
+        tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(tree, 1)
+        labels = {'transferred': 'Transferred', 'skipped': 'Skipped', 'canceled': 'Canceled',
+                  'failed': 'Failed', 'pending': 'Not started', 'copied': 'Copied; original not confirmed removed'}
+        item_details = QLabel()
+        item_details.setTextFormat(Qt.TextFormat.PlainText)
+        item_details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        item_details.setWordWrap(True)
+        item_details.setAccessibleName('Selected transfer item details')
+        layout.addWidget(item_details)
+
+        def select_result(current, _previous):
+            item_details.setText(current.data(0, Qt.ItemDataRole.UserRole) if current else '')
+
+        tree.currentItemChanged.connect(select_result)
+        first_unfinished = None
+        for row in receipt.receipt:
+            result = QTreeWidgetItem([Path(row.source).name or row.source, labels[row.state]])
+            result.setToolTip(0, row.source)
+            result.setToolTip(1, '\n'.join(part for part in (row.destination, row.detail) if part))
+            detail = [f'Source: {row.source}']
+            if row.destination:
+                detail.append(f'Destination: {row.destination}')
+            if row.detail:
+                detail.append(row.detail)
+            result.setData(0, Qt.ItemDataRole.UserRole, '\n'.join(detail))
+            tree.addTopLevelItem(result)
+            if first_unfinished is None and row.state in ('failed', 'copied', 'canceled'):
+                first_unfinished = result
+        tree.setCurrentItem(first_unfinished or tree.topLevelItem(0))
+        controls = QHBoxLayout()
+        controls.addStretch()
+        close = QPushButton('Close')
+        close.clicked.connect(dialog.reject)
+        controls.addWidget(close)
+        remaining = [Path(row.source) for row in receipt.receipt if row.retryable]
+        if remaining and receipt.target_identity is not None:
+            retry = QPushButton(f'Retry remaining ({len(remaining)})')
+            retry.clicked.connect(dialog.accept)
+            controls.addWidget(retry)
+        layout.addLayout(controls)
+        if exec_owned_dialog(dialog) == QDialog.DialogCode.Accepted and remaining:
+            self.start_job(None, transfer=(remaining, receipt.folder, receipt.move), prior=receipt)
+        dialog.deleteLater()
 
     def finish_deferred_close(self, error=None):
         if not self.close_when_idle:

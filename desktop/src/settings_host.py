@@ -6,7 +6,7 @@ from qt_compat import QObject,QLocalServer,QTimer,QT5
 from control import socket_path
 from qt5_a11y_runtime import scoped_environment
 ORBIT_PROPERTIES=('appearance','compact','economy','themeMode','accentColor','accentPresets','themePresets','outputs','apps','launcherApps','isWayland','nativeCompositor','nativePaletteSupported','nativeSnapSupported','settingsSection','settingsTarget','canSwitchUser','notice','workspaceMotion','systemActions')
-ORBIT_METHODS={'setPreference','resetAppearance','applyTheme','rememberSettingsSection','settingsPageOpened','showPanel','openSettingsSection','launch','switchUser','activateSystemAction'}
+ORBIT_METHODS={'setPreference','resetAppearance','applyTheme','applyAppearance','rememberSettingsSection','settingsPageOpened','showPanel','openSettingsSection','launch','switchUser','activateSystemAction'}
 class SettingsHost(QObject):
     def __init__(self,bridge,objects):
         super().__init__(bridge);self.bridge=bridge;self.objects=objects;self.clients={};self.process=None;self.active=False;self.closed=False;self.centered=set();self.pending=set();self.ready=False;self.errors=[];self.show_pending=False;self.show_attempts=0;self.launched=False

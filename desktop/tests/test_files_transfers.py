@@ -100,3 +100,57 @@ class FilesTransferTests(unittest.TestCase):
             self.assertTrue(source.exists())
             self.assertEqual(trashed, [])
             self.assertEqual(list(target.iterdir()), [])
+
+    def test_retry_after_failed_move_only_uses_unpublished_items(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / 'target'
+            target.mkdir()
+            first, missing, next_item = (root / name for name in ('first', 'missing', 'next'))
+            first.write_text('moved')
+            next_item.write_text('pending')
+            window = Files(target)
+            window.show()
+            try:
+                window.transfer_paths([first, missing, next_item], target, move=True)
+                self.wait_for(lambda: window.job is None)
+                receipt = window.transfer_receipt
+                self.assertTrue(window.receipt_button.isVisible())
+                self.assertEqual([row.state for row in receipt.receipt], ['transferred', 'failed', 'pending'])
+                self.assertFalse(first.exists())
+                self.assertEqual((target / first.name).read_text(), 'moved')
+                missing.write_text('now present')
+                retry = [Path(row.source) for row in receipt.receipt if row.retryable]
+                window.start_job(None, transfer=(retry, receipt.folder, receipt.move), prior=receipt)
+                self.wait_for(lambda: window.job is None)
+                self.assertEqual([row.state for row in window.transfer_receipt.receipt], ['transferred'] * 3)
+                self.assertEqual({item.name for item in target.iterdir()}, {'first', 'missing', 'next'})
+                self.assertFalse(missing.exists())
+                self.assertFalse(next_item.exists())
+            finally:
+                window.close()
+
+    def test_cancellation_after_cross_device_publication_is_not_retryable(self):
+        with TemporaryDirectory() as directory:
+            import errno
+            root = Path(directory)
+            target = root / 'target'
+            target.mkdir()
+            source = root / 'file.txt'
+            source.write_text('data')
+            token, trashed = CancelToken(), []
+
+            def rename(old, new):
+                if old == source:
+                    raise OSError(errno.EXDEV, 'Cross-device move')
+                rename_no_replace(old, new)
+                token.cancel()
+
+            transfer = Transfer(target, rename, trashed.append, token)
+            with self.assertRaises(Cancelled):
+                transfer.run([source], move=True)
+            row, = transfer.receipt
+            self.assertEqual(row.state, 'copied')
+            self.assertFalse(row.retryable)
+            self.assertEqual(Path(row.destination).read_text(), source.read_text())
+            self.assertEqual(trashed, [])

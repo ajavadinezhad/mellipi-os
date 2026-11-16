@@ -1,4 +1,4 @@
-"""Bounded, on-demand Sway arrangement history and private reusable layouts.
+"""Bounded, on-demand arrangement history and private reusable layouts.
 
 No titles, contents, screenshots or background sampling are saved. Runtime undo
 uses live client identity; saved layouts require explicit matching before apply.
@@ -15,6 +15,50 @@ def bounded_rect(rect,area):
     w=min(rect['width'],area['width']);h=min(rect['height'],area['height'])
     return dict(x=max(area['x'],min(rect['x'],area['x']+area['width']-w)),y=max(area['y'],min(rect['y'],area['y']+area['height']-h)),width=w,height=h)
 
+def map_geometry(rect,area):
+    if not valid_rect(rect) or not valid_rect(area):return {}
+    rect=bounded_rect(rect,area)
+    return dict(x=(rect['x']-area['x'])/area['width'],y=(rect['y']-area['y'])/area['height'],
+                w=rect['width']/area['width'],h=rect['height']/area['height'])
+
+def space_map(desktops,windows,current):
+    grouped={row['id']:[] for row in desktops}
+    for window in windows:
+        group=grouped.get(window.get('desktop'))
+        if group is not None and not window.get('transient'):
+            group.append(window)
+    spaces=[]
+    for workspace in sorted(desktops,key=lambda row:row['id']):
+        ident=workspace['id']; windows=grouped[ident]; shown=[]
+        for row in windows[:48]:
+            minimized=bool(row.get('minimized'))
+            shown.append(dict(id=str(row['id']),name=row.get('title') or row.get('klass') or 'Window',
+                              icon=row.get('icon') or 'application-x-executable',minimized=minimized,
+                              tile={} if minimized else map_geometry(row.get('rect'),row.get('workarea'))))
+        name=workspace.get('name','')
+        spaces.append(dict(id=ident,name=name if name and not name.isdecimal() else f'Space {ident+1}',
+                           active=ident==current,count=len(windows),windows=shown,
+                           tiles=[row for row in shown if row['tile']][:9]))
+    return spaces
+
+def checkpoint_preview(entry,windows):
+    live={str(row['id']):row for row in windows}
+    result=[];groups={}
+    for row in entry['rows']:
+        key=row['key']; current=live.get(str(row['id']))
+        matches=bool(current and not current.get('minimized') and current.get('pid',0)==key[0]
+                     and (current.get('klass') or 'native-window').casefold()==str(key[1]).casefold())
+        item=dict(id=str(row['id']),name=(current.get('title') if matches else '') or key[1] or 'Window',
+                  workspace=row['desktop'],status='Restore position' if matches else 'No matching open window',
+                  available=matches,tile=map_geometry(row['rect'],row['area']),
+                  icon=(current.get('icon') if matches else '') or 'application-x-executable')
+        result.append(item)
+        output=row.get('output','')
+        groups.setdefault((row['desktop'],output),[]).append(item)
+    return dict(id=entry['id'],label=entry['label'],rows=result,
+                spaces=[dict(workspace=space,tiles=tiles[:9]) for (space,_),tiles in groups.items()],
+                available=sum(row['available'] for row in result))
+
 def layout_cards(layouts, apps):
     """Small geometry-only previews. No window thumbnails or private titles."""
     icons = {app['id']: app.get('icon') or 'application-x-executable' for app in apps}
@@ -26,11 +70,7 @@ def layout_cards(layouts, apps):
         for row in windows:
             if (row['desktop'], row['output']) != (first['desktop'], first['output']):
                 continue
-            area = row['area']
-            rect = bounded_rect(row['rect'], area)
-            tiles.append(dict(x=(rect['x']-area['x'])/area['width'],
-                              y=(rect['y']-area['y'])/area['height'],
-                              w=rect['width']/area['width'], h=rect['height']/area['height'],
+            tiles.append(dict(map_geometry(row['rect'],row['area']),
                               icon=icons.get(row['app'], 'application-x-executable')))
         cards.append(dict(id=layout['id'], name=layout['name'], count=len(windows), tiles=tiles))
     return cards
@@ -61,12 +101,21 @@ class ArrangementEngine:
                 action_failed=sys.exc_info()[0] is not None
                 try:after=self.capture(ids)
                 except Exception:
-                    if before:self.history=(self.history+[(label,before)])[-10:]
+                    if before:self.record_checkpoint(label,before)
                     # Do not replace the original operation error with an IPC
                     # failure while checking its result.
                     if not action_failed:raise
                 else:
-                    if before and before!=after:self.history=(self.history+[(label,before)])[-10:]
+                    if before and before!=after:self.record_checkpoint(label,before)
+    def record_checkpoint(self,label,rows):
+        self.history=(self.history+[dict(id=uuid.uuid4().hex,label=label,rows=rows)])[-10:]
+    def restore_checkpoint(self,ident):
+        with self.lock,self.actions.lock:
+            entry=next((row for row in self.history if row['id']==ident),None)
+            if entry is None:raise ValueError('Checkpoint is no longer available')
+            rows=entry['rows']
+            return self.record_action('Restore '+entry['label'],lambda:self.restore_rows(rows,True),
+                                      {row['id'] for row in rows})
     def _areas(self):
         tree=self.actions.request(4);areas={}
         def walk(n):
@@ -126,8 +175,7 @@ class ArrangementEngine:
     def undo(self):
         with self.lock,self.actions.lock:
             if not self.history:raise ValueError('There is no arrangement to undo')
-            label,rows=self.history[-1]
-            result=self.restore_rows(rows,True);self.history.pop();return result
+            result=self.restore_rows(self.history[-1]['rows'],True);self.history=self.history[:-1];return result
     def save(self,name,identities,folder=""):
         name=name.strip()
         folder=folder.strip()
@@ -221,9 +269,21 @@ class Arrangements(QObject):
         if hasattr(bridge,'windowsChanged'):bridge.windowsChanged.connect(self.reconcilePreview)
     available=Property(bool,lambda s:s.engine is not None,constant=True)
     busy=Property(bool,lambda s:s._busy,notify=changed)
-    undoLabel=Property(str,lambda s:s.engine.history[-1][0] if s.engine and s.engine.history else '',notify=changed)
+    undoLabel=Property(str,lambda s:s.engine.history[-1]['label'] if s.engine and s.engine.history else '',notify=changed)
     layouts=Property('QVariantList',lambda s:layout_cards(s.engine.layouts,s.bridge._apps) if s.engine else [],notify=changed)
     preview=Property('QVariantMap',lambda s:s._preview,notify=changed)
+    checkpoints=Property('QVariantList',lambda s:[dict(id=row['id'],label=row['label'],count=len(row['rows']))
+                         for row in reversed(s.engine.history)] if s.engine else [],notify=changed)
+    @Slot(str,result='QVariantMap')
+    def checkpointPreview(self,ident):
+        if not self.engine:return {}
+        entry=next((row for row in self.engine.history if row['id']==ident),None)
+        return checkpoint_preview(entry,self.bridge._windows) if entry else {}
+    @Slot(str)
+    def restoreCheckpoint(self,ident):
+        self.submit(lambda:self.engine.restore_checkpoint(ident),
+                    lambda result:self.notice.emit(f"Restored {result['applied']} windows"+
+                    (f"; {result['skipped']} unavailable" if result['skipped'] else '')))
     def submit(self,work,done=None):
         if not self.engine or self._busy:return
         self._busy=True;self.changed.emit()

@@ -117,29 +117,39 @@ ColumnLayout {
         {value:3,label:"Shortcuts",icon:"preferences-desktop-keyboard-shortcuts",group:"ACCESS",keywords:"keyboard bindings hotkeys"},
         {value:16,label:"System tools",icon:"preferences-system",group:"SYSTEM"},
     ]
+    DisplayConfirmation { Layout.fillWidth: true }
+    OrbitField {
+        id: search;objectName: "settingsSearchField"
+        parent: settings.narrowNavigation ? compactSearchHost : sidebarSearchHost
+        anchors.fill: parent
+        implicitHeight: Math.max(32,Theme.labelSize+16)
+        leftPadding: 8;rightPadding: 8;font.pixelSize: Theme.labelSize
+        placeholderText:"Find a setting"
+        accessibleLabel:"Find a setting (Ctrl+F)"
+        maximumLength: 120
+        onTextChanged: settings.searchQuery=text
+        onAccepted: if(settings.searching)settings.openSearchResult(settings.searchResults[Math.max(0,results.currentIndex)]);
+        Keys.onEscapePressed: event => {
+            event.accepted=settings.searching;
+            if(event.accepted)settings.closeSearch();
+        }
+        Keys.onDownPressed: event => {
+            event.accepted=settings.searching && results.count>0;
+            if(event.accepted){results.currentIndex=0;results.forceActiveFocus(Qt.TabFocusReason);}
+        }
+    }
     GridLayout {
         objectName: "settingsNavigationHeader"
+        visible: settings.narrowNavigation
         Layout.fillWidth: true
         Layout.minimumWidth: 0
-        columns: settings.narrowNavigation && width>=420 ? 2 : 1
+        columns: width>=420 ? 2 : 1
         rowSpacing: settings.spacing;columnSpacing: settings.spacing
-        OrbitField {
-            id: search;objectName: "settingsSearchField";Layout.fillWidth:true
-            implicitHeight: Math.max(32,Theme.labelSize+16)
-            leftPadding: 8;rightPadding: 8;font.pixelSize: Theme.labelSize
-            placeholderText:"Find a setting"
-            accessibleLabel:"Find a setting (Ctrl+F)"
-            maximumLength: 120
-            onTextChanged: settings.searchQuery=text
-            onAccepted: if(settings.searching)settings.openSearchResult(settings.searchResults[Math.max(0,results.currentIndex)]);
-            Keys.onEscapePressed: event => {
-                event.accepted=settings.searching;
-                if(event.accepted)settings.closeSearch();
-            }
-            Keys.onDownPressed: event => {
-                event.accepted=settings.searching && results.count>0;
-                if(event.accepted){results.currentIndex=0;results.forceActiveFocus(Qt.TabFocusReason);}
-            }
+        Item {
+            id: compactSearchHost
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            implicitHeight: search.implicitHeight
         }
         SettingsChoice {
             id: pageChoice;objectName: "settingsPageChoice"
@@ -160,19 +170,29 @@ ColumnLayout {
         id: settingsBody
         Layout.fillWidth: true;Layout.fillHeight: true
         Layout.minimumWidth: 0;Layout.minimumHeight: 0
-        SectionIndex {
-            id: index;objectName: "systemSettingsIndex"
+        ColumnLayout {
+            id: sidebar
             visible: !settings.narrowNavigation
             anchors.left: parent.left;anchors.top: parent.top;anchors.bottom: parent.bottom
             width: settings.navigationWidth
-            sections: settings.sections
-            current: settings.section
-            onSelected: value => {settings.closeSearch();settings.selectSection(value);}
+            spacing: settings.spacing
+            Item {
+                id: sidebarSearchHost
+                Layout.fillWidth: true
+                implicitHeight: search.implicitHeight
+            }
+            SectionIndex {
+                id: index;objectName: "systemSettingsIndex"
+                Layout.fillWidth: true;Layout.fillHeight: true;Layout.minimumHeight: 0
+                sections: settings.sections
+                current: settings.section
+                onSelected: value => {settings.closeSearch();settings.selectSection(value);}
+            }
         }
         Item {
             objectName: "settingsContentViewport"
             anchors.top: parent.top;anchors.bottom: parent.bottom;anchors.right: parent.right
-            anchors.left: settings.narrowNavigation ? parent.left : index.right
+            anchors.left: settings.narrowNavigation ? parent.left : sidebar.right
             anchors.leftMargin: settings.narrowNavigation ? 0 : settings.spacing
             ColumnLayout {
                 anchors.fill: parent

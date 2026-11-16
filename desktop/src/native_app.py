@@ -199,6 +199,22 @@ class Bridge(QObject):
         try:self.preferences.apply_theme(ident)
         except (ValueError,OSError):return self.notify('Could not apply this theme')
         self.settingsChanged.emit();self.applyWindowTheme()
+    @Slot('QVariantMap')
+    def applyAppearance(self,changes):
+        studio_keys={
+            'themePreset','mode','darkLevel','accent','backgroundColor','wallpaper','highContrast','textScale',
+            'cursorAccent','panelPosition','taskbarLength','taskbarIconScale','taskbarFloating','density','corners',
+            'output','desktopIcons','desktopIconScale','clock24','clockDate','profile','independentWorkspaces',
+            'workspaceMotion','matchApps','matchWindows','windowSnap','frameStyle','frameWidth',
+        }
+        if not changes or not changes.keys() <= studio_keys:
+            return self.notify('Could not save appearance settings')
+        try:self.preferences.update(changes)
+        except (TypeError,ValueError,OSError):return self.notify('Could not save appearance settings')
+        if 'output' in changes:self.displays.setRequestedName(changes['output'])
+        self.settingsChanged.emit()
+        if changes.keys() & {'themePreset','mode','darkLevel','accent','matchWindows','matchApps','frameStyle','frameWidth','highContrast'}:
+            self.applyWindowTheme()
     aiEnabled=Property(bool,lambda s:os.environ.get('ORBIT_DEV_AI')=='1' and s.preferences.values['aiEnabled'],notify=settingsChanged)
     themeMode=Property(str,lambda s:s.preferences.values['mode'],notify=settingsChanged)
     workspaceMotion=Property(bool,lambda s:s.preferences.values['workspaceMotion'],notify=settingsChanged)
@@ -432,6 +448,7 @@ class Bridge(QObject):
         result.extend([
             dict(id='screenshot',name='Take a screenshot',description='Capture a display, area or window to a file or the clipboard',icon='camera-photo',searchText='screenshot screen shot capture snip clipboard print screen',destination='panel:screenshot'),
             dict(id='do-not-disturb',name='Do not disturb',description='Open notification controls',icon='notifications-disabled',searchText='do not disturb dnd notifications quiet mute alerts',destination='panel:notifications'),
+            dict(id='space-map',name='Space Map',description='Find and move windows, review checkpoints or resume a saved layout',icon='start-spaces',searchText='space map workspaces arrangement checkpoint saved layout undo',destination='panel:space-map'),
         ])
         return result
     @Slot(str, result=str)
@@ -501,8 +518,8 @@ class Bridge(QObject):
         if action=='focus-taskbar':
             self.dismiss();QTimer.singleShot(160,self.taskbarFocusRequested.emit);return
         if action in SETTING_TARGETS:return self.openSettingsTarget(*SETTING_TARGETS[action])
-        if action in ('screenshot','do-not-disturb'):
-            panel='screenshot' if action=='screenshot' else 'notifications'
+        if action in ('screenshot','do-not-disturb','space-map'):
+            panel='notifications' if action=='do-not-disturb' else action
             if self._panel==panel:self._panel=''
             return self.showPanel(panel)
         sections={'session':17,'settings':getattr(self,'_settingsSection',10),'sound':8,'displays':2,'network':5,'bluetooth':9,'appearance':10,'shortcuts':3,'help':12,'suspend':17}
@@ -1429,6 +1446,12 @@ class Bridge(QObject):
         if self._panel: self.refreshWindows()
         if self._panel and self.panelWindow:
             if not os.environ.get('SWAYSOCK'):self.panelWindow.raise_();self.panelWindow.requestActivate()
+    @Slot(result='QVariantList')
+    def spaceMapSnapshot(self):
+        from arrangements import space_map
+        selected=self._outputWorkspaces.get(self.selectedOutput,
+                    next((row['id'] for row in self._desktops if row.get('active')),None))
+        return space_map(self._desktops,self._windows,selected)
     @Slot()
     def dismiss(self):
         self._launcherRefreshTimer.stop()
@@ -1859,7 +1882,7 @@ def configure_x11(window,kind,strut=0,left=0,right=0):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('--smoke-test',action='store_true'); parser.add_argument('--screenshot'); parser.add_argument('--initial-panel',choices=['launcher','overview','ai','capture','settings','system-settings','quick','music','usage','notifications','tray','bluetooth','battery','screenshot','window-capture','switcher']); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument('--smoke-test',action='store_true'); parser.add_argument('--screenshot'); parser.add_argument('--initial-panel',choices=['launcher','overview','space-map','ai','capture','settings','system-settings','quick','music','usage','notifications','tray','bluetooth','battery','screenshot','window-capture','switcher']); args=parser.parse_args()
     if args.smoke_test and os.environ.get('QT_QPA_PLATFORM')=='offscreen':
         # Rendering-only QA must never inherit routing to the user's desktop.
         for key in ('SWAYSOCK','WAYLAND_DISPLAY','DISPLAY','ORBIT_NATIVE_CONTROL'):os.environ.pop(key,None)

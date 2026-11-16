@@ -5,6 +5,7 @@ for local regular files. Existing destinations are never overwritten. No watcher
 thread or polling loop is created by this module.
 """
 import errno,os,stat,tempfile,shutil,threading,time
+from dataclasses import dataclass
 from pathlib import Path
 MAX_SOURCES=128
 MAX_ENTRIES=100000
@@ -74,10 +75,31 @@ def unique_name(destination):
         if not os.path.lexists(candidate):return candidate
     raise ValueError('Too many copies with the same name')
 
+@dataclass
+class ItemReceipt:
+    source: str
+    state: str = 'pending'
+    destination: str = ''
+    detail: str = ''
+    source_identity: tuple | None = None
+
+    @property
+    def retryable(self):
+        # Publication is irreversible here, even if trash or cleanup later fails.
+        return self.state in ('pending', 'failed', 'canceled') and not self.destination
+
+
+def new_receipt(sources):
+    return [ItemReceipt(str(source)) for source in sources]
+
+
 class Transfer:
-    def __init__(self,directory,rename,trash=None,token=None,publish=None):
+    def __init__(self,directory,rename,trash=None,token=None,publish=None,expected_root=None):
         self.directory=Path(directory);self.rename=rename;self.trash=trash;self.token=token or CancelToken();self.publish=publish or (lambda value:None)
-        self.root_identity=identity(self.directory)[:2];self.entries=0;self.bytes=0;self.files=0;self.last_progress=0.;self.current='';self.current_bytes=0;self.current_total=0;self.snapshots={}
+        self.root_identity=identity(self.directory)[:2]
+        if expected_root is not None and self.root_identity != expected_root:
+            raise ValueError('The destination folder was replaced. Start a new transfer after checking the destination.')
+        self.receipt=[];self.entries=0;self.bytes=0;self.files=0;self.last_progress=0.;self.current='';self.current_bytes=0;self.current_total=0;self.snapshots={}
     def check_root(self):
         self.token.check()
         if self.directory.resolve()!=self.directory or identity(self.directory)[:2]!=self.root_identity:raise ValueError('The destination folder changed')
@@ -127,45 +149,89 @@ class Transfer:
             if answer=='skip':return None
             result=unique_name(result)
         return result
-    def run(self,sources,move=False):
+    def run(self,sources,move=False,receipt=None):
         if not 1<=len(sources)<=MAX_SOURCES:raise ValueError(f'Choose between 1 and {MAX_SOURCES} items')
-        self.check_root();done=[];skipped=[]
-        for index,source in enumerate(sources):
-            self.check_root();source=Path(source);before=identity(source)
-            if source.resolve()==self.directory or (stat.S_ISDIR(before[2]) and self.directory.is_relative_to(source.resolve())):raise ValueError('Cannot copy a folder into itself')
-            if move and source.parent==self.directory:skipped.append(str(source));continue
-            destination=self.destination(source.name)
-            if destination is None:skipped.append(str(source));continue
-            if source==destination:
-                # Copy in place is a duplicate; cut in place changes nothing.
-                if move:skipped.append(str(source));continue
-            self.current=source.name;self.current_bytes=0;self.current_total=0
-            self.publish(dict(conflict='',current=source.name,currentBytes=0,currentTotal=0,
-                completed=len(done),count=len(sources),message=('Moving ' if move else 'Copying ')+source.name))
-            if move:
-                try:
-                    self.check_root()
-                    self.rename(source,destination);done.append(str(destination));self.progress(True,completed=len(done));continue
-                except OSError as error:
-                    if error.errno!=errno.EXDEV:raise
-            # Only our private staging directory can be cleaned after failure.
-            stage=Path(tempfile.mkdtemp(prefix='.mellipi-transfer-',dir=self.directory));owned=identity(stage)[:2]
+        self.receipt=receipt if receipt is not None else new_receipt(sources)
+        if [row.source for row in self.receipt]!=[str(source) for source in sources]:
+            raise ValueError('Transfer receipt does not match the source items')
+        done=[];skipped=[]
+        for source,result in zip(sources,self.receipt):
             try:
-                self.snapshots={};staged=stage/'item';self.copy(source,staged);self.check_root()
-                try:self.rename(staged,destination)
-                except (FileExistsError,ValueError):
-                    destination=self.destination(source.name)
-                    if destination is None:skipped.append(str(source));continue
-                    self.check_root()
-                    self.rename(staged,destination)
-                done.append(str(destination));self.progress(True,completed=len(done))
-                if move:
-                    self.token.check()
-                    if any(identity(Path(path))!=saved for path,saved in self.snapshots.items()):raise ValueError('Copied successfully; the changed original was kept: '+source.name)
-                    if not self.trash:raise ValueError('Copied successfully; use the file manager to remove the original')
-                    try:self.trash(source)
-                    except Exception as error:raise ValueError("Copied successfully; the original was kept: "+str(error)) from error
-            finally:
-                if stage.exists() and not stage.is_symlink() and identity(stage)[:2]==owned:shutil.rmtree(stage)
+                self.transfer_item(Path(source),result,move,len(sources),done,skipped)
+            except Exception as error:
+                if result.state!='transferred':
+                    result.state=('copied' if result.destination else
+                                  'canceled' if isinstance(error,Cancelled) else 'failed')
+                result.detail=str(error)
+                raise
         self.progress(True,completed=len(done),message='Transfer complete')
         return dict(paths=done,skipped=skipped)
+
+    def transfer_item(self,source,result,move,count,done,skipped):
+        self.check_root()
+        before=identity(source)
+        if result.source_identity is not None and result.source_identity!=before:
+            raise ValueError('The source was replaced or changed. Start a new transfer after checking the source.')
+        result.source_identity=before
+        if source.resolve()==self.directory or (stat.S_ISDIR(before[2]) and self.directory.is_relative_to(source.resolve())):
+            raise ValueError('Cannot copy a folder into itself')
+
+        def skip():
+            result.state='skipped'
+            skipped.append(str(source))
+
+        def published(destination):
+            result.destination=str(destination)
+            # A cross-device move is only fully done once removal of the source succeeds.
+            result.state='copied' if move else 'transferred'
+            done.append(result.destination)
+
+        if move and source.parent==self.directory:
+            skip()
+            return
+        destination=self.destination(source.name)
+        if destination is None:
+            skip()
+            return
+        self.current=source.name;self.current_bytes=0;self.current_total=0
+        self.publish(dict(conflict='',current=source.name,currentBytes=0,currentTotal=0,
+            completed=len(done),count=count,message=('Moving ' if move else 'Copying ')+source.name))
+        if move:
+            try:
+                self.check_root()
+                if identity(source)!=before:
+                    raise ValueError('The source changed before it could be moved: '+source.name)
+                self.rename(source,destination)
+                published(destination)
+                result.state='transferred'
+                self.progress(True,completed=len(done))
+                return
+            except OSError as error:
+                if error.errno!=errno.EXDEV:raise
+        # Only our private staging directory can be cleaned after failure.
+        stage=Path(tempfile.mkdtemp(prefix='.mellipi-transfer-',dir=self.directory));owned=identity(stage)[:2]
+        try:
+            self.snapshots={};staged=stage/'item'
+            if identity(source)!=before:
+                raise ValueError('The source changed before it could be copied: '+source.name)
+            self.copy(source,staged);self.check_root()
+            try:self.rename(staged,destination)
+            except (FileExistsError,ValueError):
+                destination=self.destination(source.name)
+                if destination is None:
+                    skip()
+                    return
+                self.check_root()
+                self.rename(staged,destination)
+            published(destination)
+            if move:
+                self.token.check()
+                if any(identity(Path(path))!=saved for path,saved in self.snapshots.items()):
+                    raise ValueError('Copied successfully; the changed original was kept: '+source.name)
+                if not self.trash:raise ValueError('Copied successfully; use the file manager to remove the original')
+                try:self.trash(source)
+                except Exception as error:raise ValueError('Copied successfully; could not confirm removal of the original: '+str(error)) from error
+                result.state='transferred'
+            self.progress(True,completed=len(done))
+        finally:
+            if stage.exists() and not stage.is_symlink() and identity(stage)[:2]==owned:shutil.rmtree(stage)

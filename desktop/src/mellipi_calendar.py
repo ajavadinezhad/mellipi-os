@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from PyQt6.QtCore import QDate, QSize, QTime, Qt, QUrl
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QShortcut, QTextCharFormat
-from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCalendarWidget, QCheckBox, QDateEdit,
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QCalendarWidget, QCheckBox, QDateEdit,
                               QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
                               QStackedWidget, QSizePolicy, QScrollArea, QTableView, QTimeEdit, QToolButton, QVBoxLayout, QWidget)
@@ -445,12 +445,12 @@ def _qdate(day):
 
 class Calendar(AppWindow):
     extra_style = """
-        QListWidget#dayEvents { padding: 4px; background: %(surface)s; }
-        QListWidget#dayEvents::item { padding: 6px 8px; }
-        QLabel#agendaDate {
-            color: %(accent_ink)s; background: %(selected_surface)s; font-weight: 600;
-            border-radius: %(radius)dpx; padding: %(padding)dpx 8px;
-        }
+        QFrame#agendaPanel { background: %(raised)s; border-radius: %(radius)dpx; }
+        QListWidget#dayEvents { padding: 4px; background: %(raised)s; }
+        QLabel#agendaDate { color: %(accent_ink)s; font-weight: 700; }
+        QLabel#calendarSection { color: %(text)s; font-weight: 700; }
+        QPushButton#newEvent { background: %(selected_surface)s; color: %(accent_ink)s; font-weight: 600; }
+        QPushButton#newEvent:hover { border-color: %(focus)s; }
         QListWidget#dayEvents::item { padding: 4px 8px; }
         QListWidget#dayEvents::item:hover { background: %(selected_surface)s; }
         QLabel#clockValue { color: %(accent_ink)s; font-weight: 600; }
@@ -496,9 +496,9 @@ class Calendar(AppWindow):
         self.event_list.setAccessibleName('Events on the selected day')
         self.agenda_date = QLabel()
         self.agenda_date.setObjectName('agendaDate')
-        self.empty = QLabel('No events')
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty.setObjectName('muted')
+        self.agenda_date.setWordWrap(True)
+        self.agenda_caption = QLabel(objectName='muted')
+        self.agenda_caption.setWordWrap(True)
         self.status = QLabel(self.store.error or '')
         self.status.setAccessibleName('Calendar status')
         self.status.setObjectName('muted')
@@ -506,19 +506,21 @@ class Calendar(AppWindow):
         self.status.setWordWrap(True)
         self.status.setVisible(bool(self.status.text()))
 
-        today = QPushButton()
+        today = QPushButton('Today')
         today.setAccessibleName('Go to today')
         today.setToolTip('Go to today')
         today.setProperty('mellipiSymbolicIcon', 'calendar-today')
         today.setMinimumSize(32, 32)
         today.clicked.connect(lambda: self.month.setSelectedDate(QDate.currentDate()))
-        import_button = QPushButton()
+        import_button = QPushButton('Import…')
         import_button.setAccessibleName('Import a local iCalendar file')
         import_button.setMinimumSize(32, 32)
         import_button.setProperty('mellipiSymbolicIcon','document-open')
         import_button.setToolTip('Import a local iCalendar file')
         import_button.clicked.connect(self.choose_import)
         add_button = self.event_button('New event', 'plus', self.edit_event)
+        add_button.setText('New event')
+        add_button.setObjectName('newEvent')
         self.edit_button = self.event_button('Edit selected event', 'edit', lambda: self.edit_event(self.selected_personal()))
         self.delete_button = self.event_button('Delete selected event', 'trash', self.delete_event)
         self.event_list.itemSelectionChanged.connect(self.event_actions)
@@ -526,30 +528,60 @@ class Calendar(AppWindow):
         self.clock_button = QPushButton('Clocks')
         self.clock_button.setToolTip('Timer, alarm and stopwatch')
         self.clock_button.setProperty('mellipiSymbolicIcon', 'preferences-system-time')
-        self.clock_button.clicked.connect(lambda: self.show_clocks(self.pages.currentIndex() == 0))
+        self.clock_button.clicked.connect(lambda: self.show_clocks(True))
+        self.calendar_button = QPushButton('Calendar')
+        self.calendar_button.setProperty('mellipiSymbolicIcon', 'calendar')
+        self.calendar_button.clicked.connect(lambda: self.show_clocks(False))
+        modes = QButtonGroup(self)
+        for button in (self.calendar_button, self.clock_button):
+            button.setCheckable(True)
+            modes.addButton(button)
+        self.calendar_button.setChecked(True)
         actions = QHBoxLayout()
-        actions.setSpacing(8)
-        self.action_buttons = (today, import_button, add_button, self.edit_button, self.delete_button, self.clock_button)
+        self.action_buttons = (today, import_button, add_button, self.edit_button,
+                               self.delete_button, self.calendar_button, self.clock_button)
+        actions.addWidget(self.calendar_button)
         actions.addWidget(self.clock_button)
         actions.addStretch(1)
-        actions.addWidget(today)
         actions.addWidget(import_button)
-        actions.addWidget(add_button)
+        self.mode_row = actions
         self.content.addLayout(actions)
 
-        agenda = QVBoxLayout()
-        self.space_controls(actions, agenda)
+        month_panel = QVBoxLayout()
+        month_row = QHBoxLayout()
+        month_title = QLabel('Month', objectName='calendarSection')
+        month_row.addWidget(month_title, 1)
+        month_row.addWidget(today)
+        month_panel.addLayout(month_row)
+        month_panel.addWidget(self.month, 1)
+        self.agenda_panel = QFrame(objectName='agendaPanel')
+        agenda = QVBoxLayout(self.agenda_panel)
+        self.agenda_layout = agenda
+        self.space_controls(actions, month_row, agenda)
+        agenda.addWidget(QLabel('Day planner', objectName='calendarSection'))
+        agenda.addWidget(self.agenda_date)
+        agenda.addWidget(self.agenda_caption)
         date_row = QHBoxLayout()
-        date_row.addWidget(self.agenda_date, 1)
-        date_row.addWidget(self.edit_button)
-        date_row.addWidget(self.delete_button)
+        date_row.addWidget(add_button)
+        date_row.addStretch(1)
+        self.agenda_row = date_row
+        self.add_button = add_button
         agenda.addLayout(date_row)
         agenda.addWidget(self.event_list, 1)
-        agenda.addWidget(self.empty, 1)
+        self.empty_space = QWidget()
+        agenda.addWidget(self.empty_space, 1)
+        self.event_toolbar = QWidget()
+        event_row = QHBoxLayout(self.event_toolbar)
+        event_row.setContentsMargins(0, 0, 0, 0)
+        event_row.addStretch(1)
+        event_row.addWidget(self.edit_button)
+        event_row.addWidget(self.delete_button)
+        agenda.addWidget(self.event_toolbar)
+        self.space_controls(date_row, event_row)
         self.day_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         self.day_layout.setSpacing(12)
-        self.day_layout.addWidget(self.month, 3)
-        self.day_layout.addLayout(agenda, 2)
+        self.day_layout.addLayout(month_panel, 3)
+        self.day_layout.addWidget(self.agenda_panel, 2)
         calendar_page = QWidget()
         calendar_layout = QVBoxLayout(calendar_page)
         calendar_layout.setContentsMargins(0, 0, 0, 0)
@@ -561,7 +593,8 @@ class Calendar(AppWindow):
         self.pages.addWidget(self.month_scroll)
         self.pages.addWidget(self.scroll_page(self.clock_page))
         self.content.addWidget(self.pages, 1)
-        self.calendar_buttons = (today, import_button, add_button)
+        self.import_button = import_button
+        self.compact_actions = False
         QShortcut(QKeySequence.StandardKey.Open, self).activated.connect(self.choose_import)
         QShortcut(QKeySequence.StandardKey.New, self).activated.connect(
             lambda: self.edit_event() if self.pages.currentIndex() == 0 else None)
@@ -591,12 +624,9 @@ class Calendar(AppWindow):
 
     def show_clocks(self, enabled=True):
         self.pages.setCurrentIndex(int(enabled))
-        self.clock_button.setText('Calendar' if enabled else 'Clocks')
-        self.clock_button.setToolTip('Return to calendar' if enabled else 'Timer, alarm and stopwatch')
-        self.clock_button.setProperty('mellipiSymbolicIcon', 'calendar' if enabled else 'preferences-system-time')
-        for button in self.calendar_buttons:
-            button.setVisible(not enabled)
-        self.refresh_icons()
+        (self.clock_button if enabled else self.calendar_button).setChecked(True)
+        self.import_button.setVisible(not enabled)
+        self.add_button.setVisible(not enabled)
 
     def closeEvent(self, event):
         if self.clock_page.active_alerts() and not themed_prompt(
@@ -617,7 +647,22 @@ class Calendar(AppWindow):
         direction = QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight
         if self.day_layout.direction() != direction:
             self.day_layout.setDirection(direction)
+        if narrow != self.compact_actions:
+            self.compact_actions = narrow
+            source, target = ((self.agenda_row, self.mode_row) if narrow
+                              else (self.mode_row, self.agenda_row))
+            source.removeWidget(self.add_button)
+            if narrow:
+                target.addWidget(self.add_button)
+            else:
+                target.insertWidget(0, self.add_button)
+            self.add_button.setText('New' if narrow else 'New event')
+            self.add_button.setVisible(self.pages.currentIndex() == 0)
+            self.import_button.setText('' if narrow else 'Import…')
         font_size = self.theme['font_size']
+        inset = max(10, font_size // 2 + 5)
+        self.agenda_layout.setContentsMargins(inset, inset, inset, inset)
+        self.agenda_date.setStyleSheet(f'font-size: {round(font_size * (1.22 if narrow else 1.58))}px')
         glyph = max(16, min(24, font_size + 2))
         self.clock_page.fit_display(font_size, self.height() < 380)
         for button in self.action_buttons:
@@ -627,7 +672,6 @@ class Calendar(AppWindow):
         # Give the agenda usable space inside the scrollable page, rather than
         # forcing a window taller than small or scaled displays.
         self.event_list.setMinimumHeight(font_size * 3 + 18)
-        self.empty.setMinimumHeight(font_size * 2 + 10)
 
     def refresh_all(self):
         weekend = QTextCharFormat()
@@ -672,7 +716,7 @@ class Calendar(AppWindow):
         selected = self.month.selectedDate()
         if not hasattr(self, 'agenda_date'):
             return
-        self.agenda_date.setText(selected.toString('ddd, MMM d'))
+        self.agenda_date.setText(selected.toString('dddd, MMMM d'))
         day = date(selected.year(), selected.month(), selected.day())
         rows = [instance for event in self.store.events.values() for instance in occurrences(event, day, day)]
         rows.sort(key=lambda event: (not event.all_day, event.local()[0], event.title.casefold()))
@@ -698,8 +742,11 @@ class Calendar(AppWindow):
                 item.setData(Qt.ItemDataRole.UserRole, event.key)
             item.setToolTip(f'<b>{escape(event.title)}</b><br>{escape(detail)}')
             self.event_list.addItem(item)
-        self.empty.setVisible(not rows)
+        self.agenda_caption.setText(('1 event' if len(rows) == 1 else f'{len(rows)} events') if rows
+                                    else 'Your schedule is clear.')
+        self.empty_space.setVisible(not rows)
         self.event_list.setVisible(bool(rows))
+        self.event_toolbar.setVisible(any(event.personal for event in rows))
         self.event_actions()
 
     def selected_personal(self):

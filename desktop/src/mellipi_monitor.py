@@ -189,10 +189,17 @@ class Monitor(AppWindow):
         metrics.addWidget(cpu_card, 1)
         metrics.addWidget(memory_card, 1)
         self.content.addLayout(metrics)
-        self.search = QLineEdit(placeholderText='Filter processes by name or PID')
-        self.search.setAccessibleName('Filter processes')
+        self.search = QLineEdit(placeholderText='Filter processes')
+        self.search.setAccessibleName('Filter processes by name or PID')
+        self.search.setToolTip('Filter processes by name or PID')
         self.search.textChanged.connect(self.filter_rows)
-        self.content.addWidget(self.search)
+        process_controls = QHBoxLayout()
+        self.space_controls(process_controls)
+        process_controls.addWidget(self.search, 1)
+        self.end = QPushButton('End process…', enabled=False)
+        self.end.clicked.connect(self.end_process)
+        process_controls.addWidget(self.end)
+        self.content.addLayout(process_controls)
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(['Process', 'PID', 'CPU', 'Memory'])
         self.tree.headerItem().setToolTip(2, '100% equals one fully used CPU core.')
@@ -208,15 +215,12 @@ class Monitor(AppWindow):
         self.tree.sortItems(2, Qt.SortOrder.DescendingOrder)
         self.tree.itemSelectionChanged.connect(self.update_action)
         self.content.addWidget(self.tree, 1)
-        bottom = QHBoxLayout()
         self.status = QLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
-        bottom.addWidget(self.status, 1)
-        self.end = QPushButton('End process…', enabled=False)
-        self.end.clicked.connect(self.end_process)
-        bottom.addWidget(self.end)
-        self.content.addLayout(bottom)
+        self.status.setObjectName('muted')
+        self.status.hide()
+        self.content.addWidget(self.status)
         if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
             self.end.setVisible(False)
 
@@ -409,6 +413,7 @@ class Monitor(AppWindow):
                 self.sample()
             except (OSError, ValueError, IndexError) as error:
                 self.status.setText(f'Could not end the process: {error}')
+            self.status.show()
 
 
 def main():

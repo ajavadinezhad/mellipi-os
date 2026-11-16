@@ -144,7 +144,7 @@ class RecordingLibraryTest(unittest.TestCase):
         self.assertEqual(self.newer.read_bytes(), b'new file')
         self.assertIn('changed', self.window.status.text())
 
-    def test_long_status_keeps_recording_actions_below_list_at_large_text(self):
+    def test_library_actions_remain_accessible_above_list_at_large_text(self):
         preferences = Preferences(self.root / 'appearance.json')
         preferences.apply_theme('cobalt')
         preferences.update({'highContrast': True, 'textScale': 1.5, 'density': 'extra'})
@@ -156,5 +156,7 @@ class RecordingLibraryTest(unittest.TestCase):
         for _ in range(4):
             self.app.processEvents()
         self.assertGreater(self.window.status.height(), self.window.status.fontMetrics().height())
-        self.assertFalse(self.window.library.geometry().intersects(self.window.rename_button.geometry()))
-        self.assertFalse(self.window.library.geometry().intersects(self.window.trash_button.geometry()))
+        self.assertLess(self.window.library_menu.geometry().bottom(), self.window.library.geometry().top())
+        self.assertIn(self.window.rename_button, self.window.library_menu.menu().actions())
+        self.assertIn(self.window.trash_button, self.window.library_menu.menu().actions())
+        self.assertGreater(self.window.status.geometry().top(), self.window.library.geometry().bottom())

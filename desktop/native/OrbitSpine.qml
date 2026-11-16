@@ -20,7 +20,7 @@ Item {
         ? (horizontal ? 2*home.x+home.width : 2*home.y+home.height)
         : spine.taskStart+spine.preferredTaskLength+spine.taskEndPadding+footerLength
     readonly property real bodyLength: fit ? Math.min(availableLength,Math.ceil(preferredBodyLength)) : availableLength
-    readonly property real preferredWorkspaceWidth: Math.max(40, Math.min(4,spine.spaces.length)*33+7)
+    readonly property real preferredWorkspaceWidth: Math.max(40, Math.min(4,spine.spaces.length)*33+41)
     readonly property real preferredUtilityWidth: 2*spine.utilityEdgePadding
         + footerIcons.all.length*(footerIcons.buttonWidth+footerIcons.spacing)-footerIcons.spacing
         + spine.utilityGroupGap+clockGroup.naturalWidth
@@ -142,8 +142,8 @@ Item {
     Item {
         id: workspaceColumn
         visible: !frame.appBar && frame.section!=="utilities"
-        x: frame.fixedTop ? 5 : spine.horizontal ? 60 : 8;y: spine.horizontal ? 2 : Theme.compact ? 52 : 60
-        width: spine.horizontal ? Math.max(0,Math.min(spine.width-(frame.fixedTop ? 10 : 0),Math.min(spine.spaces.length,4)*33-3)) : spine.width-16
+        x: frame.fixedTop ? 39 : spine.horizontal ? 60 : 8;y: spine.horizontal ? 2 : Theme.compact ? 52 : 60
+        width: spine.horizontal ? Math.max(0,Math.min(spine.width-(frame.fixedTop ? 44 : 0),Math.min(spine.spaces.length,4)*33-3)) : spine.width-16
         height: spine.horizontal ? frame.thickness-4 : spine.verticalSpaceHeight
 
         ListView {
@@ -208,6 +208,12 @@ Item {
             }
         }
     }
+    IconButton {
+        objectName: "spineSpaceMap";visible:frame.section==="spaces"
+        x:5;y:Math.round((spine.height-height)/2);width:30;height:30
+        iconName:"start-spaces";bare:true;phosphor:true;hint:"Open Space Map"
+        onClicked:spine.openPanel("space-map")
+    }
     Rectangle {visible: !frame.fixedTop && !frame.appBar;x: spine.horizontal ? spine.taskStart-9 : 14;y: spine.horizontal ? 16 : workspaceColumn.y+workspaceColumn.height+12;width: spine.horizontal ? 1 : 36;height: spine.horizontal ? 32 : 1;color: Theme.separator}
 
     Flow {
@@ -242,6 +248,7 @@ Item {
                 }
                 Rectangle {objectName: "spineTaskRunningIndicator_"+modelData.id;x: spine.horizontal ? (task.current ? 10 : parent.width/2-2) : 0;y: spine.horizontal ? parent.height-2 : task.current ? 9 : parent.height/2-2;width: spine.horizontal ? (task.current ? parent.width-20 : 4) : 2;height: spine.horizontal ? 2 : task.current ? 23 : 4;color: task.current ? Theme.accentInk : Theme.muted;visible: task.running}
                 Image {
+                    id: taskGlyph
                     anchors.centerIn: parent
                     width: Math.min(spine.appIconSize,parent.width-4,parent.height-4);height: width
                     source: modelData.icon ? Theme.taskbarIconSource(modelData.icon, modelData.internal===true) : ""
@@ -249,20 +256,27 @@ Item {
                     opacity: hit.pressed ? .7 : 1
                 }
                 Rectangle {
+                    objectName: "spineWindowBadge_"+modelData.id
                     visible: modelData.windows.length > 1
                     anchors.right: parent.right; anchors.top: parent.top
                     anchors.rightMargin: 3; anchors.topMargin: 2
-                    width: Math.max(14, windowCount.implicitWidth+6); height: windowCount.implicitHeight
-                    radius: Theme.corner(5); color: Theme.background
+                    // Large text should not cover the app glyph. Keep the count
+                    // in the tooltip and accessible description when the badge is a dot.
+                    readonly property bool showCount: Math.max(14,windowCount.implicitWidth+6) <= (task.width-taskGlyph.width)/2+6
+                        || windowCount.implicitHeight <= (task.height-taskGlyph.height)/2+4
+                    width: showCount ? Math.max(14,windowCount.implicitWidth+6) : 6
+                    height: showCount ? windowCount.implicitHeight : width
+                    radius: showCount ? Theme.corner(5) : width/2
+                    color: showCount ? Theme.background : Theme.accentInk
                     Text {
-                        id: windowCount; anchors.centerIn: parent
+                        id: windowCount; anchors.centerIn: parent;visible: parent.showCount
                         text: modelData.windows.length > 99 ? "99+" : modelData.windows.length.toString()
                         color: Theme.accentInk; font.pixelSize: Math.round(10*Theme.textScale)
                     }
                 }
                 MouseArea {id: hit;anchors.fill: parent;hoverEnabled: true;acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
                     onClicked: mouse => {if(mouse.button===Qt.RightButton){var p=Orbit.itemScreenPoint(task,mouse.x,mouse.y);Orbit.openDockContext(modelData.id,p.x,p.y);}else if(mouse.button===Qt.MiddleButton)Orbit.launchAnother(modelData.id);else Orbit.openTaskbarGroup(task,modelData.id); }
-                    onEntered: spine.taskTooltip(task,modelData.name)
+                    onEntered: spine.taskTooltip(task,modelData.name+(modelData.windows.length>1 ? " · "+modelData.windows.length+" windows" : ""))
                     onExited: Orbit.hideTooltip()
                 }
                 Item {

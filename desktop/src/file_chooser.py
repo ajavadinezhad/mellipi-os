@@ -146,10 +146,17 @@ class FileChooser(QFileDialog):
         # Keep the name usable first; show metadata when it has breathing room.
         widths = [metrics.horizontalAdvance(text) + 24 for text in
                   ('Document name', '32.0 MiB', 'Document', '2026-12-31 12:00')]
-        compact = view.viewport().width() < sum(widths)
+        spare = view.viewport().width() - widths[0]
+        useful = set()
+        # Modification time is the most useful clue when similarly named
+        # files are visible; keep it before spending space on type or size.
+        for column in (3, 1, 2):
+            if column < header.count() and widths[column] <= spare:
+                useful.add(column)
+                spare -= widths[column]
         for column in range(1, header.count()):
-            view.setColumnHidden(column, compact)
-            if not compact and column < len(widths):
+            view.setColumnHidden(column, column not in useful)
+            if column in useful:
                 view.setColumnWidth(column, widths[column])
         header.setStretchLastSection(False)
         if header.count():

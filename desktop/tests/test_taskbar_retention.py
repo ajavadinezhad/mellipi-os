@@ -160,6 +160,27 @@ Window {
         self.assertGreaterEqual(second.x()-first.x()-first.width(),3)
         self.assertEqual(overflow.y(),first.y())
 
+    def test_large_count_does_not_cover_app_icon(self):
+        orbit = self.fixture.property('orbit')
+        frame = self.named('orbitSpine').parentItem()
+        frame.setProperty('section', 'apps')
+        frame.setWidth(540)
+        frame.setHeight(52)
+        orbit.setProperty('appearance', dict(panelPosition='bottom', shellLayout='fold', density='extra',
+                          textScale=1.5, taskbarIconScale=150, reducedMotion=True))
+        def windows(count):
+            return [dict(id=str(i), desktop=0, active=False) for i in range(count)]
+
+        orbit.setProperty('dockApps', [dict(id='editor',name='Editor',icon='',windows=windows(105))])
+        self.app.processEvents()
+        badge = self.named('spineWindowBadge_editor')
+        self.assertTrue(badge.isVisible())
+        self.assertEqual(badge.width(), 6)
+        self.assertFalse(badge.property('showCount'))
+        orbit.setProperty('dockApps', [dict(id='editor',name='Editor',icon='',windows=windows(1))])
+        self.app.processEvents()
+        self.assertFalse(badge.isVisible())
+
     def test_top_widget_and_controls_stay_in_their_own_lanes(self):
         from PyQt6.QtQml import QQmlComponent
         from PyQt6.sip import delete

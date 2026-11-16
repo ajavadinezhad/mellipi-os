@@ -185,7 +185,6 @@ class Editor(AppWindow):
         replace_actions.addWidget(self.button('Replace all', 'edit-find-replace', self.replace_all))
         row.addWidget(self.replace_actions)
         panel.addWidget(self.replace_row)
-        self.content.addWidget(self.find_panel)
         self.find_panel.hide()
         self.line_panel = QWidget()
         line_row = QHBoxLayout(self.line_panel)
@@ -201,9 +200,12 @@ class Editor(AppWindow):
         go = self.button('Go to line', 'check', self.go_to_line, icon_only=True)
         line_row.addWidget(go)
         line_row.addWidget(self.button('Close Go to Line', 'window-close', self.hide_navigation, icon_only=True))
-        self.content.addWidget(self.line_panel)
         self.line_panel.hide()
         self.content.addWidget(self.tabs, 1)
+        # Search and Go to Line act on the current document, underneath its
+        # tab/editor so opening a tool doesn't displace the tab navigation.
+        self.content.addWidget(self.find_panel)
+        self.content.addWidget(self.line_panel)
         self.status = QLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setObjectName('muted')

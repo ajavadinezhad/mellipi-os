@@ -37,7 +37,7 @@ QtObject {
     readonly property bool exitReview: renderedPanel === "session-exit"
     readonly property int panelOverhead: 2*panelPadding+(exitReview ? 0 : panelGap+(foldStyle ? sheetHeader.implicitHeight : 30))
     readonly property bool foldPanel: foldStyle && (renderedPanel === "launcher" || renderedPanel === "overview")
-    property int panelWidth: ({launcher:workspacePanelWidth,overview:workspacePanelWidth,ai:workspacePanelWidth,settings:420,"system-settings":600,capture:520,quick:350,music:350,usage:350,notifications:380,tray:310,bluetooth:380,battery:380,screenshot:380,"window-capture":500,"window-placement":270,"session-exit":460,switcher:620})[shell.renderedPanel] || 560
+    property int panelWidth: ({launcher:workspacePanelWidth,overview:workspacePanelWidth,"space-map":workspacePanelWidth,ai:workspacePanelWidth,settings:420,"system-settings":600,capture:520,quick:350,music:350,usage:350,notifications:380,tray:310,bluetooth:380,battery:380,screenshot:380,"window-capture":500,"window-placement":270,"session-exit":460,switcher:620})[shell.renderedPanel] || 560
     readonly property bool panelRight: !foldStyle && Orbit.footerPanels.indexOf(renderedPanel)>=0
     // Keep centered overlays centered on the output while protecting both
     // sides equally. A side taskbar or either top strip stays clickable.
@@ -50,6 +50,7 @@ QtObject {
     onPanelBodyWidthChanged: queuePanelGeometry()
     onPanelBodyHeightChanged: queuePanelGeometry()
     property int panelHeight: {
+        if(shell.renderedPanel === "space-map") return 530;
         if(shell.workPanel) return Theme.compact ? 560 : 620;
         if(shell.renderedPanel === "window-capture") return 440;
         if(shell.renderedPanel === "window-placement") return (pageLoader.item ? pageLoader.item.implicitHeight : 55)+shell.panelOverhead;
@@ -72,7 +73,7 @@ QtObject {
     }
     function filteredApps() { return Orbit.launcherApps.filter(a => (!launchPinned || Orbit.appearance.pins.indexOf(a.id)>=0) && (a.name + " " + a.description).toLowerCase().includes(query.toLowerCase())); }
     function filteredWindows() { return Orbit.windows.filter(w => w.title.toLowerCase().includes(query.toLowerCase())); }
-    function title() { return ({launcher:"Applications",overview:"Windows",ai:"Intelligence",settings:"Appearance","system-settings":"System settings",capture:"New note",quick:"Quick settings",music:"Music and sound",usage:"System usage",notifications:"Notifications",tray:"Background apps",bluetooth:"Bluetooth",battery:"Battery",screenshot:"Screenshot","window-capture":"Choose a window","window-placement":"Auto-snap",switcher:"Switch windows"})[shell.renderedPanel] || "Mellipi"; }
+    function title() { return ({launcher:"Applications",overview:"Windows","space-map":"Space Map",ai:"Intelligence",settings:"Appearance","system-settings":"System settings",capture:"New note",quick:"Quick settings",music:"Music and sound",usage:"System usage",notifications:"Notifications",tray:"Background apps",bluetooth:"Bluetooth",battery:"Battery",screenshot:"Screenshot","window-capture":"Choose a window","window-placement":"Auto-snap",switcher:"Switch windows"})[shell.renderedPanel] || "Mellipi"; }
     property Timer clockTimer: Timer { interval: 60000; repeat: true; running: true; onTriggered: { shell.clockNow = new Date(); shell.hour = Qt.formatDateTime(new Date(), "hh:mm"); } }
     property Connections orbitConnections: Connections {
         target: Orbit
@@ -347,6 +348,8 @@ QtObject {
             if(visible) {
                 if(!Orbit.isWayland)requestActivate();
                 if(shell.renderedPanel==="launcher")Qt.callLater(focusLauncher);
+                else if(shell.renderedPanel==="space-map")
+                    Qt.callLater(function(){if(pageLoader.item)pageLoader.item.focusSelected();});
                 else overlayItem.forceActiveFocus();
                 shell.queuePanelGeometry();
             }
@@ -375,11 +378,14 @@ QtObject {
                 SheetChrome {anchors.fill: parent;visible: shell.foldStyle}
                 transform: Translate { id: surfaceShift }
                 enabled: !swapPanel.running
-                onEnabledChanged: if(enabled && shell.renderedPanel==="launcher")Qt.callLater(overlay.focusLauncher)
+                onEnabledChanged: {
+                    if(enabled && shell.renderedPanel==="launcher")Qt.callLater(overlay.focusLauncher);
+                    if(enabled && shell.renderedPanel==="space-map" && pageLoader.item)Qt.callLater(pageLoader.item.focusSelected);
+                }
                 MouseArea { anchors.fill: parent; onClicked: mouse => mouse.accepted=true }
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: shell.panelPadding; spacing: shell.panelGap
-                    SheetHeader {id: sheetHeader;visible: shell.foldStyle && !shell.foldPanel && !shell.exitReview;Layout.fillWidth: true;Layout.preferredHeight: implicitHeight;compact: true;dense: shell.shortOverlay;section: "MELLIPI / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel==="screenshot" ? "CAPTURE" : "CONTROLS");title: shell.title();onCloseRequested: Orbit.closePanel()}
+                    SheetHeader {id: sheetHeader;visible: shell.foldStyle && !shell.foldPanel && !shell.exitReview;Layout.fillWidth: true;Layout.preferredHeight: implicitHeight;compact: true;dense: shell.shortOverlay;section: "MELLIPI / "+(shell.renderedPanel==="notifications" ? "INBOX" : shell.renderedPanel==="screenshot" ? "CAPTURE" : shell.renderedPanel==="space-map" ? "WORKSPACES" : "CONTROLS");title: shell.title();onCloseRequested: Orbit.closePanel()}
                     RowLayout {
                         visible: !shell.foldPanel && !shell.foldStyle && !shell.exitReview
                         Layout.fillWidth: true;Layout.preferredHeight: 30
@@ -409,7 +415,8 @@ QtObject {
                         id: pageLoader; Layout.fillWidth: true; Layout.fillHeight: true;Layout.minimumHeight: 0
                         active: visible && shell.renderedPanel !== ""
                         visible: !shell.foldPanel
-                        sourceComponent: ({launcher:launcherPage,overview:overviewPage,ai:aiPage,capture:capturePage,settings:settingsPage,"system-settings":systemSettingsPage,"session-exit":sessionExitPage,quick:quickPage,music:musicPage,usage:usagePage,notifications:notificationsPage,tray:trayPage,bluetooth:bluetoothPage,battery:batteryPage,screenshot:screenshotPage,"window-capture":windowCapturePage,"window-placement":windowPlacementPage,switcher:switcherPage})[shell.renderedPanel] || null
+                        sourceComponent: ({launcher:launcherPage,overview:overviewPage,"space-map":spaceMapPage,ai:aiPage,capture:capturePage,settings:settingsPage,"system-settings":systemSettingsPage,"session-exit":sessionExitPage,quick:quickPage,music:musicPage,usage:usagePage,notifications:notificationsPage,tray:trayPage,bluetooth:bluetoothPage,battery:batteryPage,screenshot:screenshotPage,"window-capture":windowCapturePage,"window-placement":windowPlacementPage,switcher:switcherPage})[shell.renderedPanel] || null
+                        onLoaded: if(shell.renderedPanel==="space-map")Qt.callLater(item.focusSelected)
                     }
 
                 }
@@ -537,6 +544,7 @@ QtObject {
     property Component launcherComponent: Component {id:launcherPage;FoldWorkspace {}}
 
     property Component foldComponent: Component { id: foldPage;FoldWorkspace {} }
+    property Component spaceMapComponent: Component {id: spaceMapPage;SpaceMap {}}
     property Component overviewComponent: Component { id: overviewPage;WindowOverview { windows: shell.visibleWindows } }
 
     property Component captureComponent: Component {

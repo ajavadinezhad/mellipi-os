@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix='orbit-essentials-') as temp,open('/tmp/
             click('displayScalePickerToggle');click('displayScalePickerChoice'+str(index));click('displayApply')
             qa.wait(lambda:status()['display_settings'].get('pending'),5)
         scale(1) # 75%, increasing logical space in this disposable headless output.
-        click('displayApply');qa.wait(lambda:not status()['display_settings'].get('pending') and not status()['display_settings'].get('busy'),5)
+        click('displayKeep');qa.wait(lambda:not status()['display_settings'].get('pending') and not status()['display_settings'].get('busy'),5)
         assert 'scale 0.75' in (Path(temp)/'data/outputs.conf').read_text()
         print('PASS actual display Apply/Keep persists confirmed settings',flush=True)
         scale(2);click('displayRevert');qa.wait(lambda:not status()['display_settings'].get('pending') and not status()['display_settings'].get('busy'),5)

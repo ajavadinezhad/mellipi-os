@@ -83,7 +83,7 @@ def optional_service_commands(environment=None):
     if environment.get('ORBIT_NESTED'):return []
     commands=[]
     from session.assistive import permission_agent,configured_input_method
-    for command in (permission_agent(),configured_input_method(environment)):
+    for command in (permission_agent(environment),configured_input_method(environment)):
         if command:commands.append(command)
     # The native shell's IdlePolicy owns the single configurable swayidle child.
     # Starting another timer here would retain the old ten-minute policy.
@@ -104,7 +104,10 @@ def launch_optional_services(launch):
         try:
             from desktop import application_environment
             from session.assistive import service_environment
-            launch(command,environment=service_environment(command,application_environment()))
+            child_environment=service_environment(command,application_environment())
+            if name=='mellipi-auth-agent' and environment.get('ORBIT_SETTINGS_FILE'):
+                child_environment['ORBIT_SETTINGS_FILE']=environment['ORBIT_SETTINGS_FILE']
+            launch(command,environment=child_environment)
             if name in POLKIT_EXECUTABLES:polkit_running=True
         except OSError as error:
             print('Orbit: optional session service unavailable: '+str(error),file=sys.stderr,flush=True)

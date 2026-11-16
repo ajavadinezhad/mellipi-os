@@ -360,7 +360,6 @@ class PdfWindow(AppWindow):
         self.zoom_in = action('Zoom in', 'zoom-in-symbolic', lambda: self.canvas.zoom_by(1.25), self, QKeySequence.StandardKey.ZoomIn)
         self.fit = action('Fit page', 'zoom-fit-best-symbolic', lambda: self.canvas.set_zoom(None), self, 'Ctrl+0')
         self.search = action('Find in PDF', 'edit-find-symbolic', self.show_search, self, QKeySequence.StandardKey.Find)
-        self.print_button = action('Print PDF', 'document-print-symbolic', self.print_pdf, self, QKeySequence.StandardKey.Print)
         self.bookmark_button = action('Bookmarks', 'bookmark', lambda: None, self)
         self.bookmark_menu = QMenu(self.bookmark_button)
         self.bookmark_menu.aboutToShow.connect(self.show_bookmarks)
@@ -380,7 +379,19 @@ class PdfWindow(AppWindow):
         self.cancel_mark = self.markup_menu.addAction('Exit markup mode', lambda: self.set_annotation_mode(''))
         self.markup.setMenu(self.markup_menu)
         self.markup.setCheckable(True)
-        for button in (self.zoom_out, self.zoom_in, self.fit, self.search, self.bookmark_button, self.print_button, self.markup):
+        self.zoom_controls = (self.zoom_out, self.zoom_in, self.fit)
+        self.print_button = action('Print PDF', 'document-print-symbolic', self.print_pdf, self)
+        self.more = action('More PDF actions', 'open-menu', lambda: None, self)
+        more_menu = QMenu(self.more)
+        for caption, widget in zip(('Zoom out', 'Zoom in', 'Fit page'), self.zoom_controls):
+            more_menu.addAction(caption, widget.click)
+        more_menu.addSeparator()
+        self.print_action = more_menu.addAction('Print PDF…', self.print_pdf)
+        self.print_shortcut = QShortcut(QKeySequence.StandardKey.Print, self)
+        self.print_shortcut.activated.connect(self.print_pdf)
+        self.more.setMenu(more_menu)
+        for button in (*self.zoom_controls, self.search, self.bookmark_button, self.markup,
+                       self.print_button, self.more):
             self.tools.addWidget(button)
         self.tools.setAlignment(Qt.AlignmentFlag.AlignTrailing)
         self.content.addLayout(self.toolbar)
@@ -436,9 +447,19 @@ class PdfWindow(AppWindow):
         self.toolbar.setSpacing(section)
         for group in (self.navigation, self.tools):
             group.setSpacing(control)
-        required = self.navigation.sizeHint().width() + self.tools.sizeHint().width() + self.toolbar.spacing()
+        navigation_width = self.navigation.sizeHint().width()
+        common = (self.search, self.bookmark_button, self.markup)
+
+        def combined_width(buttons):
+            return (navigation_width + self.toolbar.spacing() + sum(b.sizeHint().width() for b in buttons)
+                    + (len(buttons) - 1) * control)
+
         available = self.viewport_width()
-        horizontal = required <= available
+        compact = available < combined_width((*self.zoom_controls, *common, self.print_button))
+        for widget in (*self.zoom_controls, self.print_button):
+            widget.setVisible(not compact)
+        self.more.setVisible(compact)
+        horizontal = not compact or available >= combined_width((*common, self.more))
         direction = QBoxLayout.Direction.LeftToRight if horizontal else QBoxLayout.Direction.TopToBottom
         if self.toolbar.direction() != direction:
             self.toolbar.setDirection(direction)
@@ -799,7 +820,8 @@ class PdfWindow(AppWindow):
         self.next.setEnabled(self.page < self.count)
         self.bookmark_button.setEnabled(bool(self.count and self.position_key))
         self.bookmark_shortcut.setEnabled(self.bookmark_button.isEnabled())
-        for button in (self.page_button, self.zoom_in, self.zoom_out, self.fit, self.search, self.print_button):
+        for button in (self.page_button, *self.zoom_controls, self.search, self.more, self.print_button, self.print_action,
+                       self.print_shortcut):
             button.setEnabled(bool(self.count))
         self.update_annotation_actions()
 

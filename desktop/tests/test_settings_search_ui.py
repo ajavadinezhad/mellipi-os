@@ -20,6 +20,23 @@ else:
 
 NATIVE = Path(__file__).resolve().parents[1] / 'native'
 
+class DisplayFixture(QObject):
+    changed = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.pending = False
+        self.reverted = False
+
+    state = Property('QVariantMap', lambda self: dict(pending=self.pending, busy=False,
+                                                       secondsRemaining=12), notify=changed)
+
+    @Slot()
+    def revert(self):
+        self.reverted = True
+        self.pending = False
+        self.changed.emit()
+
 
 class OrbitFixture(QObject):
     def __init__(self):
@@ -62,6 +79,8 @@ class SettingsSearchTests(unittest.TestCase):
         self.orbit = OrbitFixture()
         engine = QQmlApplicationEngine()
         engine.rootContext().setContextProperty('Orbit', self.orbit)
+        displays = DisplayFixture()
+        engine.rootContext().setContextProperty('DisplayControls', displays)
         engine.addImageProvider('icons', Icons())
         warnings = []
         engine.warnings.connect(lambda rows: warnings.extend(r.toString() for r in rows))
@@ -91,6 +110,14 @@ class SettingsSearchTests(unittest.TestCase):
             self.assertGreaterEqual(viewport.property('width'), 475)
             QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
             self.assertTrue(search.property('activeFocus'))
+            displays.pending = True
+            displays.changed.emit()
+            QTest.qWait(20)
+            confirmation = window.findChild(QObject, 'displayConfirmation')
+            revert = window.findChild(QObject, 'displayRevert')
+            self.assertTrue(confirmation.property('visible'))
+            self.assertTrue(revert.property('activeFocus'))
+            QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
             search.setProperty('text', 'brightness')
             QTest.qWait(20)
             rows = panel.property('searchResults')
@@ -98,6 +125,12 @@ class SettingsSearchTests(unittest.TestCase):
             self.assertEqual(names[0], 'Brightness')
             self.assertIn('Display brightness', names)
             self.assertNotIn('Shut down', names)
+            self.assertTrue(confirmation.property('visible'))
+            revert.forceActiveFocus()
+            QTest.keyClick(window, Qt.Key.Key_Return)
+            self.assertTrue(displays.reverted)
+            self.assertFalse(confirmation.property('visible'))
+            QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
             search.setProperty('text', 'USB recording')
             QTest.qWait(20)
             self.assertEqual(results.property('count'), 1)
@@ -123,7 +156,8 @@ class SettingsSearchTests(unittest.TestCase):
             self.assertGreaterEqual(viewport.property('width'), 620)
             self.assertLessEqual(sidebar.property('width'), 184)
             self.assertGreater(viewport.property('x'), sidebar.property('x') + sidebar.property('width'))
-            self.assertEqual(viewport.property('y'), sidebar.property('y'))
+            self.assertEqual(search.property('width'), sidebar.property('width'))
+            self.assertGreaterEqual(sidebar.property('y'), search.property('height'))
             self.assertEqual(warnings, [])
         finally:
             if window:
