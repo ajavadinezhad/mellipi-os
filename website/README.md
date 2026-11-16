@@ -11,7 +11,9 @@ Set `site-config.json` at release time:
 - `signingKeyPath`: exported public archive-key filename (informational configuration).
 - `installerPath`: setup helper path relative to `aptUrl` (currently `install-update-source.sh`).
 
-The page does not show actionable repository setup until a valid HTTPS address and full fingerprint are present. GitHub release and support links appear only after a real repository is configured. The hero illustration is HTML/CSS and is explicitly labeled as an illustration for assistive technology. The separate screenshot gallery uses actual captures from a clean private Mellipi session. Keep screenshot assets under `assets/`, in WebP format with explicit image dimensions; do not capture personal windows, notifications or user data. Stage the asset directory along with the website files.
+Repository setup is shown only when the publication config contains a valid HTTPS address and full fingerprint.
+
+The hero, app tour, and theme preview use real screenshots from a private Mellipi Wayland session. Capture all views (launcher, Files, Quick Settings, Terminal, and desktop) for every ID in `themes.json`, using identical display dimensions, taskbar layout, and contrast settings. Use sample files and keep personal windows, notifications, and user data out. Save lossless WebP images under `assets/themes/` as `<theme>-<view>.webp`. When refreshing them, update the explicit dimensions and cache revision in the HTML and JavaScript together.
 
 Serve locally with `python3 -m http.server 8765 --directory website` (configuration uses fetch, so opening as `file://` is not supported). View at 1440px, 768px and 375px widths; verify keyboard focus, copy failure feedback and reduced motion.
 

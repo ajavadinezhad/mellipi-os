@@ -32,7 +32,7 @@ nav, .github, .footer > div { font-size: .9rem; color: var(--muted); }
 .button, .copy-button { display: inline-flex; align-items: center; gap: 14px; padding: 10px 15px; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: .9rem; font-weight: 600; }
 .primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
 .meta { font-size: .8rem; }
-figure > a:first-child, .screenshot-card img { display: block; border-radius: 10px; }
+figure > a:first-child, figure img { display: block; border-radius: 10px; }
 .hero-shot img { border: 1px solid var(--line); border-radius: 12px; }
 figcaption { display: grid; gap: 3px; padding-top: 10px; font-size: .88rem; }
 .hero-shot figcaption, .shot-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; }
@@ -40,9 +40,9 @@ figcaption { display: grid; gap: 3px; padding-top: 10px; font-size: .88rem; }
 .section-heading { display: grid; gap: 12px; margin-bottom: 32px; }
 .section-heading > p:last-child { max-width: 58ch; }
 .shot-heading { margin-bottom: 14px; }
-.screenshot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 20px; }
-.wallpaper-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 18px; }
-.wallpaper-grid small { display: block; color: var(--muted); font-size: .8rem; }
+.screenshot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px 20px; }
+.theme-preview { margin-top: 18px; max-width: 740px; }
+.theme-preview img { border: 1px solid var(--line); }
 .theme-control { display: flex; align-items: center; gap: 12px; width: fit-content; }
 select, .copy-button { color: var(--ink); background: var(--surface); cursor: pointer; }
 select { font: inherit; min-height: 44px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
@@ -67,12 +67,10 @@ pre { margin: 0; padding: 12px; border-radius: 8px; background: var(--bg); white
   .wrap { width: calc(100% - 44px); }
   .hero { grid-template-columns: 1fr; }
   .hero h1 br { display: none; }
-  .wallpaper-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 530px) {
   .wrap { width: calc(100% - 32px); }
   .navigation { flex-wrap: wrap; row-gap: 10px; }
   .navigation nav { order: 3; flex-basis: 100%; }
   .screenshot-grid, .install-layout { grid-template-columns: 1fr; }
-  .wallpaper-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
