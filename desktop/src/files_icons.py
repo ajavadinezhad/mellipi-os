@@ -9,16 +9,16 @@ ASSETS = PROJECT_ROOT / 'icons/phosphor'
 ACTIONS = dict(zip(
     ('go-previous', 'go-next', 'go-up', 'document-edit', 'edit-find', 'open-menu',
      'more', 'folder-new', 'edit-copy', 'edit-cut', 'edit-paste', 'user-trash',
-     'view-reveal', 'document-open', 'package-x-generic', 'folder-download'),
+     'view-reveal', 'document-open', 'package-x-generic', 'folder-download', 'bookmark'),
     ('arrow-left', 'arrow-right', 'arrow-up', 'pencil-simple', 'magnifying-glass',
      'dots-three', 'dots-three', 'folder-plus', 'copy', 'scissors', 'clipboard',
-     'trash', 'eye', 'folder-open', 'archive', 'tray-arrow-down')))
+     'trash', 'eye', 'folder-open', 'archive', 'tray-arrow-down', 'folder-plus')))
 PLACES = {
     'user-home': ('house', '#81a9ff'), 'user-desktop': ('desktop', '#a395ff'),
     'folder-documents': ('file-text', '#79b7ff'), 'folder-download': ('download-simple', '#71c9a4'),
     'folder-pictures': ('images', '#f5a7bf'), 'drive-harddisk': ('hard-drives', '#9baac3'),
     'drive-removable-media': ('hard-drives', '#9baac3'), 'user-trash': ('trash', '#eeb48d'),
-    'folder': ('folder', '#edb35f'),
+    'folder': ('folder', '#edb35f'), 'bookmark': ('folder', '#a395ff'),
 }
 GROUPS = (
     ('file-image', '#ed90b1', 'png jpg jpeg gif svg webp heic avif bmp tiff ico'),

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import struct
 import tempfile
@@ -5,7 +6,11 @@ import unittest
 import wave
 from unittest.mock import patch
 
-from mellipi_recorder import Recording, level
+from PyQt6.QtCore import QUrl
+from PyQt6.QtMultimedia import QMediaPlayer
+from PyQt6.QtWidgets import QApplication
+
+from mellipi_recorder import Recorder, Recording, level, saved_recordings
 
 
 class RecordingTest(unittest.TestCase):
@@ -53,3 +58,74 @@ class RecordingTest(unittest.TestCase):
             with wave.open(str(record.finish()), 'rb') as wav:
                 self.assertEqual(wav.getnframes(), 2)
                 self.assertEqual(wav.readframes(8), struct.pack('<hh', 123, -456) * 2)
+
+
+class RecordingLibraryTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.older = self.make_wav('Older.wav')
+        self.newer = self.make_wav('Newer.WAV')
+        os.utime(self.older, (1000, 1000))
+        os.utime(self.newer, (1001, 1001))
+        # The library is independent of the host's sound server. Don't touch
+        # audio hardware when exercising file management and source selection.
+        devices = self.enterContext(patch('mellipi_recorder.QMediaDevices'))
+        self.enterContext(patch('mellipi_recorder.QAudioOutput'))
+        player = self.enterContext(patch('mellipi_recorder.QMediaPlayer'))
+        devices.return_value.audioInputs.return_value = []
+        player.PlaybackState = QMediaPlayer.PlaybackState
+        self.window = Recorder(self.root)
+        self.addCleanup(self.window.close)
+
+    def make_wav(self, name):
+        path = self.root / name
+        with wave.open(str(path), 'wb') as output:
+            output.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+            output.writeframes(struct.pack('<h', 100) * 80)
+        return path
+
+    def test_library_filters_non_completed_files_and_tracks_selection(self):
+        self.make_wav('.hidden.wav')
+        (self.root / '.recording.part').touch()
+        (self.root / 'directory.wav').mkdir()
+        (self.root / 'link.wav').symlink_to(self.newer)
+        self.assertEqual(saved_recordings(self.root), [self.newer, self.older])
+        self.window.refresh_library()
+        self.assertEqual(self.window.library.count(), 2)
+        self.window.library.setCurrentRow(1)
+        self.window.player.setSource.assert_called_with(QUrl.fromLocalFile(str(self.older)))
+        self.window.refresh_library()
+        self.assertEqual(self.window.selected_recording(), self.older)
+
+    def test_rename_keeps_playback_selection_and_never_overwrites(self):
+        self.window.library.setCurrentRow(0)
+        with patch('mellipi_recorder.ThemedInput.getText', return_value=('Older', True)):
+            self.window.rename_selected()
+        self.assertTrue(self.newer.exists())
+        self.assertTrue(self.older.exists())
+        self.assertEqual(self.window.selected_recording(), self.newer)
+        with patch('mellipi_recorder.ThemedInput.getText', return_value=('Interview', True)):
+            self.window.rename_selected()
+        destination = self.root / 'Interview.wav'
+        self.assertFalse(self.newer.exists())
+        self.assertTrue(destination.is_file())
+        self.assertEqual(self.window.selected_recording(), destination)
+        self.window.player.setSource.assert_called_with(QUrl.fromLocalFile(str(destination)))
+
+    def test_refused_or_unavailable_trash_does_not_delete(self):
+        self.window.library.setCurrentRow(0)
+        with patch('mellipi_recorder.themed_prompt', return_value=False), patch('mellipi_recorder.QFile') as file:
+            self.window.trash_selected()
+            file.assert_not_called()
+        with patch('mellipi_recorder.themed_prompt', return_value=True), patch('mellipi_recorder.QFile') as file:
+            file.return_value.moveToTrash.return_value = False
+            self.window.trash_selected()
+        self.assertTrue(self.newer.exists())
+        self.assertEqual(self.window.selected_recording(), self.newer)
+        self.assertIn('Could not', self.window.status.text())

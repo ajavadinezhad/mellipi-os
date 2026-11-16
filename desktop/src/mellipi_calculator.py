@@ -5,7 +5,7 @@ from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QFont, QFontMetrics, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QListWidgetItem, QMenu, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from calculator_core import CalculationError, MAX_EXPRESSION, calculate
@@ -25,7 +25,7 @@ class ExpressionField(QLineEdit):
         if typed == '=':
             self.calculator.evaluate()
             return
-        if (self.calculator.showing_result and typed and typed[0] in '0123456789.('
+        if (self.calculator.showing_result and typed and typed[0].lower() in '0123456789.(sal'
                 and not event.modifiers() & (Qt.KeyboardModifier.ControlModifier
                                              | Qt.KeyboardModifier.AltModifier
                                              | Qt.KeyboardModifier.MetaModifier)):
@@ -102,6 +102,14 @@ class Calculator(AppWindow):
         self.history_button.setCheckable(True)
         self.history_button.setToolTip('Show calculation history (Ctrl+H)')
         actions.addWidget(self.icon_button('Clear expression', 'edit-clear', self.clear), 1)
+        functions = self.icon_button('Functions', 'calculator', lambda: None)
+        menu = QMenu(functions)
+        for function, description in (
+            ('sqrt', 'Square root'), ('abs', 'Absolute value'), ('ln', 'Natural logarithm'), ('log10', 'Base-10 logarithm'),
+        ):
+            menu.addAction(f'{description} · {function}(…)', lambda _checked=False, name=function: self.insert_function(name))
+        functions.setMenu(menu)
+        actions.addWidget(functions, 1)
         actions.addWidget(self.history_button, 1)
         actions.addWidget(self.icon_button('Copy result', 'edit-copy', self.copy_result), 1)
         self.controls.addLayout(actions)
@@ -263,6 +271,21 @@ class Calculator(AppWindow):
         if self.showing_result and key not in ('÷', '×', '−', '+', '^', '%'):
             self.field.clear()
         self.field.insert(key)
+        self.edited()
+        self.field.setFocus()
+
+    def insert_function(self, name):
+        selection = self.field.selectedText()
+        if self.showing_result and not selection:
+            self.field.selectAll()
+            selection = self.field.selectedText()
+        text = f'{name}({selection})'
+        if len(self.field.text()) - len(selection) + len(text) > MAX_EXPRESSION:
+            self.feedback.setText('Expression is too long')
+            return
+        self.field.insert(text)
+        if not selection:
+            self.field.setCursorPosition(self.field.cursorPosition() - 1)
         self.edited()
         self.field.setFocus()
 

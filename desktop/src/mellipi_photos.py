@@ -10,7 +10,7 @@ os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt6.QtCore import QIODevice, QPointF, QRect, QRectF, QSaveFile, QSize, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QIODevice, QPointF, QRect, QRectF, QSaveFile, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QColor, QIcon, QImage, QImageReader, QImageWriter, QKeySequence, QPainter,
     QPainterPath, QPen, QPixmap, QShortcut, QTransform,
@@ -316,6 +316,8 @@ class PhotosWindow(AppWindow):
         self.history = []
         self.future = []
         self.revision = self.saved_revision = None
+        self.slideshow = QTimer(self, interval=3500)
+        self.slideshow.timeout.connect(self.advance_slideshow)
         toolbar = QHBoxLayout()
         toolbar.setSpacing(4)
         self.open_button = action('Open image', 'document-open-symbolic', self.choose_file, self, QKeySequence.StandardKey.Open)
@@ -325,6 +327,9 @@ class PhotosWindow(AppWindow):
         self.next = action('Next image', 'go-next-symbolic', lambda: self.move(1), self, Qt.Key.Key_Right)
         toolbar.addWidget(self.previous)
         toolbar.addWidget(self.next)
+        self.slideshow_button = action('Play slideshow', 'media-playback-start', self.toggle_slideshow, self, 'F5')
+        self.slideshow_button.setCheckable(True)
+        toolbar.addWidget(self.slideshow_button)
         toolbar.addWidget(action('Paste image', 'edit-paste', self.paste, self, QKeySequence.StandardKey.Paste))
         toolbar.addStretch()
         self.tools = [
@@ -385,7 +390,7 @@ class PhotosWindow(AppWindow):
         self.canvas.label.strokeFinished.connect(self.ink)
         self.themeChanged.connect(self.set_canvas_accent)
         self.set_canvas_accent()
-        QShortcut(QKeySequence('Escape'), self).activated.connect(lambda: self.set_mode(''))
+        QShortcut(QKeySequence('Escape'), self).activated.connect(self.escape)
         QShortcut(QKeySequence.StandardKey.Save, self).activated.connect(self.save_as)
 
         self.start_stage = self.empty_stage('Photos', 'Drop an image here or paste from the clipboard.', 'Open image…', self.choose_file)
@@ -420,6 +425,7 @@ class PhotosWindow(AppWindow):
             self.open_path(value)
 
     def open_path(self, value):
+        self.stop_slideshow()
         try:
             path = local_file(value)
             image, _size = read_photo(path)
@@ -472,11 +478,51 @@ class PhotosWindow(AppWindow):
                 slot += delta
                 continue
             if not self.confirm_leave():
-                return
+                return False
             self.index = slot
             self.display(path, image)
-            return
+            return True
         self.status.setText('No more readable images in this direction.')
+        return False
+
+    def toggle_slideshow(self, enabled):
+        if not enabled or self.dirty or not 0 <= self.index < len(self.images) - 1:
+            self.stop_slideshow()
+            return
+        if self.edit_toggle.isChecked():
+            self.edit_toggle.setChecked(False)
+            self.toggle_edit(False)
+        self.slideshow.start()
+        self.update_slideshow_button()
+
+    def stop_slideshow(self):
+        self.slideshow.stop()
+        self.update_slideshow_button()
+
+    def advance_slideshow(self):
+        if not self.slideshow.isActive():
+            return
+        if self.dirty or not self.move(1) or self.index == len(self.images) - 1:
+            self.stop_slideshow()
+
+    def update_slideshow_button(self):
+        playing = self.slideshow.isActive()
+        label = 'Stop slideshow' if playing else 'Play slideshow'
+        glyph = 'media-playback-stop' if playing else 'media-playback-start'
+        icon = symbolic_icon(glyph, self.theme['accent_ink'])
+        self.slideshow_button.setProperty('mellipiSymbolicIcon', glyph)
+        self.slideshow_button.setIcon(icon)
+        self.slideshow_button.setText(label if icon.isNull() else '')
+        self.slideshow_button.setToolTip(label)
+        self.slideshow_button.setAccessibleName(label)
+        self.slideshow_button.setChecked(playing)
+        self.slideshow_button.setEnabled(playing or (not self.dirty and 0 <= self.index < len(self.images) - 1))
+
+    def escape(self):
+        if self.slideshow.isActive():
+            self.stop_slideshow()
+        else:
+            self.set_mode('')
 
     def show_status(self):
         name = self.path.name if self.path else 'Clipboard image'
@@ -493,6 +539,8 @@ class PhotosWindow(AppWindow):
         return self.revision != self.saved_revision
 
     def toggle_edit(self, enabled):
+        if enabled:
+            self.stop_slideshow()
         self.edit_bar.setVisible(enabled)
         if not enabled:
             self.set_mode('')
@@ -522,6 +570,7 @@ class PhotosWindow(AppWindow):
             self.show_status()
 
     def commit(self, image):
+        self.stop_slideshow()
         if image.isNull():
             self.status.setText('Could not allocate the edited image.')
             return False
@@ -632,6 +681,7 @@ class PhotosWindow(AppWindow):
                 themed_prompt(self, 'Could not resize', str(error), 'OK')
 
     def paste(self):
+        self.stop_slideshow()
         mime = QApplication.clipboard().mimeData()
         if not mime or not mime.hasImage():
             self.status.setText('The clipboard has no image.')
@@ -686,10 +736,15 @@ class PhotosWindow(AppWindow):
         return result == 2 or result == QDialog.DialogCode.Accepted and self.save_as()
 
     def closeEvent(self, event):
+        self.stop_slideshow()
         if self.confirm_leave():
             event.accept()
         else:
             event.ignore()
+
+    def hideEvent(self, event):
+        self.stop_slideshow()
+        super().hideEvent(event)
 
     def copy(self):
         if not self.canvas.image.isNull():
@@ -698,6 +753,7 @@ class PhotosWindow(AppWindow):
     def update_buttons(self):
         self.previous.setEnabled(self.index > 0)
         self.next.setEnabled(0 <= self.index < len(self.images) - 1)
+        self.update_slideshow_button()
         for button in [*self.tools, self.edit_toggle, self.save_btn]:
             button.setEnabled(not self.canvas.image.isNull())
         self.undo_btn.setEnabled(bool(self.history))

@@ -1,5 +1,6 @@
 """Mellipi's Qt 6 browser chrome, running on the system Qt WebEngine."""
 import argparse
+from collections import deque
 import fcntl
 import json
 import os
@@ -211,6 +212,7 @@ class DownloadRow(QWidget):
 
 
 class Browser(AppWindow):
+    MAX_CLOSED_TABS = 16
     MAX_DOWNLOADS = 8
     MAX_DOWNLOAD_ROWS = 48
     DOWNLOAD_NOTICE = 'Download started · Ctrl+J for progress'
@@ -225,6 +227,9 @@ class Browser(AppWindow):
         self.setMinimumSize(470, 300)
         self.resize(990, 690)
         self.private = private
+        # Keep only page addresses, scoped to this window and never written to
+        # disk. In particular, private tabs cannot leak into ordinary windows.
+        self.closed_tabs = deque(maxlen=self.MAX_CLOSED_TABS)
         self.bookmarks = None
         self.profile_class, self.Page, self.Request, self.View = engine
         self.profile = self.profile_class(QApplication.instance()) if private else self.profile_class(
@@ -300,6 +305,9 @@ class Browser(AppWindow):
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.tab_switched)
+        bar = self.tabs.tabBar()
+        bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        bar.customContextMenuRequested.connect(self.show_tab_menu)
         self.pages = QStackedWidget()
         self.pages.addWidget(self.tabs)
         self.download_rows = []
@@ -331,6 +339,7 @@ class Browser(AppWindow):
         for sequence, action in (
             ('Ctrl+L', self.focus_address), ('Ctrl+T', self.add_tab),
             ('Ctrl+W', lambda: self.close_tab(self.tabs.currentIndex())),
+            ('Ctrl+Shift+T', self.reopen_tab),
             ('Ctrl+Tab', lambda: self.step_tab(1)),
             ('Ctrl+Shift+Tab', lambda: self.step_tab(-1)),
             ('Ctrl+Shift+N', self.open_private),
@@ -698,14 +707,43 @@ class Browser(AppWindow):
             self.current_action('Stop' if tab.view.page().isLoading() else 'Reload')
 
     def close_tab(self, index):
-        if index < 0:
+        tab = self.tabs.widget(index)
+        if tab is None:
             return
+        if tab.view is not None:
+            address = Bookmarks.clean_url(tab.view.url())
+            if address:
+                self.closed_tabs.append((address, index))
         if self.tabs.count() == 1:
             self.add_tab()
-        tab = self.tabs.widget(index)
         self.tabs.removeTab(index)
         tab.deleteLater()
         self.message('')
+
+    def reopen_tab(self):
+        if not self.closed_tabs:
+            self.message('No closed tabs to reopen.')
+            return
+        address, previous_index = self.closed_tabs.pop()
+        self.message('')
+        tab = self.tabs.currentWidget()
+        # Reuse the idle placeholder created when the last page was closed.
+        if self.tabs.count() == 1 and tab.view is None and not self.address.text():
+            self.open_url(tab, QUrl(address))
+        else:
+            tab = self.add_tab(QUrl(address))
+            index = self.tabs.indexOf(tab)
+            self.tabs.tabBar().moveTab(index, min(previous_index, index))
+
+    def show_tab_menu(self, position):
+        bar = self.tabs.tabBar()
+        menu = QMenu(self)
+        reopen = menu.addAction(symbolic_icon('edit-undo', self.theme['accent_ink']), 'Reopen closed tab')
+        reopen.setShortcut(QKeySequence('Ctrl+Shift+T'))
+        reopen.setEnabled(bool(self.closed_tabs))
+        reopen.triggered.connect(self.reopen_tab)
+        menu.exec(bar.mapToGlobal(position))
+        menu.deleteLater()
 
     def apply_page_theme(self):
         for index in range(self.tabs.count()):

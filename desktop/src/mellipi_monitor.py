@@ -1,4 +1,5 @@
 """Mellipi System Monitor, using Linux procfs and no persistent service."""
+from collections import deque
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -10,12 +11,17 @@ os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt6.QtCore import Qt, QEvent, QThread, QTimer
+from PyQt6.QtCore import Qt, QEvent, QPointF, QThread, QTimer
+from PyQt6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QHeaderView, QLabel,
-                             QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout)
+                             QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+                             QWidget)
 
 import icon_theme
 from qt_app import AppWindow, themed_prompt
+
+SAMPLE_SECONDS = 2
+HISTORY_SECONDS = 60
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,63 @@ def size_label(value):
         value /= 1024
 
 
+class UsageHistory:
+    """A bounded timeline in RAM; missing readings leave a gap on the chart."""
+
+    def __init__(self):
+        self.samples = deque(maxlen=HISTORY_SECONDS // SAMPLE_SECONDS + 1)
+
+    def record(self, timestamp, value):
+        while self.samples and timestamp - self.samples[0][0] > HISTORY_SECONDS:
+            self.samples.popleft()
+        self.samples.append((timestamp, value))
+
+    def lines(self):
+        if not self.samples:
+            return
+        latest = self.samples[-1][0]
+        line, previous = [], None
+        for timestamp, value in self.samples:
+            if line and (value is None or timestamp - previous > 2 * SAMPLE_SECONDS):
+                yield line
+                line = []
+            if value is not None:
+                line.append((1 - (latest - timestamp) / HISTORY_SECONDS, value / 100))
+            previous = timestamp
+        if line:
+            yield line
+
+
+class UsageTrend(QWidget):
+    def __init__(self, owner, label):
+        super().__init__()
+        self.owner = owner
+        self.history = UsageHistory()
+        self.setFixedHeight(32)
+        self.setAccessibleName(f'{label} history chart')
+        self.setAccessibleDescription('Shows up to 60 seconds of usage while System Monitor is open.')
+        self.setToolTip(f'{label} use over the last 60 seconds · 0–100%')
+        owner.themeChanged.connect(self.update)
+
+    def record(self, timestamp, value):
+        self.history.record(timestamp, value)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        width, height = max(0, self.width() - 4), self.height() - 4
+        painter.setPen(QPen(QColor(self.owner.theme['separator']), 1))
+        painter.drawLine(QPointF(2, 2 + height), QPointF(2 + width, 2 + height))
+        painter.setPen(QPen(QColor(self.owner.theme['accent_ink']), 2, cap=Qt.PenCapStyle.RoundCap))
+        for line in self.history.lines():
+            points = QPolygonF([QPointF(2 + width * x, 2 + height * (1 - y)) for x, y in line])
+            if len(points) == 1:
+                painter.drawPoint(points[0])
+            else:
+                painter.drawPolyline(points)
+
+
 class SampleJob(QThread):
     result = None
     error = ''
@@ -116,12 +179,12 @@ class Monitor(AppWindow):
         super().__init__('System Monitor')
         self.resize(690, 520)
         self.previous = self.job = None
-        self.timer = QTimer(self, interval=2000)
+        self.timer = QTimer(self, interval=SAMPLE_SECONDS * 1000)
         self.timer.timeout.connect(self.sample)
         metrics = QHBoxLayout()
         metrics.setSpacing(8)
-        cpu_card, self.cpu_value = self.metric_card('CPU', 'cpu')
-        memory_card, self.memory_value = self.metric_card('Memory', 'memory')
+        cpu_card, self.cpu_value, self.cpu_trend = self.metric_card('CPU', 'cpu')
+        memory_card, self.memory_value, self.memory_trend = self.metric_card('Memory', 'memory')
         metrics.addWidget(cpu_card, 1)
         metrics.addWidget(memory_card, 1)
         self.content.addLayout(metrics)
@@ -155,8 +218,7 @@ class Monitor(AppWindow):
         if not hasattr(os, 'pidfd_open') or not hasattr(signal, 'pidfd_send_signal'):
             self.end.setVisible(False)
 
-    @staticmethod
-    def metric_card(label, kind):
+    def metric_card(self, label, kind):
         frame = QFrame()
         frame.setObjectName(kind + 'Metric')
         layout = QVBoxLayout(frame)
@@ -170,7 +232,9 @@ class Monitor(AppWindow):
         value.setAccessibleName(label + ' usage')
         layout.addWidget(name)
         layout.addWidget(value)
-        return frame, value
+        trend = UsageTrend(self, label)
+        layout.addWidget(trend)
+        return frame, value, trend
 
     def update_columns(self):
         header = self.tree.header()
@@ -222,8 +286,12 @@ class Monitor(AppWindow):
         if not self.eligible():
             return
         if error:
+            self.previous = None
             self.cpu_value.setText('Unavailable')
             self.memory_value.setText('Unavailable')
+            now = time.monotonic()
+            self.cpu_trend.record(now, None)
+            self.memory_trend.record(now, None)
         elif result:
             self.display(result)
 
@@ -236,12 +304,14 @@ class Monitor(AppWindow):
     def display(self, sample):
         now, total, idle, mem, available, processes = sample
         previous, self.previous = self.previous, sample
-        aggregate = '—'
+        load = None
         if previous and total > previous[1]:
-            load = 100 * (1 - (idle - previous[2]) / (total - previous[1]))
-            aggregate = f'{max(0, min(100, load)):.0f}%'
-        self.cpu_value.setText(aggregate)
-        self.memory_value.setText(f'{size_label(max(0, mem - available))} / {size_label(mem)}')
+            load = max(0, min(100, 100 * (1 - (idle - previous[2]) / (total - previous[1]))))
+        self.cpu_value.setText(f'{load:.0f}%' if load is not None else '—')
+        used = max(0, mem - available)
+        self.memory_value.setText(f'{size_label(used)} / {size_label(mem)}')
+        self.cpu_trend.record(now, load)
+        self.memory_trend.record(now, min(100, 100 * used / mem) if mem > 0 else None)
         selected = self.selected_process()
         scroll = self.tree.verticalScrollBar().value()
         elapsed = (now - previous[0]) * os.sysconf('SC_CLK_TCK') if previous else 0

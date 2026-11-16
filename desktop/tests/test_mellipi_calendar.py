@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -13,6 +13,29 @@ def calendar(*events):
 
 
 class CalendarImportTests(unittest.TestCase):
+    def test_personal_events_preserve_imports_across_windows(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'events.json'
+            source = Path(tmp) / 'source.ics'
+            source.write_bytes(calendar('UID:imported\r\nDTSTART;VALUE=DATE:20261201\r\nSUMMARY:Imported'))
+            first = EventStore(path)
+            second = EventStore(path)
+            first.import_path(source)
+            day = date(2026, 12, 1)
+            meeting = second.save_personal('Morning meeting', 'Studio', day, time(9), time(10))
+            self.assertEqual(meeting.local(), (datetime(2026, 12, 1, 9), datetime(2026, 12, 1, 10)))
+            self.assertEqual(len(EventStore(path).events), 2)
+            with self.assertRaises(ValueError):
+                first.save_personal('Invalid', '', day, time(10), time(9), key=meeting.key)
+            updated = first.save_personal('Day off', '', day, key=meeting.key)
+            self.assertEqual(updated.span(), (day, day))
+            self.assertTrue(EventStore(path).events[meeting.key].personal)
+            imported_key = next(key for key, event in first.events.items() if not event.personal)
+            with self.assertRaises(ValueError):
+                second.remove_personal(imported_key)
+            second.remove_personal(meeting.key)
+            self.assertEqual(set(EventStore(path).events), {imported_key})
+
     def test_unfolded_text_timezone_and_exclusive_end(self):
         changes, recurring, skipped = parse_ics(calendar(
             'UID:all-day\r\nDTSTART;VALUE=DATE:20261201\r\nDTEND;VALUE=DATE:20261203',

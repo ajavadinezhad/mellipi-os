@@ -13,12 +13,18 @@ from urllib.parse import urlencode
 
 APT_CACHE = '/usr/bin/apt-cache'
 APT_GET = '/usr/bin/apt-get'
+APPSTREAM_CLI = '/usr/bin/appstreamcli'
 DPKG_QUERY = '/usr/bin/dpkg-query'
 FLATPAK = '/usr/bin/flatpak'
 SNAP = '/usr/bin/snap'
 PKEXEC = '/usr/bin/pkexec'
 SNAP_SOCKET = Path('/run/snapd.socket')
 SOURCES = {'apt': 'System packages', 'flatpak': 'Flatpak', 'snap': 'Snap Store'}
+BROWSE_CATEGORIES = {
+    'AudioVideo': 'Audio & video', 'Development': 'Development', 'Education': 'Education',
+    'Game': 'Games', 'Graphics': 'Graphics', 'Network': 'Internet', 'Office': 'Office',
+    'Utility': 'Utilities',
+}
 RESULT_LIMIT = 50
 APT_ID = re.compile(r'[a-z0-9][a-z0-9+.-]+')
 FLATPAK_ID = re.compile(r'[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*){2,}')
@@ -97,6 +103,46 @@ def apt_search(query):
 def refresh_apt():
     return run([PKEXEC, APT_GET, '-o', 'APT::Update::Error-Mode=any', 'update'],
                timeout=None)
+
+
+def browse_system_apps(category, query='', on_result=None):
+    """Use the local AppStream catalog; installation still goes through APT."""
+    if category not in BROWSE_CATEGORIES:
+        raise ValueError('Unknown software category.')
+    if not (executable(APPSTREAM_CLI) and executable(DPKG_QUERY) and executable(APT_CACHE)):
+        result = SourceResult(status='System app browsing requires AppStream and APT.')
+    else:
+        policy = apt_search('')
+        if policy.status != 'APT is ready.':
+            result = policy
+        else:
+            combined = run([APPSTREAM_CLI, 'list-categories', category])
+            inventory = {p.identifier.partition(':')[0]: p.version for p in apt_installed().packages}
+            packages = {}
+            words = query.casefold()
+            for entry in combined.split('\n---\n'):
+                fields = {}
+                for line in entry.splitlines():
+                    key, delimiter, value = line.partition(': ')
+                    if delimiter and key in ('Identifier', 'Name', 'Summary', 'Package'):
+                        fields.setdefault(key, value.strip())
+                identifier = fields.get('Package', '')
+                if not (fields.get('Identifier', '').endswith(' [desktop-application]')
+                        and APT_ID.fullmatch(identifier)):
+                    continue
+                name, summary = fields.get('Name') or identifier, fields.get('Summary', '')
+                if words and words not in f'{name}\n{identifier}\n{summary}'.casefold():
+                    continue
+                packages.setdefault(identifier, Package(
+                    'apt', identifier, name, summary, inventory.get(identifier, ''),
+                    installed=identifier in inventory))
+            result = SourceResult(
+                sorted(packages.values(), key=lambda p: (p.name.casefold(), p.identifier)),
+                'Browsing the local system app catalog.' if packages
+                else 'No matching apps in the local system catalog.')
+    if on_result:
+        on_result('apt', result)
+    return {'apt': result}
 
 
 def flatpak_search(query):

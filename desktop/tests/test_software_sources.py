@@ -2,7 +2,8 @@
 import unittest
 from unittest.mock import patch
 
-from software_sources import APT_CACHE, APT_GET, DPKG_QUERY, PKEXEC, apt_search, refresh_apt
+from software_sources import (APPSTREAM_CLI, APT_CACHE, APT_GET, DPKG_QUERY, PKEXEC,
+                              apt_search, browse_system_apps, refresh_apt)
 
 
 class AptFirstRunTests(unittest.TestCase):
@@ -38,6 +39,34 @@ class AptFirstRunTests(unittest.TestCase):
             [PKEXEC, APT_GET, '-o', 'APT::Update::Error-Mode=any', 'update'],
             timeout=None,
         )
+
+
+class AppCatalogTests(unittest.TestCase):
+    @patch('software_sources.executable', return_value=True)
+    @patch('software_sources.run', side_effect=[
+        'Package files:\n 500 https://example.org/ubuntu noble/universe amd64 Packages\n',
+        '\n---\n'.join([
+            'Identifier: a.desktop [desktop-application]\nName: A drawing app\nPackage: drawing',
+            'Identifier: b.desktop [desktop-application]\nName: An editor\nSummary: Draw pictures\nPackage: editor',
+            'Identifier: c.desktop [desktop-application]\nName: Duplicate editor\nPackage: editor',
+            'Identifier: flatpak.desktop [desktop-application]\nName: Draw Flatpak\nBundle: flatpak:app/test',
+            'Identifier: addon [addon]\nName: Draw Addon\nPackage: addon',
+            'Identifier: bad.desktop [desktop-application]\nName: Draw bad\nPackage: ../bad',
+            'Identifier: player.desktop [desktop-application]\nName: Music Player\nPackage: player',
+        ]),
+        'editor:amd64\tinstalled\t1.0\tImage editor\n',
+    ])
+    def test_category_shows_only_system_apps_and_filters_local_metadata(self, run, _):
+        result = browse_system_apps('Graphics', 'DRAW')['apt']
+        self.assertEqual([(p.identifier, p.installed, p.version) for p in result.packages],
+                         [('drawing', False, ''), ('editor', True, '1.0')])
+        self.assertEqual(run.call_args_list[1].args[0], [APPSTREAM_CLI, 'list-categories', 'Graphics'])
+
+    @patch('software_sources.executable', return_value=True)
+    @patch('software_sources.run', return_value='Package files:\n 100 /var/lib/dpkg/status\n')
+    def test_category_without_apt_index_offers_existing_refresh(self, run, _):
+        self.assertTrue(browse_system_apps('Office')['apt'].needs_refresh)
+        run.assert_called_once_with([APT_CACHE, 'policy'])
 
 
 class InstalledSoftwareTests(unittest.TestCase):

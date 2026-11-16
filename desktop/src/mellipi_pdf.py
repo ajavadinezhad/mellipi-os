@@ -32,6 +32,8 @@ MAX_SEARCH_PAGES = 1000
 PNG_LIMIT = 20 * 1024 * 1024
 TEXT_LIMIT = 8 * 1024 * 1024
 MAX_READING_POSITIONS = 100
+MAX_BOOKMARKS_PER_PDF = 64
+MAX_BOOKMARKS = 4096
 
 
 class ReadingPositions:
@@ -81,6 +83,33 @@ class ReadingPositions:
                 connection.execute('DELETE FROM positions WHERE document IN '
                                    '(SELECT document FROM positions ORDER BY updated DESC, document LIMIT -1 OFFSET ?)',
                                    (MAX_READING_POSITIONS,))
+            return True
+        except (OSError, sqlite3.Error):
+            return False
+
+    def bookmarks(self, key, pages):
+        try:
+            with closing(self.connect()) as connection:
+                return tuple(row[0] for row in connection.execute(
+                    'SELECT page FROM bookmarks WHERE document = ? AND page BETWEEN 1 AND ? ORDER BY page',
+                    (key, pages)))
+        except (OSError, sqlite3.Error):
+            return ()
+
+    def set_bookmark(self, key, page, enabled):
+        try:
+            with closing(self.connect()) as connection, connection:
+                connection.execute('BEGIN IMMEDIATE')
+                connection.execute('CREATE TABLE IF NOT EXISTS bookmarks '
+                                   '(document TEXT NOT NULL, page INTEGER NOT NULL, PRIMARY KEY (document, page))')
+                if not enabled:
+                    connection.execute('DELETE FROM bookmarks WHERE document = ? AND page = ?', (key, page))
+                elif not connection.execute('SELECT 1 FROM bookmarks WHERE document = ? AND page = ?', (key, page)).fetchone():
+                    if (connection.execute('SELECT COUNT(*) FROM bookmarks WHERE document = ?', (key,)).fetchone()[0]
+                            >= MAX_BOOKMARKS_PER_PDF or
+                            connection.execute('SELECT COUNT(*) FROM bookmarks').fetchone()[0] >= MAX_BOOKMARKS):
+                        return False
+                    connection.execute('INSERT INTO bookmarks VALUES (?, ?)', (key, page))
             return True
         except (OSError, sqlite3.Error):
             return False
@@ -292,6 +321,7 @@ class PdfWindow(AppWindow):
         self.match_index = -1
         self.positions = ReadingPositions()
         self.position_key = None
+        self.bookmarked_pages = ()
         self.pending_position = None
         self.position_timer = QTimer(self)
         self.position_timer.setSingleShot(True)
@@ -331,6 +361,12 @@ class PdfWindow(AppWindow):
         self.fit = action('Fit page', 'zoom-fit-best-symbolic', lambda: self.canvas.set_zoom(None), self, 'Ctrl+0')
         self.search = action('Find in PDF', 'edit-find-symbolic', self.show_search, self, QKeySequence.StandardKey.Find)
         self.print_button = action('Print PDF', 'document-print-symbolic', self.print_pdf, self, QKeySequence.StandardKey.Print)
+        self.bookmark_button = action('Bookmarks', 'bookmark', lambda: None, self)
+        self.bookmark_menu = QMenu(self.bookmark_button)
+        self.bookmark_menu.aboutToShow.connect(self.show_bookmarks)
+        self.bookmark_button.setMenu(self.bookmark_menu)
+        self.bookmark_shortcut = QShortcut(QKeySequence('Ctrl+B'), self)
+        self.bookmark_shortcut.activated.connect(self.toggle_bookmark)
         self.markup = action('PDF markup', 'document-edit-symbolic', lambda: None, self)
         self.markup_menu = QMenu(self.markup)
         self.highlight_mark = self.markup_menu.addAction('Highlight area')
@@ -344,7 +380,7 @@ class PdfWindow(AppWindow):
         self.cancel_mark = self.markup_menu.addAction('Exit markup mode', lambda: self.set_annotation_mode(''))
         self.markup.setMenu(self.markup_menu)
         self.markup.setCheckable(True)
-        for button in (self.zoom_out, self.zoom_in, self.fit, self.search, self.print_button, self.markup):
+        for button in (self.zoom_out, self.zoom_in, self.fit, self.search, self.bookmark_button, self.print_button, self.markup):
             self.tools.addWidget(button)
         self.tools.setAlignment(Qt.AlignmentFlag.AlignTrailing)
         self.content.addLayout(self.toolbar)
@@ -446,6 +482,7 @@ class PdfWindow(AppWindow):
         self.clear_matches()
         self.document = None
         self.position_key = None
+        self.bookmarked_pages = ()
         self.count = 0
         self.update_buttons()
         self.canvas.show_message('Opening PDF…')
@@ -460,6 +497,7 @@ class PdfWindow(AppWindow):
                 return
             self.document, self.count = path, int(match[1])
             self.position_key = key
+            self.bookmarked_pages = self.positions.bookmarks(key, self.count) if key else ()
             self.annotation_revision = source_revision
             self.canvas.zoom = None
             self.setWindowTitle(f'{path.name} — PDF Viewer')
@@ -653,6 +691,30 @@ class PdfWindow(AppWindow):
         if self.pending_position and self.positions.save(*self.pending_position):
             self.pending_position = None
 
+    def toggle_bookmark(self):
+        if not self.document or not self.position_key or not 1 <= self.page <= self.count:
+            return
+        pages = self.positions.bookmarks(self.position_key, self.count)
+        enabled = self.page not in pages
+        if not self.positions.set_bookmark(self.position_key, self.page, enabled):
+            self.status.setText('Could not save bookmark change. The bookmark limit or a storage error may be preventing it.')
+            return
+        self.bookmarked_pages = self.positions.bookmarks(self.position_key, self.count)
+        self.status.setText(f'Bookmark added for page {self.page}.' if enabled else f'Bookmark removed from page {self.page}.')
+
+    def show_bookmarks(self):
+        self.bookmark_menu.clear()
+        if self.position_key:
+            self.bookmarked_pages = self.positions.bookmarks(self.position_key, self.count)
+        label = 'Remove bookmark' if self.page in self.bookmarked_pages else 'Bookmark this page'
+        self.bookmark_menu.addAction(label, self.toggle_bookmark)
+        self.bookmark_menu.addSeparator()
+        if not self.bookmarked_pages:
+            self.bookmark_menu.addAction('No bookmarked pages').setEnabled(False)
+        for page in self.bookmarked_pages:
+            item = self.bookmark_menu.addAction(f'Page {page}', lambda _checked=False, page=page: self.go(page))
+            item.setEnabled(page != self.page)
+
     def choose_page(self):
         value, ok = ThemedInput.getInt(self, 'Go to page', 'Page', self.page, 1, self.count)
         if ok:
@@ -731,6 +793,8 @@ class PdfWindow(AppWindow):
         self.update_toolbar_layout()
         self.previous.setEnabled(self.page > 1 and bool(self.count))
         self.next.setEnabled(self.page < self.count)
+        self.bookmark_button.setEnabled(bool(self.count and self.position_key))
+        self.bookmark_shortcut.setEnabled(self.bookmark_button.isEnabled())
         for button in (self.page_button, self.zoom_in, self.zoom_out, self.fit, self.search, self.print_button):
             button.setEnabled(bool(self.count))
         self.update_annotation_actions()

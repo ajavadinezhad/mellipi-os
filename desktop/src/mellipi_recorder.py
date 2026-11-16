@@ -3,6 +3,7 @@ import array
 from datetime import datetime
 import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 import uuid
@@ -12,17 +13,18 @@ os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt6.QtCore import QStandardPaths, Qt, QTimer, QUrl
+from PyQt6.QtCore import QFile, QSignalBlocker, QStandardPaths, Qt, QTimer, QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtMultimedia import (QAudio, QAudioFormat, QAudioOutput, QAudioSource,
                                 QMediaDevices, QMediaPlayer)
 from PyQt6.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
-                             QLabel, QProgressBar, QPushButton, QVBoxLayout)
+                             QLabel, QListWidget, QListWidgetItem, QProgressBar,
+                             QPushButton, QVBoxLayout)
 
 import icon_theme
 from app_palette import adjust_contrast
 from file_chooser import FileChooser
-from qt_app import AppWindow, themed_prompt
+from qt_app import AppWindow, ThemedInput, themed_prompt
 
 
 RIFF_MAX_DATA_BYTES = (1 << 32) - 1 - 36
@@ -94,6 +96,24 @@ def record_format(device):
     return None
 
 
+def saved_recordings(directory):
+    """List completed regular WAVs, newest first; skip temporary audio and symlinks."""
+    rows = []
+    try:
+        for path in directory.iterdir():
+            if path.name.startswith('.') or path.suffix.lower() != '.wav':
+                continue
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISREG(info.st_mode):
+                rows.append((info.st_mtime_ns, path))
+    except FileNotFoundError:
+        return []
+    return [path for _, path in sorted(rows, reverse=True)]
+
+
 class Recorder(AppWindow):
     extra_style = """
         QFrame#captureMeter { background: %(raised)s; border-radius: %(radius)dpx; }
@@ -105,7 +125,7 @@ class Recorder(AppWindow):
 
     def __init__(self, directory=None):
         super().__init__('Sound Recorder')
-        self.resize(470, 280)
+        self.resize(490, 410)
         base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MusicLocation)
         self.directory = directory if directory is not None else (
             Path(base or (Path.home() / 'Music')) / 'Recordings')
@@ -160,12 +180,41 @@ class Recorder(AppWindow):
         actions.addWidget(self.play_button)
         actions.addWidget(self.open_button)
         self.content.addLayout(actions)
+
+        library_header = QHBoxLayout()
+        library_heading = QLabel('&Recordings')
+        library_header.addWidget(library_heading)
+        library_header.addStretch()
+        self.refresh_button = self.button('', 'view-refresh', self.refresh_library)
+        self.refresh_button.setAccessibleName('Refresh recordings')
+        self.refresh_button.setToolTip('Refresh recordings')
+        library_header.addWidget(self.refresh_button)
+        self.content.addLayout(library_header)
+        self.library = QListWidget()
+        self.library.setMinimumHeight(88)
+        self.library.setAccessibleName('Saved recordings')
+        self.library.setUniformItemSizes(True)
+        self.library.setAlternatingRowColors(True)
+        library_heading.setBuddy(self.library)
+        self.library.currentItemChanged.connect(self.select_library_item)
+        self.library.itemActivated.connect(self.play_library_item)
+        self.content.addWidget(self.library, 1)
+        self.library_empty = QLabel('New recordings appear here.')
+        self.library_empty.setObjectName('muted')
+        self.content.addWidget(self.library_empty)
+        library_actions = QHBoxLayout()
+        library_actions.addStretch()
+        self.rename_button = self.button('Rename…', 'edit', self.rename_selected)
+        self.trash_button = self.button('Move to Trash', 'trash', self.trash_selected)
+        library_actions.addWidget(self.rename_button)
+        library_actions.addWidget(self.trash_button)
+        self.content.addLayout(library_actions)
+
         self.status = QLabel()
         self.status.setObjectName('muted')
         self.status.setWordWrap(True)
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.content.addWidget(self.status)
-        self.content.addStretch()
 
         self.player = QMediaPlayer(self)
         self.player.setAudioOutput(QAudioOutput(self.player))
@@ -174,6 +223,7 @@ class Recorder(AppWindow):
         self.timer = QTimer(self, interval=100)
         self.timer.timeout.connect(self.update_meter)
         self.refresh_inputs()
+        self.refresh_library()
         if not self.inputs.count():
             self.status.setText('No microphone detected. Connect one to record.')
 
@@ -227,6 +277,11 @@ class Recorder(AppWindow):
         self.play_button.setText('Stop playback' if playing else 'Play')
         self.play_button.setProperty('mellipiSymbolicIcon', 'stop' if playing else 'play')
         self.open_button.setEnabled(not active)
+        self.library.setEnabled(not active)
+        self.refresh_button.setEnabled(not active)
+        selected = self.selected_recording()
+        self.rename_button.setEnabled(not active and selected is not None)
+        self.trash_button.setEnabled(not active and selected is not None)
         self.refresh_icons()
         self.style_capture()
 
@@ -314,7 +369,8 @@ class Recorder(AppWindow):
         else:
             if path is not None:
                 self.set_recording(path)
-                self.status.setText(f'{error} Saved to {path}' if error else f'Saved to {path}')
+                self.refresh_library()
+                self.status.setText(f'{error} Saved {path.name}' if error else f'Saved {path.name}')
             else:
                 self.status.setText(error or 'No audio was captured.')
             result = bool(path or not error)
@@ -324,15 +380,91 @@ class Recorder(AppWindow):
         return result
 
     def set_recording(self, path):
+        self.player.stop()
         self.current_file = path
-        self.player.setSource(QUrl.fromLocalFile(str(path)))
+        self.player.setSource(QUrl.fromLocalFile(str(path)) if path is not None else QUrl())
         self.update_controls()
+
+    def selected_recording(self):
+        row = self.library.currentItem()
+        return row.data(Qt.ItemDataRole.UserRole) if row else None
+
+    def refresh_library(self):
+        if self.recording is not None:
+            return
+        try:
+            paths = saved_recordings(self.directory)
+        except OSError:
+            self.library_empty.setText('Could not read the recordings folder.')
+            paths = []
+        else:
+            self.library_empty.setText('New recordings appear here.')
+        with QSignalBlocker(self.library):
+            self.library.clear()
+            for path in paths:
+                item = QListWidgetItem(path.stem, self.library)
+                item.setToolTip(path.name)
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                if path == self.current_file:
+                    self.library.setCurrentItem(item)
+        self.library_empty.setVisible(not paths)
+        self.update_controls()
+
+    def select_library_item(self):
+        if self.recording is None and (path := self.selected_recording()) is not None:
+            self.set_recording(path)
+        self.update_controls()
+
+    def play_library_item(self, item):
+        if self.recording is None:
+            path = item.data(Qt.ItemDataRole.UserRole)
+            if path != self.current_file:
+                self.set_recording(path)
+            self.player.play()
+
+    def rename_selected(self):
+        path = self.selected_recording()
+        if path is None or self.recording is not None:
+            return
+        name, accepted = ThemedInput.getText(self, 'Rename recording', 'Name', text=path.stem)
+        if not accepted:
+            return
+        name = name.strip()
+        if not name or name.startswith('.') or '/' in name or '\\' in name or any(ord(c) < 32 for c in name):
+            self.status.setText('Choose a name without slashes or control characters.')
+            return
+        destination = path.with_name(name + ('' if name.lower().endswith('.wav') else '.wav'))
+        if destination == path:
+            return
+        self.set_recording(None)
+        if not QFile(str(path)).rename(str(destination)):
+            self.set_recording(path)
+            self.status.setText('Could not rename this recording. Check the name and folder permissions.')
+            return
+        self.set_recording(destination)
+        self.refresh_library()
+        self.status.setText(f'Renamed to {destination.name}')
+
+    def trash_selected(self):
+        path = self.selected_recording()
+        if path is None or self.recording is not None:
+            return
+        if not themed_prompt(self, 'Move recording to Trash?', path.name, 'Move to Trash', 'Cancel'):
+            return
+        self.set_recording(None)
+        if not QFile(str(path)).moveToTrash():
+            self.set_recording(path)
+            self.status.setText('Could not move this recording to Trash.')
+            return
+        self.refresh_library()
+        self.status.setText(f'Moved {path.name} to Trash')
 
     def open_recording(self):
         path, _ = FileChooser.getOpenFileName(self, 'Open recording', str(self.directory),
                                               'WAV recordings (*.wav *.WAV)')
         if path:
             self.set_recording(Path(path))
+            self.refresh_library()
             if self.player.error() == QMediaPlayer.Error.NoError:
                 self.status.setText(str(path))
 

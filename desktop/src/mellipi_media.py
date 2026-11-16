@@ -11,11 +11,11 @@ import dbus
 import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
 from PyQt6.QtCore import Qt, QUrl, QSize
-from PyQt6.QtGui import QShortcut, QIcon, QKeySequence
+from PyQt6.QtGui import QActionGroup, QShortcut, QIcon, QKeySequence
 from PyQt6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import (QSizePolicy, QApplication, QHBoxLayout, QLabel,
-                             QListWidget, QListWidgetItem, QSlider, QStackedWidget,
+                             QListWidget, QListWidgetItem, QMenu, QSlider, QStackedWidget,
                              QPushButton, QToolButton, QVBoxLayout, QWidget)
 
 import icon_theme
@@ -30,6 +30,7 @@ TRACK = dbus.ObjectPath('/org/mpris/MediaPlayer2/Track/current')
 MAX_QUEUE_ITEMS = 500
 NO_TRACK = dbus.ObjectPath('/org/mpris/MediaPlayer2/TrackList/NoTrack')
 EXTS = '*.mp3 *.wav *.flac *.ogg *.opus *.aac *.m4a *.mp4 *.mkv *.webm *.mov *.avi *.mpeg *.mpg'
+REPEAT_MODES = {'None': 'Repeat off', 'Track': 'Repeat track', 'Playlist': 'Repeat queue'}
 
 
 class PlayerBus(dbus.service.Object):
@@ -50,7 +51,7 @@ class PlayerBus(dbus.service.Object):
         return dict(
             PlaybackStatus={QMediaPlayer.PlaybackState.PlayingState: 'Playing',
                             QMediaPlayer.PlaybackState.PausedState: 'Paused'}.get(player.playbackState(), 'Stopped'),
-            LoopStatus='None', Rate=1.0, Shuffle=False,
+            LoopStatus=w.repeat_mode, Rate=1.0, Shuffle=False,
             Metadata=dbus.Dictionary(metadata, signature='sv'),
             Volume=w.audio_output.volume(), Position=dbus.Int64(player.position() * 1000),
             MinimumRate=1.0, MaximumRate=1.0, CanGoNext=w.can_next(), CanGoPrevious=w.can_previous(),
@@ -79,7 +80,12 @@ class PlayerBus(dbus.service.Object):
         if interface == PLAYER and name == 'Volume':
             self.window.audio_output.setVolume(min(1.0, max(0.0, float(value))))
             return
-        if interface == PLAYER and name in ('Rate', 'Shuffle', 'LoopStatus') and value == self.values()[name]:
+        if interface == PLAYER and name == 'LoopStatus':
+            if isinstance(value, str) and value in REPEAT_MODES:
+                self.window.set_repeat(value)
+                return
+            raise dbus.DBusException('Invalid repeat mode', name='org.freedesktop.DBus.Error.InvalidArgs')
+        if interface == PLAYER and name in ('Rate', 'Shuffle') and value == self.values()[name]:
             return
         raise dbus.DBusException('Unsupported property setting', name='org.freedesktop.DBus.Error.PropertyReadOnly')
 
@@ -167,6 +173,7 @@ class Media(AppWindow):
         QLabel#mediaStageDetail { color: %(muted)s; }
         QToolButton#mediaPrimary:checked { background: %(accent)s; }
         QToolButton#mediaPrimary:hover:!checked { background: %(hover)s; }
+        QToolButton#mediaRepeat:checked { background: %(selected_surface)s; border-color: %(focus)s; }
     """
 
     def __init__(self, paths=()):
@@ -175,6 +182,7 @@ class Media(AppWindow):
         self.resize(760, 470)
         self.setMinimumSize(420, 290)
         self.path, self.queue, self.index = None, [], -1
+        self.repeat_mode = 'None'
         self.path_url = QUrl()
         self.track_number = 0
         self.bus = None
@@ -255,6 +263,22 @@ class Media(AppWindow):
         self.stop = self.tool('media-playback-stop', 'Stop', self.player.stop)
         for button in (self.previous, self.play, self.stop, self.next):
             controls.addWidget(button)
+        self.repeat_button = self.tool('view-refresh', 'Repeat off', lambda: None)
+        self.repeat_button.setObjectName('mediaRepeat')
+        self.repeat_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.repeat_button.setCheckable(True)
+        repeat_menu = QMenu(self.repeat_button)
+        repeat_group = QActionGroup(repeat_menu)
+        self.repeat_actions = {}
+        for mode, label in REPEAT_MODES.items():
+            choice = repeat_menu.addAction(label)
+            choice.setCheckable(True)
+            repeat_group.addAction(choice)
+            choice.triggered.connect(lambda _checked=False, mode=mode: self.set_repeat(mode))
+            self.repeat_actions[mode] = choice
+        self.repeat_actions[self.repeat_mode].setChecked(True)
+        self.repeat_button.setMenu(repeat_menu)
+        controls.addWidget(self.repeat_button)
         self.time = QLabel('0:00 / 0:00')
         self.time.setObjectName('mediaPosition')
         self.time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -401,6 +425,7 @@ class Media(AppWindow):
         else:
             selection = self.queue_view.currentRow()
             self.queue.extend(tracks)
+            self.sync_loops()
             self.refresh_queue(selection)
             self.update_controls()
 
@@ -446,6 +471,7 @@ class Media(AppWindow):
         if not 0 <= row < len(self.queue) or row == self.index:
             return
         self.queue.pop(row)
+        self.sync_loops()
         if row < self.index:
             self.index -= 1
         self.refresh_queue(row)
@@ -458,6 +484,7 @@ class Media(AppWindow):
         self.track_number += 1
         self.path = self.queue[index]
         self.path_url = QUrl.fromLocalFile(str(self.path))
+        self.sync_loops()
         self.player.setSource(self.path_url)
         self.player.play()
         self.refresh_queue(index)
@@ -467,14 +494,41 @@ class Media(AppWindow):
         return dbus.ObjectPath(str(TRACK) + str(self.track_number)) if self.path else NO_TRACK
 
     def can_next(self):
-        return 0 <= self.index < len(self.queue) - 1
+        return self.next_index(1) is not None
 
     def can_previous(self):
-        return self.index > 0
+        return self.next_index(-1) is not None
+
+    def next_index(self, delta):
+        total = len(self.queue)
+        if not 0 <= self.index < total:
+            return None
+        index = self.index + delta
+        if 0 <= index < total:
+            return index
+        if self.repeat_mode == 'Playlist' and total > 1:
+            return index % total
+        return None
 
     def advance(self, delta):
-        if 0 <= self.index + delta < len(self.queue):
-            self.load(self.index + delta)
+        index = self.next_index(delta)
+        if index is not None:
+            self.load(index)
+
+    def set_repeat(self, mode):
+        if mode not in REPEAT_MODES or mode == self.repeat_mode:
+            return
+        self.repeat_mode = mode
+        self.repeat_actions[mode].setChecked(True)
+        self.repeat_button.setChecked(mode != 'None')
+        self.configure_tool(self.repeat_button, 'view-refresh', REPEAT_MODES[mode])
+        self.sync_loops()
+        self.update_controls()
+
+    def sync_loops(self):
+        repeat_current = self.repeat_mode == 'Track' or (
+            self.repeat_mode == 'Playlist' and len(self.queue) == 1)
+        self.player.setLoops(QMediaPlayer.Loops.Infinite.value if repeat_current else 1)
 
     def toggle(self):
         if self.path:
@@ -536,6 +590,7 @@ class Media(AppWindow):
         self.play.setEnabled(bool(self.path))
         self.stop.setEnabled(bool(self.path and self.player.playbackState() != QMediaPlayer.PlaybackState.StoppedState))
         self.timeline.setEnabled(self.player.isSeekable())
+        self.repeat_button.setEnabled(bool(self.path))
         playable = self.player.error() == QMediaPlayer.Error.NoError
         self.stage.setCurrentWidget(self.video if playable and self.player.hasVideo() else self.summary)
         if self.path and playable:

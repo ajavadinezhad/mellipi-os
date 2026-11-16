@@ -142,6 +142,7 @@ class TerminalWindow(Gtk.Window):
         self.settings_path = Path(os.environ.get('ORBIT_SETTINGS_FILE') or
                                   Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'abstract/settings.json')
         self.preferences = Preferences(self.settings_path)
+        self.zoom_steps = 0
         self.last_appearance = None
         self.css = Gtk.CssProvider()
         Gtk.StyleContext.add_provider_for_screen(
@@ -288,7 +289,7 @@ class TerminalWindow(Gtk.Window):
         terminal.set_color_highlight(rgba(palette['accent']))
         terminal.set_color_highlight_foreground(rgba(palette['accent_text']))
         font = Pango.FontDescription('Monospace')
-        font.set_size(round(11 * prefs['textScale'] * Pango.SCALE))
+        font.set_size(round((11 + self.zoom_steps) * prefs['textScale'] * Pango.SCALE))
         terminal.set_font(font)
         pad = {'comfortable': 8, 'compact': 6, 'extra': 4}[prefs['density']]
         terminal.set_margin_start(pad)
@@ -333,6 +334,7 @@ class TerminalWindow(Gtk.Window):
         tab.pack_start(close, False, False, 0)
         terminal.connect('child-exited', lambda *_: self.remove_tab(page))
         index = self.notebook.append_page(page, tab)
+        self.notebook.set_tab_reorderable(page, True)
         tab.show_all()
         page.show_all()
         self.notebook.set_show_tabs(self.notebook.get_n_pages() > 1)
@@ -485,12 +487,23 @@ class TerminalWindow(Gtk.Window):
 
     def key_pressed(self, _window, event):
         modifiers = event.state & Gtk.accelerator_get_default_mod_mask()
-        if modifiers != Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK:
+        control = Gdk.ModifierType.CONTROL_MASK
+        shifted = control | Gdk.ModifierType.SHIFT_MASK
+        key = Gdk.keyval_to_lower(event.keyval)
+        if modifiers in (control, shifted) and key in (Gdk.KEY_Page_Up, Gdk.KEY_Page_Down):
+            return self.navigate_tabs(-1 if key == Gdk.KEY_Page_Up else 1, modifiers == shifted)
+        if modifiers in (control, shifted) and key in (Gdk.KEY_plus, Gdk.KEY_KP_Add):
+            self.set_zoom(self.zoom_steps + 1)
+            return True
+        if modifiers == control and key in (Gdk.KEY_equal, Gdk.KEY_minus, Gdk.KEY_KP_Subtract, Gdk.KEY_0, Gdk.KEY_KP_0):
+            self.set_zoom(self.zoom_steps + 1 if key == Gdk.KEY_equal else
+                          self.zoom_steps - 1 if key in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract) else 0)
+            return True
+        if modifiers != shifted:
             return False
         terminal = self.current_terminal()
         if not terminal:
             return False
-        key = Gdk.keyval_to_lower(event.keyval)
         if key == Gdk.KEY_c:
             terminal.copy_clipboard_format(Vte.Format.TEXT)
         elif key == Gdk.KEY_v:
@@ -503,6 +516,26 @@ class TerminalWindow(Gtk.Window):
             self.confirm_close(self.notebook.get_nth_page(self.notebook.get_current_page()))
         else:
             return False
+        return True
+
+    def set_zoom(self, steps):
+        steps = max(-3, min(13, steps))
+        if steps != self.zoom_steps:
+            self.zoom_steps = steps
+            for index in range(self.notebook.get_n_pages()):
+                self.style_terminal(self.notebook.get_nth_page(index).get_child())
+
+    def navigate_tabs(self, delta, reorder):
+        index = self.notebook.get_current_page()
+        count = self.notebook.get_n_pages()
+        if count < 2 or index < 0:
+            return False
+        target = index + delta
+        if reorder:
+            if 0 <= target < count:
+                self.notebook.reorder_child(self.notebook.get_nth_page(index), target)
+        else:
+            self.notebook.set_current_page(target % count)
         return True
 
     def action_image(self, name):
@@ -552,6 +585,20 @@ class TerminalWindow(Gtk.Window):
             item.set_sensitive(enabled)
             item.connect('activate', lambda _item, fn=callback: fn())
             menu.append(item)
+        menu.append(Gtk.SeparatorMenuItem())
+        zoom_item = Gtk.MenuItem(label='Text size')
+        zoom_menu = Gtk.Menu()
+        for label, shortcut, callback, enabled in (
+            ('Larger', 'Ctrl++', lambda: self.set_zoom(self.zoom_steps + 1), self.zoom_steps < 13),
+            ('Smaller', 'Ctrl+−', lambda: self.set_zoom(self.zoom_steps - 1), self.zoom_steps > -3),
+            ('Reset', 'Ctrl+0', lambda: self.set_zoom(0), bool(self.zoom_steps)),
+        ):
+            item = Gtk.MenuItem(label=f'{label}    {shortcut}')
+            item.set_sensitive(enabled)
+            item.connect('activate', lambda _item, fn=callback: fn())
+            zoom_menu.append(item)
+        zoom_item.set_submenu(zoom_menu)
+        menu.append(zoom_item)
         menu.attach_to_widget(terminal, None)
         menu.connect('selection-done', lambda item: item.destroy())
         menu.show_all()

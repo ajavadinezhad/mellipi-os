@@ -1,5 +1,6 @@
 """Mellipi's local file browser, in a normal desktop window."""
 import argparse
+from collections import Counter
 from html import escape
 import os
 import sys
@@ -12,7 +13,7 @@ os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
 from PyQt6.QtCore import (
     QDateTime, QDir, QEvent, QItemSelectionModel, QLocale, QModelIndex, QMimeData,
-    QRect, QSignalBlocker, QSize, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl, pyqtSignal,
+    QRect, QSettings, QSignalBlocker, QSize, QSortFilterProxyModel, Qt, QThread, QTimer, QUrl, pyqtSignal,
 )
 from PyQt6.QtGui import QAction, QFileSystemModel, QDesktopServices, QDrag, QFontMetrics, QIcon, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
@@ -583,6 +584,7 @@ class Files(QMainWindow):
         self.search.hide()
         self.sidebar = QVBoxLayout()
         self.places = {}
+        self.bookmark_settings = QSettings('Mellipi', 'Files')
         self.add_place('Home', Path.home())
         from gi.repository import GLib
         for key, label in ((GLib.UserDirectory.DIRECTORY_DESKTOP, 'Desktop'),
@@ -597,6 +599,13 @@ class Files(QMainWindow):
         trash.setObjectName('place')
         trash.setProperty('symbolicIcon', 'user-trash')
         self.sidebar.addWidget(trash)
+        self.bookmark_menu = QMenu(self)
+        self.bookmark_menu.aboutToShow.connect(self.render_bookmarks)
+        bookmarks = QPushButton('Bookmarks')
+        bookmarks.setObjectName('place')
+        bookmarks.setProperty('symbolicIcon', 'bookmark')
+        bookmarks.setMenu(self.bookmark_menu)
+        self.sidebar.addWidget(bookmarks)
         self.device_menu = QMenu(self)
         self.device_menu.aboutToShow.connect(self.show_devices)
         self.device_monitor = None
@@ -684,6 +693,13 @@ class Files(QMainWindow):
         menu.addSeparator()
         menu.addActions(self.archive_actions)
         menu.addSeparator()
+        bookmark = QAction('Bookmark this folder', self)
+        bookmark.setProperty('symbolicIcon', 'bookmark')
+        bookmark.setIconVisibleInMenu(True)
+        bookmark.setShortcut(QKeySequence('Ctrl+D'))
+        bookmark.triggered.connect(lambda: self.add_bookmark(self.folder))
+        self.addAction(bookmark)
+        menu.addAction(bookmark)
         menu.addAction(self.storage_action('Analyze Storage…', self.analyze_current_folder))
         menu.aboutToShow.connect(self.archive_selection_changed)
         menu_icon = QIcon.fromTheme('open-menu-symbolic', QIcon.fromTheme('open-menu'))
@@ -882,6 +898,79 @@ class Files(QMainWindow):
         button.setCheckable(True)
         self.places[path] = button
         self.sidebar.addWidget(button)
+
+    def read_bookmarks(self):
+        self.bookmark_settings.sync()
+        saved = self.bookmark_settings.value('bookmarks', {})
+        if not isinstance(saved, dict):
+            return {}
+        return {path: label for path, label in saved.items()
+                if isinstance(path, str) and Path(path).is_absolute()
+                and isinstance(label, str) and label.strip()}
+
+    def write_bookmarks(self, rows):
+        self.bookmark_settings.setValue('bookmarks', rows)
+        self.bookmark_settings.sync()
+        return self.bookmark_settings.status() == QSettings.Status.NoError
+
+    def add_bookmark(self, path):
+        path = Path(path)
+        if not path.is_dir():
+            self.statusBar().showMessage('Folder is unavailable', 5000)
+            return
+        rows = self.read_bookmarks()
+        key = str(path.absolute())
+        if key in rows:
+            self.statusBar().showMessage('Folder is already bookmarked', 3500)
+        elif len(rows) >= 32:
+            self.statusBar().showMessage('Remove a bookmark before adding another', 5000)
+        else:
+            rows[key] = path.name or '/'
+            self.statusBar().showMessage('Folder bookmarked' if self.write_bookmarks(rows)
+                                         else 'Could not save bookmarks', 3500)
+
+    def change_bookmark(self, path, label=None):
+        rows = self.read_bookmarks()
+        if path not in rows:
+            return
+        if label is None:
+            del rows[path]
+        else:
+            rows[path] = label
+        if not self.write_bookmarks(rows):
+            self.statusBar().showMessage('Could not save bookmarks', 5000)
+
+    def rename_bookmark(self, path, label):
+        new_label, accepted = ThemedInput.getText(self, 'Rename bookmark', 'Name', text=label)
+        if accepted and new_label.strip():
+            self.change_bookmark(path, new_label.strip()[:80])
+
+    def render_bookmarks(self):
+        menu = self.bookmark_menu
+        # QMenu.clear() removes the actions, but does not own its explicit submenus.
+        for submenu in menu.findChildren(QMenu, options=Qt.FindChildOption.FindDirectChildrenOnly):
+            submenu.deleteLater()
+        menu.clear()
+        menu.addAction('Bookmark this folder', lambda: self.add_bookmark(self.folder))
+        rows = self.read_bookmarks()
+        if not rows:
+            return
+        menu.addSeparator()
+        counts = Counter(rows.values())
+        organize = QMenu('Organize bookmarks', menu)
+        for path, label in sorted(rows.items(), key=lambda row: (row[1].casefold(), row[0])):
+            title = label if counts[label] == 1 else f'{label} — {Path(path).parent}'
+            title = title.replace('&', '&&')
+            action = menu.addAction(title)
+            action.setStatusTip(path)
+            action.triggered.connect(lambda _checked=False, selected=Path(path): self.navigate(selected))
+            submenu = organize.addMenu(title)
+            submenu.addAction('Rename bookmark…').triggered.connect(
+                lambda _checked=False, key=path, name=label: self.rename_bookmark(key, name))
+            submenu.addAction('Remove bookmark').triggered.connect(
+                lambda _checked=False, key=path: self.change_bookmark(key))
+        menu.addSeparator()
+        menu.addMenu(organize)
 
     def show_devices(self):
         if self.device_monitor is not None:
@@ -1178,6 +1267,7 @@ class Files(QMainWindow):
                 path = paths[0]
                 menu.addAction(self.storage_action('Analyze Folder Storage…',
                                                   lambda: self.show_storage(path), menu))
+                menu.addAction('Bookmark folder', lambda: self.add_bookmark(path))
         else:
             for action in self.actions:
                 if action.text() in ('New folder', 'Paste', 'Show or hide hidden files'):

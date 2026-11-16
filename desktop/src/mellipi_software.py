@@ -7,7 +7,7 @@ os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt6.QtCore import QSize, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtCore import QSize, QSignalBlocker, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QShortcut, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QBoxLayout, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
@@ -17,8 +17,9 @@ from PyQt6.QtWidgets import (
 
 from qt_app import AppWindow, themed_prompt
 from files_icons import icon
-from software_sources import (SOURCES, can_manage, executable, friendly_error, install,
-                              installed_software, manage, rank, refresh_apt, search, APT_GET, PKEXEC)
+from software_sources import (APPSTREAM_CLI, APT_GET, BROWSE_CATEGORIES, PKEXEC, SOURCES,
+                              browse_system_apps, can_manage, executable, friendly_error, install,
+                              installed_software, manage, rank, refresh_apt, search)
 
 
 class Job(QThread):
@@ -63,6 +64,7 @@ class SoftwareWindow(AppWindow):
         self.refreshing = False
         self.operation_notice = ''
         self.term = ''
+        self.active_category = ''
         self.installed_only = False
         self.searching = False
         self.pending_search = False
@@ -82,7 +84,7 @@ class SoftwareWindow(AppWindow):
         self.source.addItem('All sources', '')
         for key, name in SOURCES.items():
             self.source.addItem(name, key)
-        self.source.currentIndexChanged.connect(self.start_search)
+        self.source.currentIndexChanged.connect(self.change_source)
         self.search_button = QPushButton()
         self.search_button.setAccessibleName('Search software')
         self.search_button.setToolTip('Search software')
@@ -99,6 +101,15 @@ class SoftwareWindow(AppWindow):
         self.installed_button.setToolTip('View what is already installed on this computer')
         self.installed_button.toggled.connect(self.change_view)
         filters.addWidget(self.installed_button)
+        self.category = QComboBox()
+        self.category.setAccessibleName('Browse system apps by category')
+        self.category.setToolTip('Browse apps from the local system package catalog')
+        self.category.addItem('Categories', '')
+        for key, name in BROWSE_CATEGORIES.items():
+            self.category.addItem(name, key)
+        self.category.setVisible(executable(APPSTREAM_CLI))
+        self.category.currentIndexChanged.connect(self.change_category)
+        filters.addWidget(self.category)
         filters.addStretch(1)
         layout.addLayout(filters)
         self.search_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
@@ -210,14 +221,16 @@ class SoftwareWindow(AppWindow):
         self.source_layout.setDirection(direction)
         glyph = max(16, min(24, self.theme['font_size'] + 2))
         control_height = max(glyph + 14, self.query.sizeHint().height(),
-                             self.source.sizeHint().height(), self.installed_button.sizeHint().height())
-        for control in (self.query, self.source, self.installed_button):
+                             self.source.sizeHint().height(), self.installed_button.sizeHint().height(),
+                             self.category.sizeHint().height())
+        for control in (self.query, self.source, self.installed_button, self.category):
             if control.minimumHeight() != control_height:
                 control.setFixedHeight(control_height)
         for button in (self.search_button, self.refresh_button):
             button.setIconSize(QSize(glyph, glyph))
             button.setFixedSize(control_height, control_height)
-        self.suggestions.setVisible(wide and not self.term and not self.installed_only)
+        self.suggestions.setVisible(wide and not self.term and not self.installed_only
+                                    and not self.category.currentData())
         self.fit_result_columns()
 
     def set_status(self, text):
@@ -275,10 +288,35 @@ class SoftwareWindow(AppWindow):
         self.query.setText(term)
         self.start_search()
 
+    def reset_category(self):
+        with QSignalBlocker(self.category):
+            self.category.setCurrentIndex(0)
+        self.query.setPlaceholderText(
+            'Filter installed software' if self.installed_only else 'Search software')
+        self.query.setAccessibleName(self.query.placeholderText())
+
+    def change_category(self, *_):
+        if self.category.currentData():
+            with QSignalBlocker(self.source):
+                self.source.setCurrentIndex(self.source.findData('apt'))
+            self.query.clear()
+            self.query.setPlaceholderText('Filter this category')
+            self.query.setAccessibleName(self.query.placeholderText())
+        else:
+            self.reset_category()
+        self.list.clear()
+        self.start_search()
+
+    def change_source(self, *_):
+        if self.source.currentData() != 'apt':
+            self.reset_category()
+        self.list.clear()
+        self.start_search()
+
     def change_view(self, installed):
         self.installed_only = installed
-        self.query.setPlaceholderText('Filter installed software' if installed else 'Search software')
-        self.query.setAccessibleName(self.query.placeholderText())
+        self.reset_category()
+        self.category.setEnabled(not installed)
         self.list.clear()
         self.source_status.clear()
         self.refresh_button.hide()
@@ -290,18 +328,25 @@ class SoftwareWindow(AppWindow):
             if self.searching:self.pending_search = True
             return
         self.term = self.query.text().strip()
+        self.active_category = category = self.category.currentData() if not self.installed_only else ''
         source = self.source.currentData()
         sources = (source,) if source else tuple(SOURCES)
         self.fit_layout()
         if self.installed_only:
             self.set_status('Reading installed software…')
+        elif category:
+            self.set_status(f'Browsing {BROWSE_CATEGORIES[category]}…')
         elif self.term:
             self.set_status(f'Searching for “{self.term}”…')
         self.searching = True
         self.search_results = {}
         term = self.term
         operation = installed_software if self.installed_only else search
-        job = Job(lambda: operation(term, sources, job.sourceReady.emit), self)
+        def load():
+            if category:
+                return browse_system_apps(category, term)
+            return operation(term, sources, job.sourceReady.emit)
+        job = Job(load, self)
         job.sourceReady.connect(self.source_finished)
         self.job = job
         job.finished.connect(lambda: self.finish_job(self.search_finished))
@@ -327,6 +372,7 @@ class SoftwareWindow(AppWindow):
         self.search_button.setEnabled(False)
         self.source.setEnabled(False)
         self.installed_button.setEnabled(False)
+        self.category.setEnabled(False)
         self.suggestions.setEnabled(False)
         self.refresh_button.setEnabled(False)
         self.list.setEnabled(False)
@@ -342,6 +388,7 @@ class SoftwareWindow(AppWindow):
         self.search_button.setEnabled(True)
         self.source.setEnabled(True)
         self.installed_button.setEnabled(True)
+        self.category.setEnabled(not self.installed_only)
         self.suggestions.setEnabled(True)
         self.refresh_button.setEnabled(True)
         self.list.setEnabled(True)
@@ -383,12 +430,12 @@ class SoftwareWindow(AppWindow):
         needs_refresh = apt is not None and apt.needs_refresh
         refresh_available = executable(APT_GET) and executable(PKEXEC)
         self.refresh_button.setVisible(refresh_available and
-                                       (needs_refresh or (self.installed_only and
+                                       (needs_refresh or bool(self.active_category) or (self.installed_only and
                                         self.source.currentData() in ('', 'apt'))))
         self.list.clear()
         packages = (package for result in results.values() for package in result.packages)
-        ranked = rank(packages, self.term, limit=None)
-        for package in ranked[:300] if self.installed_only else ranked:
+        ranked = list(packages) if self.active_category else rank(packages, self.term, limit=None)
+        for package in ranked[:300] if self.installed_only or self.active_category else ranked:
             item = QTreeWidgetItem([package.name, package.origin,
                                     'Installed' if package.installed else 'Available'])
             for column in range(3):
@@ -401,6 +448,12 @@ class SoftwareWindow(AppWindow):
             suffix = ' · Refine the filter to see more' if len(ranked) > count else ''
             self.set_status(f'{count} of {len(ranked)} matching installed packages{suffix}'
                                 if count else 'No matching installed software.')
+            if count:
+                self.list.setCurrentItem(self.list.topLevelItem(0))
+        elif self.active_category and not needs_refresh:
+            suffix = ' · Filter to see more' if len(ranked) > count else ''
+            self.set_status(f'{count} of {len(ranked)} system apps{suffix}'
+                            if count else 'No matching apps in this category.')
             if count:
                 self.list.setCurrentItem(self.list.topLevelItem(0))
         elif count:

@@ -92,6 +92,35 @@ class PdfPositionsTests(unittest.TestCase):
             self.assertEqual(storage.get('middle', 8), 1)
             self.assertFalse(storage.save('other', 4))
 
+    @unittest.skipUnless(shutil.which('pdfinfo') and shutil.which('pdftoppm'), 'requires Poppler CLI')
+    def test_bookmarks_survive_reopen_and_navigate_without_changing_pdf(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'XDG_STATE_HOME': tmp, 'ORBIT_SETTINGS_FILE': tmp+'/settings.json'}):
+            path = Path(tmp) / 'bookmarks.pdf'
+            write_pdf(path)
+            original = path.read_bytes()
+            key = ReadingPositions.key(path)
+            first = PdfWindow(str(path))
+            try:
+                self.wait(lambda: first.pending_position == (key, 1))
+                first.go(2)
+                first.toggle_bookmark()
+                first.go(3)
+                self.wait(lambda: first.pending_position == (key, 3))
+            finally:
+                first.close()
+            reopened = PdfWindow(str(path))
+            try:
+                self.wait(lambda: reopened.pending_position == (key, 3))
+                reopened.show_bookmarks()
+                page = next(action for action in reopened.bookmark_menu.actions() if action.text() == 'Page 2')
+                page.trigger()
+                self.assertEqual(reopened.page, 2)
+                reopened.toggle_bookmark()
+                self.assertEqual(ReadingPositions().bookmarks(key, 3), ())
+                self.assertEqual(path.read_bytes(), original)
+            finally:
+                reopened.close()
+
     def test_close_after_successful_export_but_not_after_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             window = PdfWindow()

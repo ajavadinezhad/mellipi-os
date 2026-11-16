@@ -6,6 +6,7 @@ MAX_EXPRESSION = 256
 MAX_TOKENS = 128
 MAX_EXPONENT = 2000
 _NUMBER = re.compile(r'(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?')
+_FUNCTION = re.compile(r'(?:sqrt|abs|ln|log10)(?![a-z0-9_])', re.IGNORECASE)
 _NORMALIZE = str.maketrans({'−':'-', '×':'*', '·':'*', '÷':'/', '％':'%'})
 _PRECEDENCE = {'+': 10, '-': 10, '*': 20, '/': 20, '^': 40}
 
@@ -36,7 +37,11 @@ def _tokenize(expression):
             tokens.append(ch)
             cursor += 1
         else:
-            raise CalculationError('Use numbers and arithmetic symbols')
+            function = _FUNCTION.match(expression, cursor)
+            if not function:
+                raise CalculationError('Use numbers, arithmetic symbols, or a supported function')
+            tokens.append(function[0].lower())
+            cursor = function.end()
         if len(tokens) > MAX_TOKENS:
             raise CalculationError('Expression is too long')
     tokens.append('')
@@ -65,6 +70,22 @@ class _Parser:
             result = self.expression()
             if self.take() != ')':
                 raise CalculationError('Close the parentheses')
+        elif token in ('sqrt', 'abs', 'ln', 'log10'):
+            if self.take() != '(':
+                raise CalculationError('Put the function argument in parentheses')
+            value = self.expression()
+            if self.take() != ')':
+                raise CalculationError('Close the parentheses')
+            if token == 'sqrt':
+                if value < 0:
+                    raise CalculationError('Square root needs zero or a positive number')
+                result = value.sqrt()
+            elif token == 'abs':
+                result = value.copy_abs()
+            else:
+                if value <= 0:
+                    raise CalculationError('Logarithm needs a positive number')
+                result = value.ln() if token == 'ln' else value.log10()
         else:
             raise CalculationError('Expected a number')
         while True:

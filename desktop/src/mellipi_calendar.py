@@ -12,18 +12,20 @@ import re
 import stat
 import sys
 import tempfile
+import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from PyQt6.QtCore import QDate, QSize, Qt, QUrl
+from PyQt6.QtCore import QDate, QSize, QTime, Qt, QUrl
 from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QShortcut, QTextCharFormat
-from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCalendarWidget, QFrame, QHBoxLayout,
-                              QLabel, QListWidget, QListWidgetItem, QPushButton, QStackedWidget,
-                              QScrollArea, QToolButton, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QCalendarWidget, QCheckBox, QDateEdit,
+                              QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
+                              QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
+                              QStackedWidget, QScrollArea, QTimeEdit, QToolButton, QVBoxLayout, QWidget)
 
 from file_chooser import FileChooser
 from installed_launcher import user_environment
 from mellipi_clocks import ClockPage
-from qt_app import AppWindow, themed_prompt
+from qt_app import AppWindow, exec_owned_dialog, style_dialog, themed_prompt
 
 MAX_SOURCE = 2 * 1024 * 1024
 MAX_EVENTS = 2000
@@ -51,6 +53,7 @@ class Event:
     stamp: str = ''
     deleted: bool = False
     rule: str = ''
+    personal: bool = False
 
     @property
     def revision(self):
@@ -311,7 +314,8 @@ class EventStore:
                 event = Event(**row)
                 if (not re.fullmatch(r'[a-f0-9]{64}', event.key) or type(event.all_day) is not bool
                         or not isinstance(event.title, str) or len(event.title)>240
-                        or not isinstance(event.location, str) or len(event.location)>220):
+                        or not isinstance(event.location, str) or len(event.location)>220
+                        or type(event.personal) is not bool):
                     raise ValueError('Invalid saved event')
                 if (type(event.sequence) is not int or not 0 <= event.sequence <= 2147483647
                         or type(event.deleted) is not bool or not isinstance(event.stamp, str)
@@ -332,7 +336,7 @@ class EventStore:
             pass
         except (OSError, ValueError, TypeError, AttributeError, OverflowError):
             self.records.clear()
-            self.error = 'Saved events could not be read. Move the calendar data file aside before importing.'
+            self.error = 'Saved events could not be read. Move the calendar data file aside before saving changes.'
 
     @property
     def events(self):
@@ -340,6 +344,40 @@ class EventStore:
 
     def import_path(self, source):
         changes, recurring, skipped = parse_ics(read_local(source, MAX_SOURCE))
+        imported = self._locked_update(lambda: self._merge(
+            {key: event for key, event in changes.items() if not (key in self.records and self.records[key].personal)}))
+        return imported, recurring, skipped
+
+    def save_personal(self, title, location, day, start=None, end=None, *, key=None):
+        def clean(value, size):
+            return ' '.join(''.join(char for char in value if char.isprintable() or char.isspace()).split())[:size]
+        title, location = clean(title, 240), clean(location, 220)
+        if not title or not MIN_DAY <= day <= MAX_DAY:
+            raise ValueError('Enter an event title and a valid date')
+        all_day = start is None and end is None
+        if all_day:
+            start, end = day, day + timedelta(days=1)
+        elif start is None or end is None or start >= end:
+            raise ValueError('The end time must be after the start time')
+        else:
+            start, end = datetime.combine(day, start), datetime.combine(day, end)
+        def save():
+            if key is not None and (key not in self.records or not self.records[key].personal):
+                raise ValueError('This local event no longer exists')
+            event = Event(key or hashlib.sha256(uuid.uuid4().bytes).hexdigest(), title, location,
+                          start.isoformat(), end.isoformat(), all_day, personal=True)
+            self._write({**self.records, event.key: event})
+            return event
+        return self._locked_update(save)
+
+    def remove_personal(self, key):
+        def remove():
+            if key not in self.records or not self.records[key].personal:
+                raise ValueError('This local event no longer exists')
+            self._write({ident: event for ident, event in self.records.items() if ident != key})
+        self._locked_update(remove)
+
+    def _locked_update(self, operation):
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         lock_path = self.path.with_name(self.path.name+'.lock')
         descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
@@ -349,17 +387,16 @@ class EventStore:
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
-                raise ValueError('Another Calendar window is importing events. Try again shortly.') from error
+                raise ValueError('Another Calendar window is saving events. Try again shortly.') from error
             # Another Calendar instance may have saved changes since this one opened.
             current = EventStore(self.path)
             if current.error:
                 raise ValueError(current.error)
             self.records = current.records
             self.error = ''
-            imported = self._merge(changes)
+            return operation()
         finally:
             os.close(descriptor)
-        return imported, recurring, skipped
 
     def _merge(self, changes):
         updated = dict(self.records)
@@ -376,6 +413,10 @@ class EventStore:
             updated[key] = event
             if not event.deleted:
                 imported.append(event)
+        self._write(updated)
+        return imported
+
+    def _write(self, updated):
         if len(updated) > MAX_EVENTS:
             raise ValueError('The local calendar limit is 2,000 events')
         if updated != self.records:
@@ -396,7 +437,6 @@ class EventStore:
                 except FileNotFoundError:
                     pass
             self.records = updated
-        return imported
 
 
 def _qdate(day):
@@ -454,7 +494,7 @@ class Calendar(AppWindow):
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty.setObjectName('muted')
         self.status = QLabel(self.store.error or '')
-        self.status.setAccessibleName('Calendar import status')
+        self.status.setAccessibleName('Calendar status')
         self.status.setObjectName('muted')
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
@@ -472,22 +512,32 @@ class Calendar(AppWindow):
         import_button.setProperty('mellipiSymbolicIcon','document-open')
         import_button.setToolTip('Import a local iCalendar file')
         import_button.clicked.connect(self.choose_import)
+        add_button = self.event_button('New event', 'plus', self.edit_event)
+        self.edit_button = self.event_button('Edit selected event', 'edit', lambda: self.edit_event(self.selected_personal()))
+        self.delete_button = self.event_button('Delete selected event', 'trash', self.delete_event)
+        self.event_list.itemSelectionChanged.connect(self.event_actions)
+        self.event_list.itemActivated.connect(lambda _item: self.open_selected())
         self.clock_button = QPushButton('Clocks')
         self.clock_button.setToolTip('Timer, alarm and stopwatch')
         self.clock_button.setProperty('mellipiSymbolicIcon', 'preferences-system-time')
         self.clock_button.clicked.connect(lambda: self.show_clocks(self.pages.currentIndex() == 0))
         actions = QHBoxLayout()
         actions.setSpacing(8)
-        self.action_buttons = (today, import_button, self.clock_button)
+        self.action_buttons = (today, import_button, add_button, self.edit_button, self.delete_button, self.clock_button)
         actions.addWidget(self.clock_button)
         actions.addStretch(1)
         actions.addWidget(today)
         actions.addWidget(import_button)
+        actions.addWidget(add_button)
         self.content.addLayout(actions)
 
         agenda = QVBoxLayout()
         agenda.setSpacing(8)
-        agenda.addWidget(self.agenda_date)
+        date_row = QHBoxLayout()
+        date_row.addWidget(self.agenda_date, 1)
+        date_row.addWidget(self.edit_button)
+        date_row.addWidget(self.delete_button)
+        agenda.addLayout(date_row)
         agenda.addWidget(self.event_list, 1)
         agenda.addWidget(self.empty, 1)
         self.day_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight)
@@ -505,14 +555,25 @@ class Calendar(AppWindow):
         self.pages.addWidget(self.month_scroll)
         self.pages.addWidget(self.scroll_page(self.clock_page))
         self.content.addWidget(self.pages, 1)
-        self.calendar_buttons = (today, import_button)
+        self.calendar_buttons = (today, import_button, add_button)
         QShortcut(QKeySequence.StandardKey.Open, self).activated.connect(self.choose_import)
+        QShortcut(QKeySequence.StandardKey.New, self).activated.connect(
+            lambda: self.edit_event() if self.pages.currentIndex() == 0 else None)
         QShortcut(QKeySequence('Ctrl+Shift+T'), self).activated.connect(
             lambda: self.show_clocks(self.pages.currentIndex() == 0))
         self.themeChanged.connect(self.refresh_all)
         self.refresh_icons()
         self.refresh_all()
         self.month.setFocus()
+
+    @staticmethod
+    def event_button(label, icon, callback):
+        button = QPushButton()
+        button.setAccessibleName(label)
+        button.setToolTip(label)
+        button.setProperty('mellipiSymbolicIcon', icon)
+        button.clicked.connect(lambda _checked: callback())
+        return button
 
     @staticmethod
     def scroll_page(page):
@@ -629,10 +690,99 @@ class Calendar(AppWindow):
             detail = when + (' · ' + event.location if event.location else '')
             item = QListWidgetItem(f'{event.title}\n{detail}')
             item.setData(Qt.ItemDataRole.AccessibleTextRole, f'{event.title}, {detail}')
+            if event.personal:
+                item.setData(Qt.ItemDataRole.UserRole, event.key)
             item.setToolTip(f'<b>{escape(event.title)}</b><br>{escape(detail)}')
             self.event_list.addItem(item)
         self.empty.setVisible(not rows)
         self.event_list.setVisible(bool(rows))
+        self.event_actions()
+
+    def selected_personal(self):
+        item = self.event_list.currentItem()
+        if item is None or not item.isSelected():
+            return None
+        event = self.store.records.get(item.data(Qt.ItemDataRole.UserRole))
+        return event if event and event.personal else None
+
+    def event_actions(self):
+        editable = self.selected_personal() is not None
+        self.edit_button.setEnabled(editable)
+        self.delete_button.setEnabled(editable)
+
+    def open_selected(self):
+        event = self.selected_personal()
+        if event:
+            self.edit_event(event)
+
+    def edit_event(self, event=None):
+        dialog = style_dialog(QDialog(self), self)
+        dialog.setWindowTitle('Edit event' if event else 'New event')
+        layout = QFormLayout(dialog)
+        title, location = QLineEdit(), QLineEdit()
+        title.setMaxLength(240)
+        location.setMaxLength(220)
+        day = QDateEdit(self.month.selectedDate(), calendarPopup=True)
+        day.setDateRange(_qdate(MIN_DAY), _qdate(MAX_DAY))
+        all_day = QCheckBox('All day', checked=True)
+        start, end = QTimeEdit(QTime(9, 0)), QTimeEdit(QTime(10, 0))
+        time_format = 'HH:mm' if self.theme_watch.preferences.values['clock24'] else 'h:mm AP'
+        start.setDisplayFormat(time_format)
+        end.setDisplayFormat(time_format)
+        for label, control in (('&Title', title), ('&Location', location), ('&Date', day)):
+            layout.addRow(label, control)
+        layout.addRow(all_day)
+        layout.addRow('&Starts', start)
+        layout.addRow('&Ends', end)
+        if event:
+            begins, ends = event.local()
+            title.setText(event.title)
+            location.setText(event.location)
+            day.setDate(_qdate(begins if event.all_day else begins.date()))
+            all_day.setChecked(event.all_day)
+            if not event.all_day:
+                start.setTime(QTime(begins.hour, begins.minute))
+                end.setTime(QTime(ends.hour, ends.minute))
+        def enable_time(checked):
+            start.setEnabled(not checked)
+            end.setEnabled(not checked)
+        all_day.toggled.connect(enable_time)
+        enable_time(all_day.isChecked())
+        error_label = QLabel(wordWrap=True)
+        error_label.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addRow(error_label)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        layout.addRow(buttons)
+        buttons.rejected.connect(dialog.reject)
+        def save():
+            try:
+                self.store.save_personal(title.text(), location.text(), day.date().toPyDate(),
+                                         start.time().toPyTime() if not all_day.isChecked() else None,
+                                         end.time().toPyTime() if not all_day.isChecked() else None,
+                                         key=event.key if event else None)
+            except (ValueError, OSError) as error:
+                error_label.setText(str(error))
+                return
+            dialog.accept()
+            self.status.hide()
+            self.month.setSelectedDate(day.date())
+            self.refresh_all()
+        buttons.accepted.connect(save)
+        title.setFocus()
+        exec_owned_dialog(dialog)
+        dialog.deleteLater()
+
+    def delete_event(self):
+        event = self.selected_personal()
+        if not event or not themed_prompt(self, 'Delete event?', 'Remove this event from your calendar?', 'Delete event', 'Cancel'):
+            return
+        try:
+            self.store.remove_personal(event.key)
+            self.status.hide()
+        except (OSError, ValueError) as error:
+            self.status.setText(str(error))
+            self.status.show()
+        self.refresh_all()
 
     def choose_import(self):
         path, _ = FileChooser.getOpenFileName(self, 'Import calendar events', str(Path.home()),

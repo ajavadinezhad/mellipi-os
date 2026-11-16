@@ -25,3 +25,11 @@ class CalculatorTests(unittest.TestCase):
                            '('*100+'2'+')'*100, '(2+3', '2(3+4)'):
             with self.subTest(expression=expression), self.assertRaises(CalculationError):
                 calculate(expression)
+
+    def test_decimal_scientific_functions_and_invalid_domains(self):
+        self.assertEqual(calculate('sqrt(9)^2 + abs(-0.1)'), '9.1')
+        self.assertEqual(calculate('log10(1e12)+ln(1)'), '12')
+        self.assertEqual(calculate('SQRT(abs(-16))'), '4')
+        for expression in ('sqrt(-2)', 'ln(0)', 'log10(-1)', 'sqrt 9', 'sqrt()', 'sqrtish(9)'):
+            with self.subTest(expression=expression), self.assertRaises(CalculationError):
+                calculate(expression)

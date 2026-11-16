@@ -11,7 +11,7 @@ import sys
 import uuid
 
 from PyQt6.QtCore import QIODevice, QLockFile, QSaveFile, QSize, Qt, QTimer, QUrl
-from PyQt6.QtGui import QFontDatabase, QIcon, QKeySequence, QShortcut, QTextCursor
+from PyQt6.QtGui import QFontDatabase, QIcon, QKeySequence, QShortcut, QTextCursor, QTextOption
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QHBoxLayout, QLabel, QLineEdit,
     QPlainTextEdit, QPushButton, QSizePolicy, QTabWidget, QVBoxLayout, QWidget,
@@ -89,6 +89,7 @@ class Document(QPlainTextEdit):
         self.draft_pending = False
         self.setAccessibleName('Document')
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.setPlainText(text)
         self.document().setModified(False)
 
@@ -210,6 +211,11 @@ class Editor(AppWindow):
         self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         footer = QHBoxLayout()
         footer.addWidget(self.status, 1)
+        self.wrap_button = QPushButton('Wrap lines')
+        self.wrap_button.setToolTip('Wrap long lines in this tab (F10)')
+        self.wrap_button.setCheckable(True)
+        self.wrap_button.clicked.connect(self.toggle_line_wrap)
+        footer.addWidget(self.wrap_button)
         self.position = QPushButton()
         self.position.setToolTip('Go to Line (Ctrl+G)')
         self.position.clicked.connect(self.show_go_to_line)
@@ -225,6 +231,7 @@ class Editor(AppWindow):
             (QKeySequence.StandardKey.Close, lambda: self.close_tab(self.tabs.currentIndex())),
             (QKeySequence.StandardKey.Find, self.show_find), ('Ctrl+H', self.show_replace),
             ('F3', self.find_next), ('Shift+F3', self.find_previous),
+            ('F10', self.toggle_line_wrap),
             ('Ctrl+G', self.show_go_to_line), ('Escape', self.hide_navigation),
         ):
             QShortcut(QKeySequence(shortcut), self).activated.connect(handler)
@@ -393,9 +400,20 @@ class Editor(AppWindow):
             self.line_panel.hide()
         self.status.clear()
         doc = self.document()
+        self.wrap_button.setEnabled(doc is not None)
+        self.wrap_button.setChecked(bool(doc and doc.lineWrapMode() == QPlainTextEdit.LineWrapMode.WidgetWidth))
         if doc:
             self.refresh_tab(doc)
         self.update_position()
+
+    def toggle_line_wrap(self):
+        doc = self.document()
+        if doc is None:
+            return
+        wrapped = doc.lineWrapMode() == QPlainTextEdit.LineWrapMode.WidgetWidth
+        doc.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap if wrapped else QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.wrap_button.setChecked(not wrapped)
+        doc.ensureCursorVisible()
 
     def update_position(self):
         doc = self.document()

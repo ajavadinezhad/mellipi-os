@@ -1,6 +1,8 @@
 """Photo edits are reversible without writing to the original image."""
 from unittest import TestCase
 from unittest.mock import patch
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from PyQt6.QtGui import QColor, QImage
 from PyQt6.QtWidgets import QApplication
 from mellipi_photos import PhotosWindow
@@ -65,3 +67,25 @@ class PhotosHistoryTests(TestCase):
               patch.object(self.window, 'save_as', return_value=False) as save):
             self.assertFalse(self.window.confirm_leave())
             save.assert_called_once()
+
+    def test_slideshow_skips_unreadable_images_and_stops_at_end_or_on_edit(self):
+        with TemporaryDirectory() as tmp:
+            first, middle, last = (Path(tmp) / f'{name}.png' for name in ('a', 'b', 'c'))
+            self.assertTrue(photo(20, 30, 'red').save(str(first)))
+            middle.write_text('not an image')
+            self.assertTrue(photo(30, 20, 'blue').save(str(last)))
+            view = self.window
+            self.assertTrue(view.open_path(str(first)))
+            view.slideshow_button.click()
+            self.assertTrue(view.slideshow.isActive())
+            view.advance_slideshow()
+            self.assertEqual(view.path, last)
+            self.assertFalse(view.slideshow.isActive())
+            self.assertFalse(view.slideshow_button.isEnabled())
+            self.assertTrue(view.open_path(str(first)))
+            view.slideshow_button.click()
+            view.rotate()
+            self.assertTrue(view.dirty)
+            self.assertFalse(view.slideshow.isActive())
+            view.advance_slideshow()
+            self.assertEqual(view.path, first)
