@@ -6,83 +6,43 @@
   <meta name="color-scheme" content="dark light">
   <meta name="description" content="Mellipi is an independent Wayland desktop for Linux. A quieter interface, native workspace motion, and the essentials close at hand.">
   <meta name="theme-color" content="#101817">
-  <title>Mellipi — a little more room to think</title>
+  <title>Mellipi — A Wayland desktop for Linux</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <script src="theme-init.js?v=3fc0c09336ff"></script>
-  <link rel="stylesheet" href="style.css?v=8e738f102cf9">
-  <script src="site.js?v=5c442a2efc96" defer></script>
+  <link rel="stylesheet" href="style.css?v=c0c0742fe2ef">
+  <script src="site.js?v=eeae47126054" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="navigation wrap">
-  <a class="brand" href="#" aria-label="Mellipi home"><img src="favicon.svg" width="32" height="32" alt="">Mellipi<span class="badge">Early access</span></a>
-  <div class="navigation-tools"><nav aria-label="Main navigation"><a href="#experience">The desktop</a><a href="#screenshots">Screenshots</a><a href="#install">Install</a><a href="#support">Support</a><a data-repository hidden>GitHub <span aria-hidden="true">↗</span></a></nav><label class="theme-control" for="website-theme"><span>Theme</span><select id="website-theme" disabled><option value="dark">Dark</option></select></label></div>
+<header class="wrap navigation">
+  <a class="brand" href="#" aria-label="Mellipi home"><img src="favicon.svg" width="32" height="32" alt="">Mellipi</a>
+  <nav aria-label="Main navigation"><a href="#experience">Desktop</a><a href="#theme-gallery">Themes</a><a href="#install">Download</a></nav>
+  <a class="github" href="https://github.com/ajavadinezhad/mellipi-os">GitHub <span aria-hidden="true">↗</span></a>
 </header>
 <main id="main">
-<section class="hero wrap">
-  <div class="hero-copy"><p class="eyebrow">An independent Wayland desktop</p><h1>A little more<br>room to think.</h1><p class="intro">A Linux desktop with animated workspaces, a searchable launcher, and built-in apps that follow your theme.</p><div class="hero-actions"><a class="button primary" href="#install">Get Mellipi <span aria-hidden="true">↘</span></a><a class="text-link" href="#desktop-updates">What’s new <span aria-hidden="true">↓</span></a></div><p class="release-note">Published download <span data-release>0.1.20</span> · Ubuntu 24.04 · x86-64</p></div>
-  <div class="desktop-art" role="img" aria-label="Illustration of Mellipi’s compact side spine, workspace indicator and uncluttered desktop. This is a design illustration, not a screenshot.">
-    <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
-    <div class="art-spine"><img src="favicon.svg" width="27" height="27" alt=""><div class="art-spaces"><span class="active">01</span><span>02</span><span>03</span></div><div class="art-app app-files">▱</div><div class="art-app app-terminal">›_</div><div class="art-app app-settings">⊙</div><div class="spine-end"><span>◉</span><span>10:24</span></div></div>
-    <div class="art-window"><div class="window-title"><span><i></i> Your workspace</span><span>− &nbsp; □ &nbsp; ×</span></div><div class="window-content"><span class="eyebrow">Less in the way</span><h2>Find your flow.</h2><div class="art-search">⌕ <span>Apps and open windows</span><kbd>Super</kbd></div><div class="art-files"><span><b>▱</b>Files</span><span><b>›_</b>Terminal</span><span><b>⊙</b>Settings</span></div></div></div>
-    <span class="art-caption">The essentials, within reach.</span>
+<section class="wrap hero" aria-labelledby="hero-title">
+  <div class="hero-copy">
+    <p class="eyebrow">Wayland desktop for Linux</p>
+    <h1 id="hero-title">A desktop with<br> room to think.</h1>
+    <p class="intro">Find an app or window from one search, move between workspaces, and make the whole desktop feel like yours.</p>
+    <div class="actions"><a class="button primary" href="#install">Get Mellipi <span aria-hidden="true">↓</span></a><a href="#experience">Explore the desktop <span aria-hidden="true">↘</span></a></div>
+    <p class="meta">Early access · Ubuntu 24.04 · x86-64</p>
   </div>
+  <figure class="hero-shot"><a data-theme-capture="launcher" href="assets/themes/dark-launcher.webp"><img src="assets/themes/dark-launcher.webp" width="1280" height="800" fetchpriority="high" alt="Mellipi desktop with its searchable app and window launcher open"></a><figcaption><span>Apps &amp; windows launcher</span><span>View full size ↗</span></figcaption></figure>
 </section>
-<div class="facts wrap" aria-label="Project facts"><span><b>Native</b> Wayland compositor</span><span><b>APT</b> package updates</span><span><b>Built in</b> Files and Terminal</span></div>
-<section id="experience" class="section wrap">
-  <div class="section-heading"><p class="eyebrow">A quieter kind of desktop</p><h2>Small details.<br>A better everyday.</h2><p>A compact spine keeps your desktop grounded. Open a window, move between spaces, find a setting—and get back to what you were doing.</p></div>
-  <div class="feature-grid"><article><span class="feature-mark">01 / SPACE</span><h3>Movement with purpose.</h3><p>Native workspace transitions and an indicator that moves with you. Keep different tasks in different spaces without losing your place.</p></article><article><span class="feature-mark">02 / FOCUS</span><h3>One place to find things.</h3><p>Search apps and open windows together. Keep your favorites close and give the rest of your screen back to your work.</p></article><article><span class="feature-mark">03 / CHARACTER</span><h3>A desktop that feels whole.</h3><p>Coordinated themes, wallpaper, accents and lock-screen styling. Choose a compact layout and place the spine on any edge.</p></article><article><span class="feature-mark">04 / RESTRAINT</span><h3>Polish with a light footprint.</h3><p>Static theme assets and package-manager updates keep unnecessary background work out of the picture.</p></article></div>
-</section>
-<section id="screenshots" class="screenshots wrap" aria-labelledby="screenshots-title">
-  <div class="screenshot-heading"><div><p class="eyebrow">On the desktop</p><h2 id="screenshots-title">Mellipi, in use.</h2></div><p>The header changes the site palette. Real desktop captures are shown where available; see the new wallpapers below.</p></div>
+<section id="experience" class="wrap section">
+  <div class="section-heading"><p class="eyebrow">01 / Desktop</p><h2>From search to work.</h2><p>Press Super to find apps and open windows. Let new windows snap into place, then switch workspaces when you need more room.</p></div>
+  <div id="screenshots"><div id="desktop-tour" class="shot-heading"><h3>Built-in tools</h3><p id="desktop-tour-theme" class="meta">Dark theme · High contrast</p></div>
   <div class="screenshot-grid">
-    <a class="screenshot-card" data-theme-capture="appearance" href="assets/themes/dark-appearance.webp?v=lossless" target="_blank" rel="noopener" aria-label="View Appearance settings at full size"><figure><img src="assets/themes/dark-appearance.webp?v=lossless" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi desktop with the Appearance settings window open."><figcaption><span>Appearance settings</span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption></figure></a>
-    <a class="screenshot-card" data-theme-capture="launcher" href="assets/themes/dark-launcher.webp?v=lossless" target="_blank" rel="noopener" aria-label="View Apps and windows at full size"><figure><img src="assets/themes/dark-launcher.webp?v=lossless" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi desktop showing its searchable Apps and windows launcher."><figcaption><span>Apps and windows</span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption></figure></a>
-  </div>
+    <figure><a data-theme-capture="files" href="assets/themes/dark-files.webp"><img src="assets/themes/dark-files.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi desktop with Files open"></a><figcaption><strong>Files</strong><span>Browse folders, drives, and downloads in one place.</span></figcaption></figure>
+    <figure><a data-theme-capture="quick-settings" href="assets/themes/dark-quick-settings.webp"><img src="assets/themes/dark-quick-settings.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi desktop with Quick Settings open"></a><figcaption><strong>Quick Settings</strong><span>Adjust sound, connections, and power from the taskbar.</span></figcaption></figure>
+    <figure><a data-theme-capture="terminal" href="assets/themes/dark-terminal.webp"><img src="assets/themes/dark-terminal.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi desktop with Terminal open"></a><figcaption><strong>Terminal</strong><span>Work in tabs with the same palette as the desktop.</span></figcaption></figure>
+    <figure><a data-theme-capture="software" href="assets/themes/dark-software.webp"><img src="assets/themes/dark-software.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi desktop with Software open"></a><figcaption><strong>Software</strong><span>Find and install applications from your desktop.</span></figcaption></figure>
+  </div></div>
 </section>
-<section id="desktop-tour" class="screenshots wrap" aria-labelledby="desktop-tour-title">
-  <div class="screenshot-heading">
-    <h2 id="desktop-tour-title">A closer look</h2>
-    <p id="desktop-tour-theme">Dark theme · High contrast</p>
-  </div>
-  <div class="screenshot-grid">
-    <a class="screenshot-card" data-theme-capture="files" href="assets/themes/dark-files.webp?v=high-contrast" target="_blank" rel="noopener" aria-label="View Files at full size">
-      <figure>
-        <span class="tour-preview"><img src="assets/themes/dark-files.webp?v=high-contrast" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi Files showing the home folders and places sidebar."></span>
-        <figcaption><span><strong>Files</strong><small>Browse folders and drives</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
-      </figure>
-    </a>
-    <a class="screenshot-card" data-theme-capture="terminal" href="assets/themes/dark-terminal.webp?v=high-contrast" target="_blank" rel="noopener" aria-label="View Terminal at full size">
-      <figure>
-        <span class="tour-preview"><img src="assets/themes/dark-terminal.webp?v=high-contrast" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi Terminal showing a short command in the test session."></span>
-        <figcaption><span><strong>Terminal</strong><small>Run commands and open tabs</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
-      </figure>
-    </a>
-    <a class="screenshot-card" data-theme-capture="quick-settings" href="assets/themes/dark-quick-settings.webp?v=high-contrast" target="_blank" rel="noopener" aria-label="View Quick Settings at full size">
-      <figure>
-        <span class="tour-preview"><img src="assets/themes/dark-quick-settings.webp?v=high-contrast" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi Quick Settings beside the taskbar."></span>
-        <figcaption><span><strong>Quick Settings</strong><small>Reach sound and connection controls</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
-      </figure>
-    </a>
-    <a class="screenshot-card" data-theme-capture="software" href="assets/themes/dark-software.webp?v=high-contrast" target="_blank" rel="noopener" aria-label="View Mellipi Software at full size">
-      <figure>
-        <span class="tour-preview"><img src="assets/themes/dark-software.webp?v=high-contrast" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi Software showing Galculator in its search results."></span>
-        <figcaption><span><strong>Software</strong><small>Find and install apps</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
-      </figure>
-    </a>
-  </div>
-  <details class="installer-screenshot">
-    <summary>See the live installer</summary>
-    <a class="screenshot-card" href="assets/tour/installer.webp?v=lossless" target="_blank" rel="noopener" aria-label="View Live installer at full size">
-      <figure>
-        <img src="assets/tour/installer.webp?v=lossless" width="1280" height="800" loading="lazy" decoding="async" alt="The Mellipi installer welcome screen in a live session.">
-        <figcaption><span><strong>Live installer</strong><small>Preview the setup flow</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
-      </figure>
-    </a>
-  </details>
-</section>
-<section id="theme-gallery" class="screenshots wrap" aria-labelledby="theme-gallery-title">
-  <div class="screenshot-heading"><div><p class="eyebrow">Theme previews</p><h2 id="theme-gallery-title">Five new looks.</h2></div><p>Each wallpaper also appears on the lock screen. Pick a theme in the header to try its palette here.</p></div>
+<section id="theme-gallery" class="wrap section">
+  <div class="section-heading"><p class="eyebrow">02 / Appearance</p><h2>One theme, across the desktop.</h2><p>Pick a palette for the taskbar, native apps, and lock screen. Try it here, or open a wallpaper at full size.</p></div>
+  <label class="theme-control" for="website-theme"><span>Preview theme</span><select id="website-theme" disabled><option value="dark">Dark</option></select></label>
   <div class="screenshot-grid wallpaper-grid">
     <a class="screenshot-card" href="assets/wallpapers/lagoon.svg"><figure><img src="assets/wallpapers/lagoon.svg" width="1600" height="1000" loading="lazy" alt="Lagoon wallpaper"><figcaption><span><strong>Lagoon</strong><small>Ocean slate with sea-glass teal</small></span></figcaption></figure></a>
     <a class="screenshot-card" href="assets/wallpapers/saffron.svg"><figure><img src="assets/wallpapers/saffron.svg" width="1600" height="1000" loading="lazy" alt="Saffron wallpaper"><figcaption><span><strong>Saffron</strong><small>Dark espresso with golden accents</small></span></figcaption></figure></a>
@@ -91,48 +51,21 @@
     <a class="screenshot-card" href="assets/wallpapers/cobalt.svg"><figure><img src="assets/wallpapers/cobalt.svg" width="1600" height="1000" loading="lazy" alt="Cobalt wallpaper"><figcaption><span><strong>Cobalt</strong><small>Saturated blue with periwinkle</small></span></figcaption></figure></a>
   </div>
 </section>
-<section id="desktop-in-development" class="section wrap" aria-labelledby="development-title">
-  <div class="section-heading"><p class="eyebrow">In development</p><h2 id="development-title">A desktop that adapts</h2><p>These changes are in the source tree. The published ISO and signed APT builds have their own release notes.</p></div>
-  <div class="feature-grid">
-    <article><h3>Auto-snap grows with you</h3><p>Open and close windows and the grid adjusts, up to nine tiles. Turn it off whenever you want to place windows yourself.</p></article>
-    <article><h3>More room on the taskbar</h3><p>Compact Phosphor icons leave more space for open apps. Resize taskbar and desktop icons independently in Appearance.</p></article>
+<section id="install" class="wrap section">
+  <div class="section-heading"><p class="eyebrow">03 / Download</p><h2>Try Mellipi.</h2><p>Boot from a USB drive or add Mellipi to an existing Ubuntu 24.04 x86-64 system.</p></div>
+  <div class="install-layout">
+<div id="live-image" class="live-image-card" hidden aria-labelledby="live-image-title"><h3 id="live-image-title">Live USB image</h3><p id="live-image-meta"></p><a id="live-image-download" class="button primary">Download live USB image <span aria-hidden="true">↓</span></a><p id="live-image-boot" class="live-image-boot">Secure Boot must be disabled for this unsigned image.</p><div class="live-image-links"><a id="live-image-checksums">Verify SHA256 <span aria-hidden="true">↗</span></a><a id="live-image-guide">USB &amp; installation guide <span aria-hidden="true">↗</span></a></div></div><div class="install-card"><div class="card-heading"><h3>Add Mellipi with APT</h3><span class="badge">noble / amd64</span></div><p id="repository-status">Repository details are being configured. The installation guide will contain the verified address and signing key.</p><noscript><p>JavaScript fills in verified download links and powers the theme selector. See <a href="site-config.json">repository configuration</a> for the published addresses.</p></noscript><div id="repository-install" hidden><p>For a fresh minimal base, download the setup helper, inspect it, then add the signed repository and install the desktop. The signing key is scoped to Mellipi.</p><pre><code id="install-command"></code></pre><button class="copy-button" type="button" data-copy="install-command">Copy commands</button><p class="key-label">Archive signing-key fingerprint</p><code class="fingerprint" id="fingerprint"></code><p class="small">Already running Mellipi? After adding the source, use <code>sudo apt install --only-upgrade mellipi-shell</code> to update the core without adding the full desktop profile. Future updates arrive through your normal package manager.</p><a id="setup-link">View setup helper <span aria-hidden="true">↗</span></a></div><div class="download-row"><a class="button secondary" data-download hidden>Download .deb packages <span aria-hidden="true">↗</span></a><span>Release <span data-release>0.1.20</span></span></div></div>
   </div>
+  <div class="release-links" id="desktop-updates"><span id="desktop-in-development"></span><a href="https://github.com/ajavadinezhad/mellipi-os/releases/tag/v0.1.22">0.1.22 preview ISO and notes ↗</a><a href="https://github.com/ajavadinezhad/mellipi-os/releases">All releases and changes ↗</a></div>
+  <p class="meta">Mellipi is in early access. Start with a VM or test PC, and keep a recovery login available.</p>
+  <a data-guide hidden>Installation and recovery guide ↗</a>
 </section>
-<section id="desktop-updates" class="section wrap" aria-labelledby="desktop-updates-title">
-  <div class="section-heading">
-    <p class="eyebrow">0.1.22 preview</p>
-    <h2 id="desktop-updates-title">What’s new in Mellipi</h2>
-    <p>More of the everyday desktop is built in. See what’s changed, then <a href="#preview-image-title">try the live image</a>.</p>
-  </div>
-  <div class="feature-grid">
-    <article><h3>One app per job</h3><p>The ISO ships Mellipi Files, Terminal, Editor, and Browser as the defaults, without a second set of apps doing the same jobs.</p></article>
-    <article><h3>A chooser that feels at home</h3><p>Open files, save a copy, and pick folders with the same theme, shortcuts, and Phosphor icons you see in Files.</p></article>
-    <article><h3>Useful tools built in</h3><p>Find what fills a folder, check CPU and memory, record audio, set a timer, or annotate a PDF.</p></article>
-    <article><h3>Color with a purpose</h3><p>App badges and file icons help you scan. Your accent still marks selection, while high contrast keeps borders and keyboard focus visible.</p></article>
-  </div>
-  <div class="screenshot-grid preview-captures">
-    <a class="screenshot-card" href="assets/preview/bios-browser.webp" aria-label="View Mellipi Browser in the Forest theme at full size">
-      <figure><img src="assets/preview/bios-browser.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi Browser open beside the taskbar on the Forest live desktop.">
-        <figcaption><span><strong>Mellipi Browser</strong><small>Forest · BIOS live VM</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
-      </figure>
-    </a>
-    <a class="screenshot-card" href="assets/preview/uefi-secure-boot.webp" aria-label="View the Secure Boot and installer check at full size">
-      <figure><img src="assets/preview/uefi-secure-boot.webp" width="1280" height="800" loading="lazy" decoding="async" alt="Mellipi Terminal reports Secure Boot enabled, with the installer open behind it in the Forest theme.">
-        <figcaption><span><strong>Installer and Secure Boot</strong><small>Forest · UEFI live VM</small></span><span class="screenshot-expand">View full size <span aria-hidden="true">↗</span></span></figcaption>
-      </figure>
-    </a>
-  </div>
-</section>
-<section id="install" class="install-section"><div class="wrap install-layout"><div><p class="eyebrow">Make some space</p><h2 id="install-heading">Start with Linux.<br>Add Mellipi.</h2><p id="install-overview">Install the Mellipi desktop and system controls on a supported Linux base. Current packages target <strong>Ubuntu 24.04 amd64</strong> with systemd and logind.</p><p class="essential-apps">Recent builds include Mellipi Files and Terminal, plus a text editor and web browser.</p><div id="live-image" class="live-image-card" hidden aria-labelledby="live-image-title"><h3 id="live-image-title">Live USB image</h3><p id="live-image-meta"></p><a id="live-image-download" class="button primary">Download live USB image <span aria-hidden="true">↓</span></a><p id="live-image-boot" class="live-image-boot">Secure Boot must be disabled for this unsigned image.</p><div class="live-image-links"><a id="live-image-checksums">Verify SHA256 <span aria-hidden="true">↗</span></a><a id="live-image-guide">USB &amp; installation guide <span aria-hidden="true">↗</span></a></div></div><div class="live-image-card" aria-labelledby="preview-image-title">
-  <h3 id="preview-image-title">Mellipi 0.1.22 preview</h3>
-  <p>One app per job: Mellipi Files, Terminal, Editor, and Browser. Includes the themed file chooser, clearer controls, and updated installer.</p>
-  <p class="live-image-boot">Live boot tested in BIOS and UEFI with Secure Boot. A full installation has not been validated for this preview.</p>
-  <div class="live-image-links"><a href="https://github.com/ajavadinezhad/mellipi-os/releases/download/v0.1.22/mellipi-0.1.22-noble-amd64.iso">Download preview ISO <span aria-hidden="true">↓</span></a><a href="https://github.com/ajavadinezhad/mellipi-os/releases/download/v0.1.22/mellipi-0.1.22-noble-amd64.iso.sha256">Verify SHA256 <span aria-hidden="true">↗</span></a><a href="https://github.com/ajavadinezhad/mellipi-os/releases/tag/v0.1.22">Release notes and packages <span aria-hidden="true">↗</span></a></div>
-</div><p class="notice">Early-access software. Try a virtual machine or a test PC first, and keep a recovery login available. Other distributions and architectures are not yet certified.</p><a class="text-link" data-guide hidden>Read the installation and recovery guide <span aria-hidden="true">↗</span></a></div><div class="install-card"><div class="card-heading"><h3>Add Mellipi with APT</h3><span class="badge">noble / amd64</span></div><p id="repository-status">Repository details are being configured. The installation guide will contain the verified address and signing key.</p><noscript><p>JavaScript fills in verified download links and powers the theme selector. See <a href="site-config.json">repository configuration</a> for the published addresses.</p></noscript><div id="repository-install" hidden><p>For a fresh minimal base, download the setup helper, inspect it, then add the signed repository and install the desktop. The signing key is scoped to Mellipi.</p><pre><code id="install-command"></code></pre><button class="copy-button" type="button" data-copy="install-command">Copy commands</button><p class="key-label">Archive signing-key fingerprint</p><code class="fingerprint" id="fingerprint"></code><p class="small">Already running Mellipi? After adding the source, use <code>sudo apt install --only-upgrade mellipi-shell</code> to update the core without adding the full desktop profile. Future updates arrive through your normal package manager.</p><a id="setup-link">View setup helper <span aria-hidden="true">↗</span></a></div><div class="download-row"><a class="button secondary" data-download hidden>Download .deb packages <span aria-hidden="true">↗</span></a><span>Release <span data-release>0.1.20</span></span></div></div></div></section>
-<section id="support" class="section wrap support-layout"><div><p class="eyebrow">Still taking shape</p><h2>A desktop worth<br>building together.</h2><p>Found an awkward interaction or a hardware issue? A useful report includes your Mellipi version, Linux version, graphics hardware and the steps to reproduce it. Leave passwords and personal information out of logs.</p><div class="hero-actions"><a class="button secondary" data-issues hidden>Report an issue <span aria-hidden="true">↗</span></a><a class="text-link" data-repository hidden>Explore Mellipi OS on GitHub <span aria-hidden="true">↗</span></a></div></div><aside class="support-note"><span class="feature-mark">WHAT’S READY</span><p>Packaged installation, a real login session, system controls and a native compositor.</p><span class="feature-mark">WHAT’S NEXT</span><p>Wider hardware coverage and more testing across everyday workflows. Support for other Linux bases follows validation.</p></aside></section>
 </main>
-<footer class="wrap"><a class="brand" href="#"><img src="favicon.svg" width="26" height="26" alt="">Mellipi</a><p>Space for what matters.</p><a class="source-link" data-sources href="sources/0.1.20/manifest.json">Source archives &amp; notices</a><a href="#main">Back to top ↑</a></footer>
-<div class="sr-only" id="theme-status" role="status" aria-live="polite"></div>
-<div class="sr-only" id="copy-status" role="status" aria-live="polite"></div>
+<footer id="support" class="wrap footer">
+  <a class="brand" href="#"><img src="favicon.svg" width="26" height="26" alt="">Mellipi</a>
+  <div><a href="https://github.com/ajavadinezhad/mellipi-os/issues">Report an issue ↗</a><a href="https://github.com/ajavadinezhad/mellipi-os">Source on GitHub ↗</a><a data-sources href="sources/0.1.20/manifest.json">Source archives &amp; notices</a></div>
+</footer>
+<div class="sr-only" id="theme-status" role="status"></div>
+<div class="sr-only" id="copy-status" role="status"></div>
 </body>
 </html>

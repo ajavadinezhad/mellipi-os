@@ -9,7 +9,7 @@
     const captureTheme = wallpaperOnly ? "dark" : theme.id;
     tourTheme.textContent = wallpaperOnly ? "Desktop screenshots: Dark theme · High contrast" : `${theme.name} theme · High contrast`;
     for (const link of themeCaptures) {
-      const variant = link.querySelector(".tour-preview") ? "?v=high-contrast" : "?v=lossless";
+      const variant = link.dataset.themeCapture === "launcher" ? "?v=lossless" : "?v=high-contrast";
       const path = `assets/themes/${captureTheme}-${link.dataset.themeCapture}.webp${variant}`;
       link.href = path;
       link.querySelector("img").src = path;
@@ -87,8 +87,6 @@
     // image metadata leaves the USB option hidden and APT remains available.
     const image = liveImage(config.liveImage);
     if (image) {
-      document.getElementById("install-heading").textContent = "Try Mellipi. Make it yours.";
-      document.getElementById("install-overview").textContent = "A minimal Ubuntu 24.04 base with Mellipi as the only desktop. Try the live USB, then choose when and where to install.";
       const size = image.bytes >= 1073741824 ? `${(image.bytes / 1073741824).toFixed(1)} GiB` : `${Math.ceil(image.bytes / 1048576)} MiB`;
       document.getElementById("live-image-meta").textContent = `Ubuntu 24.04 · amd64 · ${size}`;
       document.getElementById("live-image-boot").textContent = image.secureBoot ? "Signed Ubuntu boot chain, tested with UEFI Secure Boot. Firmware compatibility varies." : "Secure Boot must be disabled for this unsigned image.";

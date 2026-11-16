@@ -2198,21 +2198,41 @@
       "bytes": 24988,
       "sha256": "07fea11149f7a55f945b829e440a72adb4e0b4fabbfa4a314c9c2125a2249210"
     },
+    "assets/wallpapers/citron.svg": {
+      "bytes": 926,
+      "sha256": "d6ac6a3ef52027d44bb9983d7b6ce4aa49309c23e39923a4f4249efb5f93202a"
+    },
+    "assets/wallpapers/cobalt.svg": {
+      "bytes": 771,
+      "sha256": "2951b80db67e3341aa81521299c23a5d33b7ac6006a3597c9961e641cb943557"
+    },
+    "assets/wallpapers/lagoon.svg": {
+      "bytes": 1098,
+      "sha256": "05dc3188c85505ad540aea4f948d672c51e911fc2501bccd2f8d221be38ec8e7"
+    },
+    "assets/wallpapers/rosewater.svg": {
+      "bytes": 780,
+      "sha256": "5b5e063548616f565d26860ed6995d0aca0f5a92864695f42b27c1aded894579"
+    },
+    "assets/wallpapers/saffron.svg": {
+      "bytes": 889,
+      "sha256": "0e350b7da4e246d73c74a32e24acb336cd663a67bbaa0efbb43f2251b86af7e6"
+    },
     "favicon.svg": {
       "bytes": 267,
       "sha256": "ec979eadae80f18c4353e0d54b9fd7f05e45c93803d0dfd3936d0f0f45536848"
     },
     "index.html": {
-      "bytes": 17310,
-      "sha256": "d2451e0c5383980ad2b0e72137e0a32412e9b278cf685502267f713ba3d0566e"
+      "bytes": 9507,
+      "sha256": "3204b4d6beefd2f07c4b6aad1d43d206ff58ebc23fb6eeea7e16d950a1a89243"
     },
     "site-config.json": {
       "bytes": 807,
       "sha256": "88bc9208728d37b3c5bee574bac6e7b1952789fec9451362946a22c5548d8d00"
     },
     "site.js": {
-      "bytes": 8444,
-      "sha256": "5c442a2efc96f5771c2c43f71bc40a5d8bfe5bb21ff760001dfc7afa46fce2ee"
+      "bytes": 8454,
+      "sha256": "eeae471260546840c9be3a81fde96751b5aecdbf08fa2948dfd7804265b46322"
     },
     "sources/0.1.20/SHA256SUMS": {
       "bytes": 35879,
@@ -9151,16 +9171,16 @@
       "sha256": "eec6e4be808e1a445e677dba1e20e5acb2f091825f5ff4c6ac49d5843b2185f9"
     },
     "style.css": {
-      "bytes": 14915,
-      "sha256": "8e738f102cf90cc3bf22838d2effb87d934566fcb35ea5f098f20563fafe2ab9"
+      "bytes": 5532,
+      "sha256": "c0c0742fe2efb97fe9ed9345a5233558510f0eea4412d6812b88e5272165df23"
     },
     "theme-init.js": {
       "bytes": 2559,
       "sha256": "3fc0c09336ff5cbf21df9bb6e08e76dcf15a4759ddb89c28194ed882225f2c04"
     },
     "themes.json": {
-      "bytes": 4083,
-      "sha256": "2bb58909dd85d496ea5f5c19e7d01bddc6e872f6f29b5c43c63f277cba9e509d"
+      "bytes": 5923,
+      "sha256": "ce94c402281c2263999cb3e5f144ef5cf0470613266faf460c38fd35cc646467"
     }
   }
 }
