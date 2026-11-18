@@ -65,7 +65,6 @@ pre { margin: 0; padding: 12px; border-radius: 8px; background: var(--bg); white
 @media (max-width: 850px) {
   .wrap { width: calc(100% - 44px); }
   .hero { grid-template-columns: 1fr; }
-  .hero h1 br { display: none; }
 }
 @media (max-width: 530px) {
   .wrap { width: calc(100% - 32px); }

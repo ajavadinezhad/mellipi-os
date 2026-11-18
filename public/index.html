@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <meta name="description" content="Mellipi is an independent Wayland desktop for Linux. A quieter interface, native workspace motion, and the essentials close at hand.">
+  <meta name="description" content="Mellipi is an independent Linux desktop with built-in apps, flexible window layouts, and a theme that carries across the desktop.">
   <meta name="theme-color" content="#101817">
   <title>Mellipi — A Wayland desktop for Linux</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <script src="theme-init.js?v=3fc0c09336ff"></script>
-  <link rel="stylesheet" href="style.css?v=82f1fc85f099">
+  <link rel="stylesheet" href="style.css?v=cbea5b88417d">
   <script src="site.js?v=af7788757042" defer></script>
 </head>
 <body>
@@ -23,24 +23,24 @@
 <section class="wrap hero" aria-labelledby="hero-title">
   <div class="hero-copy">
     <p class="eyebrow">Wayland desktop for Linux</p>
-    <h1 id="hero-title">A desktop with<br> room to think.</h1>
-    <p class="intro">Find an app or window from one search, move between workspaces, and make the whole desktop feel like yours.</p>
+    <h1 id="hero-title">A Linux desktop for everyday work.</h1>
+    <p class="intro">Organize your windows, work with built-in apps, and make the desktop feel at home.</p>
     <div class="actions"><a class="button primary" href="#install">Get Mellipi <span aria-hidden="true">↓</span></a><a href="#experience">Explore the desktop <span aria-hidden="true">↘</span></a></div>
     <p class="meta">Early access · Ubuntu 24.04 · x86-64</p>
   </div>
   <figure class="hero-shot"><a data-theme-capture="launcher" href="assets/themes/dark-launcher.webp?v=qt6"><img src="assets/themes/dark-launcher.webp?v=qt6" width="1276" height="773" fetchpriority="high" alt="Mellipi desktop with its searchable app and window launcher open"></a><figcaption><span>Apps &amp; windows launcher</span><span>Click to enlarge</span></figcaption></figure>
 </section>
 <section id="experience" class="wrap section">
-  <div class="section-heading"><h2>Find it. Give it space.</h2><p>Press Super to find apps, open windows, or files. In Space Map, drag windows between workspaces to organize your work.</p></div>
-  <div id="screenshots"><div id="desktop-tour" class="shot-heading"><h3>Everyday tools</h3><p id="desktop-tour-theme" class="meta">Dark theme · High contrast</p></div>
+  <div class="section-heading"><h2>A desktop that’s ready to work.</h2><p>Find apps and open windows from one search. Arrange windows automatically and use workspaces to keep different projects apart.</p></div>
+  <div id="screenshots"><div id="desktop-tour" class="shot-heading"><h3>Built-in apps and controls</h3><p id="desktop-tour-theme" class="meta">Dark theme · High contrast</p></div>
   <div class="screenshot-grid">
-    <figure><a data-theme-capture="files" href="assets/themes/dark-files.webp?v=qt6"><img src="assets/themes/dark-files.webp?v=qt6" width="1276" height="773" loading="lazy" decoding="async" alt="Mellipi desktop with Files open"></a><figcaption><strong>Files</strong><span>Find files inside a folder, browse drives, and work with archives.</span></figcaption></figure>
+    <figure><a data-theme-capture="files" href="assets/themes/dark-files.webp?v=qt6"><img src="assets/themes/dark-files.webp?v=qt6" width="1276" height="773" loading="lazy" decoding="async" alt="Mellipi desktop with Files open"></a><figcaption><strong>Files</strong><span>Manage folders, drives, and archives.</span></figcaption></figure>
     <figure><a data-theme-capture="quick-settings" href="assets/themes/dark-quick-settings.webp?v=qt6"><img src="assets/themes/dark-quick-settings.webp?v=qt6" width="1276" height="773" loading="lazy" decoding="async" alt="Mellipi desktop with Quick Settings open"></a><figcaption><strong>Quick Settings</strong><span>Adjust sound, Wi-Fi, and power from the system area.</span></figcaption></figure>
-    <figure><a data-theme-capture="terminal" href="assets/themes/dark-terminal.webp?v=qt6"><img src="assets/themes/dark-terminal.webp?v=qt6" width="1276" height="773" loading="lazy" decoding="async" alt="Mellipi desktop with Terminal open"></a><figcaption><strong>Terminal</strong><span>Keep separate sessions in tabs.</span></figcaption></figure>
+    <figure><a data-theme-capture="terminal" href="assets/themes/dark-terminal.webp?v=qt6"><img src="assets/themes/dark-terminal.webp?v=qt6" width="1276" height="773" loading="lazy" decoding="async" alt="Mellipi desktop with Terminal open"></a><figcaption><strong>Terminal</strong><span>Keep command-line sessions organized in tabs.</span></figcaption></figure>
   </div></div>
 </section>
 <section id="theme-gallery" class="wrap section">
-  <div class="section-heading"><h2>Make it yours.</h2><p>Choose a theme for your desktop and native apps. Adjust text size, contrast, and motion in Settings.</p></div>
+  <div class="section-heading"><h2>Make it yours.</h2><p>Choose a theme that carries through the desktop and built-in apps. Set your preferred text size, contrast, and motion.</p></div>
   <label class="theme-control" for="website-theme"><span>Preview theme across the page</span><select id="website-theme" disabled><option value="dark">Dark</option></select></label>
   <figure class="theme-preview">
     <a data-theme-capture="desktop" href="assets/themes/dark-desktop.webp?v=qt6"><img src="assets/themes/dark-desktop.webp?v=qt6" width="1276" height="773" loading="lazy" decoding="async" alt="Mellipi desktop with the wallpaper and taskbar visible"></a>
@@ -52,7 +52,7 @@
   <div class="install-layout">
 <div id="live-image" class="live-image-card" hidden aria-labelledby="live-image-title"><h3 id="live-image-title">Live USB image</h3><p id="live-image-meta"></p><a id="live-image-download" class="button primary">Download live USB image <span aria-hidden="true">↓</span></a><p id="live-image-boot" class="live-image-boot"></p><div class="live-image-links"><a id="live-image-checksums">Verify SHA256 <span aria-hidden="true">↗</span></a><a id="live-image-guide">USB &amp; installation guide <span aria-hidden="true">↗</span></a></div></div><div class="install-card"><div class="card-heading"><h3>Add Mellipi with APT</h3><span class="badge">noble / amd64</span></div><p id="repository-status">Repository details are being configured. The installation guide will contain the verified address and signing key.</p><noscript><p>JavaScript fills in verified download links and powers the theme selector. See <a href="site-config.json">repository configuration</a> for the published addresses.</p></noscript><div id="repository-install" hidden><p>For a fresh minimal base, download the setup helper, inspect it, then add the signed repository and install the desktop. The signing key is scoped to Mellipi.</p><pre><code id="install-command"></code></pre><button class="copy-button" type="button" data-copy="install-command">Copy commands</button><p class="key-label">Archive signing-key fingerprint</p><code class="fingerprint" id="fingerprint"></code><p class="small">Already running Mellipi? After adding the source, use <code>sudo apt install --only-upgrade mellipi-shell</code> to update the core without adding the full desktop profile. Future updates arrive through your normal package manager.</p><a id="setup-link">View setup helper <span aria-hidden="true">↗</span></a></div><div class="download-row"><a class="button secondary" data-download hidden>Download .deb packages <span aria-hidden="true">↗</span></a><span>APT release <span data-release>0.1.20</span></span></div></div>
   </div>
-  <div class="release-links" id="desktop-updates"><a href="https://github.com/ajavadinezhad/mellipi-os/releases">Release notes ↗</a><a href="https://github.com/ajavadinezhad/mellipi-os/commit/1695c33">Latest desktop development ↗</a></div>
+  <div class="release-links" id="desktop-updates"><a href="https://github.com/ajavadinezhad/mellipi-os/releases">Release notes ↗</a></div>
   <p class="meta">Mellipi is in early access. Start with a VM or test PC, and keep a recovery login available.</p>
   <a data-guide hidden>Installation and recovery guide ↗</a>
 </section>
