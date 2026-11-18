@@ -21,7 +21,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-          sparse-checkout: public
+          sparse-checkout: |
+            public
+            tools
       - name: Validate publication boundary and APT signature
         env:
           EXPECTED_FINGERPRINT: 7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF
@@ -98,6 +100,8 @@ jobs:
               assert fields['Package'].startswith(('mellipi-','abstract-')) and fields['Architecture'] in ('amd64', 'all')
               check(archive, fields['Filename'], fields['Size'], fields['SHA256'])
           PY
+      - name: Verify APT selects a matching desktop package pair
+        run: python3 tools/qa-update-repository.py --url "file://$PWD/public/apt" --fingerprint 7D0FC30A9F2B9957B2970E3BB6B1D6FE6A4682AF
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload only the public staging directory
