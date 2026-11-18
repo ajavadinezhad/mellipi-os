@@ -15,5 +15,9 @@
     "text": "#f3f6ff",
     "muted": "#d2e0ff",
     "faint": "#b6caf2"
+  },
+  "frame": {
+    "header": "#2c4378",
+    "trim": "#8596bd"
   }
 }

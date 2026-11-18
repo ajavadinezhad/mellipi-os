@@ -1,6 +1,7 @@
 """Removable-media operations through UDisks and its normal polkit policy."""
 
 from dataclasses import dataclass
+import hashlib
 import os
 from pathlib import Path
 import stat
@@ -96,6 +97,7 @@ class Device:
     firmware: str = ''
     read_only: bool = False
     health: DriveHealth = DriveHealth('Unavailable')
+    can_power_off: bool = False
 
     @property
     def identity(self):
@@ -141,7 +143,8 @@ def catalog(objects):
                              writable_usb, is_partition, TABLE in properties, bool(block.get('HintSystem')),
                              'NVMe' if NVME in interfaces else str(drive.get('ConnectionBus', '')).upper(),
                              str(drive.get('Model', '')).strip(), str(drive.get('Revision', '')).strip(),
-                             bool(block.get('ReadOnly')), health_by_drive[drive_path]))
+                             bool(block.get('ReadOnly')), health_by_drive[drive_path],
+                             bool(drive.get('CanPowerOff') and drive.get('ConnectionBus') == 'usb' and serial)))
     return devices
 
 
@@ -166,6 +169,28 @@ def allowed_target(objects, selected, operation, holders):
             target.partitioned or any(PART in row for _, row in family)):
         raise ValueError('Select the USB partition you want to format.')
     return target
+
+
+def removal_target(objects, selected, holders):
+    target = next((row for row in catalog(objects) if row.identity == selected.identity), None)
+    if not target or not target.can_power_off or target.partition:
+        raise ValueError('Select a whole USB drive that supports safe removal.')
+    drive = objects[target.drive][DRIVE]
+    sibling = drive.get('SiblingId')
+    if sibling and any(path != target.drive and properties.get(DRIVE, {}).get('SiblingId') == sibling
+                       for path, properties in objects.items()):
+        raise ValueError('This drive shares a physical device with another drive; use its system eject tool.')
+    family = [(path, row) for path, row in objects.items()
+              if row.get(BLOCK, {}).get('Drive') == target.drive]
+    if not family or any(row[BLOCK].get('HintSystem') or row.get(SWAP, {}).get('Active')
+                         or row[BLOCK].get('CryptoBackingDevice', '/') != '/'
+                         or not row[BLOCK].get('DeviceNumber')
+                         or holders(int(row[BLOCK]['DeviceNumber']))
+                         or any(path_text(p) in ('/', '/boot', '/boot/efi')
+                                for p in row.get(FS, {}).get('MountPoints', ()))
+                         for _, row in family):
+        raise ValueError('A system volume, active swap or another dependent device is using this drive.')
+    return target, [str(path) for path, row in family if row.get(FS, {}).get('MountPoints')]
 
 
 def has_holders(number):
@@ -217,6 +242,26 @@ class UDisks:
         else:
             return str(fs.Mount(options, timeout=90))
 
+    def safe_remove(self, selected):
+        target, mounted = removal_target(self.objects(), selected, has_holders)
+        options = self.dbus.Dictionary({}, signature='sv')
+        unmounted = 0
+        try:
+            for path in mounted:
+                target, current_mounts = removal_target(self.objects(), selected, has_holders)
+                if path in current_mounts:
+                    self.interface(path, FS).Unmount(options, timeout=90)
+                    unmounted += 1
+            target, remaining = removal_target(self.objects(), selected, has_holders)
+            if remaining:
+                raise ValueError('A volume is still mounted. Unmount it before safely removing the drive.')
+            self.interface(target.drive, DRIVE).PowerOff(options, timeout=90)
+        except Exception as error:
+            if unmounted:
+                volumes = 'volume' if unmounted == 1 else 'volumes'
+                raise ValueError(f'Unmounted {unmounted} {volumes}, but safe removal did not complete: {error}') from error
+            raise
+
     def format(self, selected):
         target = allowed_target(self.objects(), selected, 'format', has_holders)
         options = self.dbus.Dictionary({}, signature='sv')
@@ -265,3 +310,59 @@ class UDisks:
             progress(100)
         finally:
             os.close(source_fd)
+
+    def verify_image(self, selected, source, progress, canceled):
+        source_fd = os.open(source, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = _image_size(source_fd)
+            target = allowed_target(self.objects(), selected, 'image', has_holders)
+            if before.st_size > target.size:
+                raise ValueError('The image is larger than this USB device.')
+            if canceled():
+                return 'canceled'
+            options = self.dbus.Dictionary(
+                {'flags': self.dbus.Int32(os.O_EXCL | os.O_CLOEXEC)}, signature='sv')
+            fd = self.interface(target.path, BLOCK).OpenDevice('r', options, timeout=90).take()
+            try:
+                info = os.fstat(fd)
+                if not stat.S_ISBLK(info.st_mode) or info.st_rdev != target.number:
+                    raise ValueError('The selected USB device changed before verification.')
+                allowed_target(self.objects(), target, 'image', has_holders)
+                result = compare_image_prefix(source_fd, fd, before.st_size, progress, canceled)
+                if result == 'canceled':
+                    return result
+                after = _image_size(source_fd)
+                if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                        after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                    raise OSError('The image changed during verification.')
+                allowed_target(self.objects(), target, 'image', has_holders)
+                return result
+            finally:
+                os.close(fd)
+        finally:
+            os.close(source_fd)
+
+
+def compare_image_prefix(source, device, length, progress, canceled):
+    sums = (hashlib.sha256(), hashlib.sha256())
+    position, percent = 0, -1
+    while position < length:
+        if canceled():
+            return 'canceled'
+        for fd, digest in zip((source, device), sums):
+            offset = position
+            end = min(length, position + CHUNK)
+            while offset < end:
+                if canceled():
+                    return 'canceled'
+                data = os.pread(fd, end - offset, offset)
+                if not data:
+                    raise OSError('The image or device ended before verification finished.')
+                digest.update(data)
+                offset += len(data)
+        position = end
+        updated = position * 100 // length
+        if updated != percent:
+            progress(updated)
+            percent = updated
+    return 'match' if sums[0].digest() == sums[1].digest() else 'mismatch'

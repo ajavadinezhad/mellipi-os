@@ -6,8 +6,17 @@ QtObject {
     readonly property bool extraCompact: Orbit.appearance.density === "extra"
     readonly property int barThickness: extraCompact ? 52 : compact ? 64 : 76
     readonly property bool economy: Orbit.economy
-    readonly property bool reducedMotion: Orbit.appearance.reducedMotion
-    readonly property int motion: reducedMotion ? 0 : economy ? 110 : 160
+    readonly property bool reducedMotion: Orbit.appearance.reducedMotion === true
+    readonly property bool panelMotionEnabled: !reducedMotion && Orbit.appearance.panelMotion !== false
+    readonly property bool controlMotionEnabled: !reducedMotion && Orbit.appearance.controlMotion !== false
+    readonly property bool desktopMotionEnabled: !reducedMotion && Orbit.appearance.desktopMotion !== false
+    readonly property real motionPace: ({quick:.7,standard:1,relaxed:1.35})[Orbit.appearance.motionPace] || 1
+    function motionDuration(normal,lightweight) {
+        return reducedMotion ? 0 : Math.round(economy ? Math.min(120,lightweight*motionPace) : normal*motionPace);
+    }
+    readonly property int motion: controlMotionEnabled ? motionDuration(160,110) : 0
+    readonly property int panelMotion: panelMotionEnabled ? motionDuration(160,110) : 0
+    readonly property int desktopMotion: desktopMotionEnabled ? motionDuration(130,80) : 0
     readonly property bool light: Orbit.themeMode === "light"
     readonly property bool black: !light && Orbit.appearance.darkLevel === "black"
     readonly property real textScale: Math.max(.85,Math.min(1.5,Orbit.appearance.textScale || 1))
@@ -85,6 +94,18 @@ QtObject {
     readonly property color selectedSurface: Qt.tint(surface, Qt.rgba(accent.r,accent.g,accent.b,.16))
     readonly property var controlSurfaces: [background,surface,raised,hover].map(function(color) { return luminance(renderedColor(color)); })
     readonly property var inkSurfaces: [background,surface,raised,hover,selectedSurface].map(luminance)
+    readonly property var frame: Orbit.appearance.themeFrame || ({})
+    readonly property color headerSurface: frame.header || Qt.tint(background,Qt.rgba(raised.r,raised.g,raised.b,.68))
+    readonly property color frameTrim: frame.trim || border
+    readonly property color inactiveFrameTrim: frame.trim
+        ? Qt.tint(background,Qt.rgba(frameTrim.r,frameTrim.g,frameTrim.b,.65)) : border
+    readonly property var headerLuminance: [luminance(renderedColor(headerSurface))]
+    readonly property color headerText: legibleInk(text,4.5,headerLuminance,true)
+    readonly property color headerInk: legibleInk(accentInk,4.5,headerLuminance,true)
+    readonly property color headerEdge: highContrast ? legibleInk(frameTrim,3,headerLuminance,true)
+        : frame.trim ? Qt.tint(headerSurface,Qt.rgba(frameTrim.r,frameTrim.g,frameTrim.b,.58)) : headerSurface
+    readonly property color barSurface: frame.header
+        ? Qt.tint(background,Qt.rgba(headerSurface.r,headerSurface.g,headerSurface.b,.3)) : background
     readonly property color controlBorder: legibleInk(renderedColor(border),3,controlSurfaces,true)
     function inkContrast(color, surfaces) {
         var ink = luminance(color);

@@ -15,6 +15,35 @@ ColumnLayout {
     signal toolsRequested()
     property string query: ""
     property bool pinnedOnly: false
+    property bool fileMode: false
+    property string favoriteFolder: ""
+    readonly property var fileSearch: typeof Orbit.launcherFiles==="undefined" ? null : Orbit.launcherFiles
+    function changeSearchMode(files) {
+        fileMode=files;pinnedOnly=false;historyOptions=false;
+        if(fileSearch){
+            fileSearch.cancel();
+            if(files){
+                fileSearch.refresh();
+                const folders=fileSearch.folders || [];
+                if(!folders.some(row=>row.path===favoriteFolder))
+                    favoriteFolder=folders.length===1 ? folders[0].path : "";
+                queueFileSearch();
+            }
+        }
+        queueRebuild();focusSearch();
+    }
+    Keys.onEscapePressed: event => {
+        event.accepted=launcher.fileMode || launcher.historyOptions;
+        if(launcher.fileMode)launcher.changeSearchMode(false);
+        else if(launcher.historyOptions){
+            launcher.historyOptions=false;
+            launcher.confirmHistoryReset=false;
+            launcher.focusSearch();
+        }
+    }
+    function queueFileSearch() {
+        if(fileMode && fileSearch)fileSearch.search(favoriteFolder,query);
+    }
     property bool historyOptions: false
     property bool confirmHistoryReset: false
     onPinnedOnlyChanged: queueRebuild()
@@ -25,8 +54,8 @@ ColumnLayout {
     property var windowData: null
     property var actionsData: null
     property var pins: null
-    onQueryChanged: queueRebuild()
-    onVisibleChanged: if(visible)queueRebuild()
+    onQueryChanged: {queueFileSearch();queueRebuild();}
+    onVisibleChanged: {if(visible)queueRebuild();else if(fileMode && fileSearch)fileSearch.cancel();}
     function queueRebuild() {
         rebuildNeeded=true;
         if (!visible || rebuildPending) return;
@@ -42,6 +71,7 @@ ColumnLayout {
         rebuild();
     }
     function resetForOpen() {
+        if(fileMode)changeSearchMode(false);
         pinnedOnly=false;
         historyOptions=false;
         confirmHistoryReset=false;
@@ -87,7 +117,7 @@ ColumnLayout {
         var settingsOpen=windows.some(function(window){return isSettingsWindow(window.klass);});
         windowData={windows:windows, filter:filter, onlyWindows:ids.length>0,
             groupByWindow:groupByWindow,running:running,settingsTask:settingsTask,
-            active:active,settingsOpen:settingsOpen};
+            active:active,desktops:state.desktops,settingsOpen:settingsOpen};
         return windowData;
     }
     function isSettingsWindow(klass) {
@@ -104,6 +134,7 @@ ColumnLayout {
         return actionsData;
     }
     function rebuild() {
+        if(fileMode){results=fileSearch ? fileSearch.rows : [];return;}
         // Read each QVariant list at most once per invalidation. Repeated reads
         // inside a match loop would marshal whole Python models into QML.
         var text=normalize(query), words=text ? text.split(" ") : [];
@@ -143,9 +174,10 @@ ColumnLayout {
             if(!windowOnly && pinnedOnly && (!group || !pins[group.id]))return;
             var name=group ? group.name : window.klass || "Application";
             var metadata=group && apps.byId[group.id];
-            if(!matches((name+" "+window.title).toLowerCase()+" "+(metadata ? metadata.terms : "")))return;
+            var space=snapshot.desktops.find(function(item){return item.id===window.desktop;});
+            var spaceLabel=window.desktop<0 ? "All workspaces" : space && space.name && !/^\d+$/.test(space.name) ? space.name : "Workspace "+(window.desktop+1);
+            if(!matches((name+" "+window.title+" "+spaceLabel).toLowerCase()+" "+(metadata ? metadata.terms : "")))return;
             var here=window.desktop<0 || (activeSpace && window.desktop===activeSpace.id);
-            var spaceLabel=window.desktop<0 ? "All workspaces" : "Workspace "+(window.desktop+1);
             var exact=!!text && (normalize(window.title)===text || normalize(group ? group.name : window.klass)===text);
             add({kind:"window",id:id,appId:group ? group.id : "",name:window.title || name,description:name+" · "+(window.minimized ? "Minimized · " : "")+spaceLabel,icon:window.icon || "application-x-executable",category:here ? "This workspace" : "Other workspaces"},here ? nearby : elsewhere,here ? bestNearby : bestElsewhere,exact);
         });
@@ -182,9 +214,9 @@ ColumnLayout {
             activate(row);event.accepted=true;
         }
     }
-    function activate(row){if(!row)return;if(row.kind==="calculation")Orbit.copyCalculation(row.id);else if(row.kind==="action")Orbit.activateSystemAction(row.id);else if(row.kind==="task")Orbit.activateDock(row.id,false);else if(row.kind==="window")Orbit.focusWindow(row.id);else Orbit.launch(row.id);}
+    function activate(row){if(!row)return;if(row.kind==="calculation")Orbit.copyCalculation(row.id);else if(row.kind==="action")Orbit.activateSystemAction(row.id);else if(row.kind==="task")Orbit.activateDock(row.id,false);else if(row.kind==="window")Orbit.focusWindow(row.id);else if(row.kind==="file" && fileSearch)fileSearch.open(row.id);else Orbit.launch(row.id);}
     function openResultMenu(index) {
-        var row=results[index];if(!row || row.kind==="action" || row.kind==="calculation")return false;
+        var row=results[index];if(!row || row.kind==="action" || row.kind==="calculation" || row.kind==="file")return false;
         var item=resultsList.itemAtIndex(index);if(!item)return false;
         Orbit.openPanelContext(item,row.kind==="task" ? "app" : row.kind,row.id,item.width/2,item.height/2);return true;
     }
@@ -197,20 +229,34 @@ ColumnLayout {
         function onSettingsChanged(){launcher.pins=null;launcher.queueRebuild();}
         function onSystemActionsChanged(){launcher.actionsData=null;launcher.queueRebuild();}
     }
+    Connections {
+        target:launcher.fileSearch
+        function onChanged(){if(launcher.fileMode)launcher.queueRebuild();}
+    }
+    RowLayout {
+        Layout.fillWidth:true;visible:launcher.fileMode
+        SettingsChoice {
+            objectName:"launcherFavoriteFolder";Layout.fillWidth:true;Layout.minimumWidth:0
+            Accessible.name:"Favorite folder to search";textRole:"label"
+            model:[{path:"",label:"Choose a favorite folder"},...(launcher.fileSearch ? launcher.fileSearch.folders : [])]
+            currentIndex:Math.max(0,model.findIndex(row=>row.path===launcher.favoriteFolder))
+            onActivated:index=>{launcher.favoriteFolder=model[index].path;launcher.queueFileSearch();launcher.focusSearch();}
+        }
+    }
     GridLayout {
         id: searchTools
         Layout.fillWidth: true
-        readonly property bool showAppOptions: !(Orbit.windowFilter && Orbit.windowFilter.length)
+        readonly property bool showAppOptions: !launcher.fileMode && !(Orbit.windowFilter && Orbit.windowFilter.length)
         readonly property bool inlineOptions: width >= Math.ceil(365 * Theme.textScale)
-        columns: showAppOptions ? 3 : 1
+        columns: showAppOptions ? (launcher.fileSearch && inlineOptions ? 4 : 3) : launcher.fileSearch ? 2 : 1
         columnSpacing: launcher.controlGap
         rowSpacing: launcher.resultGap
         OrbitField {
             id: search;objectName: "foldAppSearch"
-            Layout.columnSpan: searchTools.showAppOptions && !searchTools.inlineOptions ? 3 : 1
+            Layout.columnSpan: searchTools.showAppOptions && !searchTools.inlineOptions ? (launcher.fileSearch ? 2 : 3) : 1
             Layout.fillWidth: true;Layout.minimumWidth: 0;implicitHeight: launcher.toolbarHeight
-            placeholderText: width < Math.ceil(235 * Theme.textScale) ? "Search…" : "Search apps, windows, actions…"
-            accessibleLabel: "Search apps, windows, and actions";font.pixelSize: Theme.labelSize
+            placeholderText: launcher.fileMode ? "Search favorite folder…" : width < Math.ceil(235 * Theme.textScale) ? "Search…" : "Search apps, windows, actions…"
+            accessibleLabel: launcher.fileMode ? "Search favorite folder" : "Search apps, windows, and actions";font.pixelSize: Theme.labelSize
             leftPadding: 34;rightPadding: 10
             Image {
                 anchors.left: parent.left;anchors.leftMargin: 10;anchors.verticalCenter: parent.verticalCenter
@@ -226,6 +272,14 @@ ColumnLayout {
             }
             onAccepted: {launcher.flushRebuild(); if(launcher.results.length)launcher.activate(launcher.results[0]);}
             Keys.onDownPressed: {launcher.flushRebuild(); if(resultsList.count){resultsList.currentIndex=0;resultsList.forceActiveFocus();}}
+        }
+        IconButton {
+            objectName:"launcherFileMode";visible:!!launcher.fileSearch;iconName:"start-search"
+            text:""
+            accent:launcher.fileMode;hint:launcher.fileMode ? "Back to apps and actions" : "Find files in a favorite folder"
+            implicitWidth:Math.max(launcher.actionHeight,contentItem.implicitWidth+2*padding)
+            implicitHeight:launcher.actionHeight
+            onClicked:launcher.changeSearchMode(!launcher.fileMode)
         }
         SettingsChoice {
             objectName: "launcherSortOptions"
@@ -327,7 +381,7 @@ ColumnLayout {
             Accessible.onPressAction: launcher.activate(modelData)
             MouseArea {
                 id: hit;anchors.fill: parent;hoverEnabled: true;acceptedButtons: Qt.LeftButton | Qt.RightButton
-                onClicked: mouse => {resultsList.currentIndex=index;if(mouse.button===Qt.RightButton){if(modelData.kind!=="action" && modelData.kind!=="calculation")Orbit.openPanelContext(hit,modelData.kind==="task" ? "app" : modelData.kind,modelData.id,mouse.x,mouse.y);}else launcher.activate(modelData);}
+                onClicked: mouse => {resultsList.currentIndex=index;if(mouse.button===Qt.RightButton){if(modelData.kind!=="action" && modelData.kind!=="calculation" && modelData.kind!=="file")Orbit.openPanelContext(hit,modelData.kind==="task" ? "app" : modelData.kind,modelData.id,mouse.x,mouse.y);}else launcher.activate(modelData);}
             }
             RowLayout {
                 id: resultContent;anchors.fill: parent;anchors.margins: result.rowInset;spacing: launcher.width < 360 ? 5 : Theme.extraCompact ? 7 : 10
@@ -362,21 +416,22 @@ ColumnLayout {
                 }
                 IconButton {
                     objectName: "unifiedWindowActions"
-                    visible: modelData.kind==="window"
-                    iconName: "more";hint: "Window actions"
+                    visible: ["window","app","task"].includes(modelData.kind)
+                    opacity: resultsList.currentIndex===result.index || hit.containsMouse || activeFocus ? 1 : 0
+                    focusPolicy: Qt.ClickFocus
+                    iconName: "more";hint: "Result actions"
                     accessibleLabel: hint+" · "+modelData.name
                     implicitWidth: 26;implicitHeight: 26
                     onActiveFocusChanged: if(activeFocus)resultsList.currentIndex=result.index
                     onClicked: launcher.openResultMenu(result.index)
                 }
-                IconButton {objectName: "unifiedPin";onActiveFocusChanged:if(activeFocus)resultsList.currentIndex=result.index;visible: !!modelData.appId;iconName: launcher.pins && launcher.pins[modelData.appId] ? "pinned" : "pin";hint: launcher.pins && launcher.pins[modelData.appId] ? "Unpin app" : "Pin app";accessibleLabel: hint+" · "+modelData.name;implicitWidth: 26;implicitHeight: 26;onClicked: Orbit.togglePin(modelData.appId)}
             }
         }
         Item {
             parent:resultsList;anchors.centerIn:parent;width:Math.max(0,resultsList.width-32)
             height:emptyLabel.implicitHeight+emptyReset.implicitHeight+10;visible:resultsList.count===0
-            Text {id:emptyLabel;width:parent.width;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;text:launcher.pinnedOnly ? "No pinned apps match your search" : "No matching apps, windows or actions";color:Theme.muted;font.pixelSize:Theme.fontSize(12)}
-            IconButton {id:emptyReset;objectName:"launcherClearFilters";anchors.top:emptyLabel.bottom;anchors.topMargin:10;anchors.horizontalCenter:parent.horizontalCenter;iconName:"start-library";hint:"Show all apps";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.pinnedOnly=false;search.text="";launcher.query="";launcher.focusSearch();}}
+            Text {id:emptyLabel;width:parent.width;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap;text:launcher.fileMode ? (launcher.fileSearch.note || (launcher.favoriteFolder ? "No matching files" : "Choose a folder bookmarked in Files")) : launcher.pinnedOnly ? "No pinned apps match your search" : "No matching apps, windows or actions";color:Theme.muted;font.pixelSize:Theme.fontSize(12)}
+            IconButton {id:emptyReset;objectName:"launcherClearFilters";visible:!launcher.fileMode;anchors.top:emptyLabel.bottom;anchors.topMargin:10;anchors.horizontalCenter:parent.horizontalCenter;iconName:"start-library";hint:"Show all apps";implicitWidth:launcher.actionHeight;implicitHeight:launcher.actionHeight;onClicked:{launcher.pinnedOnly=false;search.text="";launcher.query="";launcher.focusSearch();}}
         }
     }
     RowLayout {
@@ -388,21 +443,12 @@ ColumnLayout {
             Layout.fillWidth: true;Layout.minimumWidth: 0;elide: Text.ElideRight
         }
         IconButton {
-            objectName: "foldLayoutsButton";iconName: "start-spaces"
-            text: launcher.labelDestinations ? "Space Map" : ""
-            hint: "Space Map";accessibleLabel: "Open Space Map"
-            implicitWidth: Math.max(launcher.actionHeight, contentItem.implicitWidth+2*padding)
-            implicitHeight: launcher.actionHeight;onClicked: Orbit.showPanel("space-map")
-        }
-        IconButton {
             objectName: "foldToolsButton";iconName: "start-tools"
             text: launcher.labelDestinations ? "Files & notes" : ""
             hint: "Files & notes";accessibleLabel: "Open files and notes"
             implicitWidth: Math.max(launcher.actionHeight, contentItem.implicitWidth+2*padding)
             implicitHeight: launcher.actionHeight;onClicked: launcher.toolsRequested()
         }
-        Rectangle {width: 1;height: Theme.detailSize;color: Theme.separator;Layout.alignment: Qt.AlignVCenter}
-        IconButton {objectName: "launcherShowDesktop";iconName: "display";hint: "Show desktop";implicitWidth: launcher.actionHeight;implicitHeight: launcher.actionHeight;onClicked: Orbit.showDesktop()}
     }
 
 }

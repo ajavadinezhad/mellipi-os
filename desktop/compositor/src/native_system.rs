@@ -9,6 +9,7 @@ pub struct NativeSystem {
     pub configured: Vec<String>,
     pub overrides: Value,
     pub pending_output: Option<(String, Value)>,
+    pub(crate) arrangement: Option<crate::output_arrangement::Pending>,
     completed_rollback: Option<String>,
     pub loop_handle: Option<smithay::reexports::calloop::LoopHandle<'static, crate::CalloopData>>,
     #[cfg(feature = "drm")]
@@ -22,6 +23,7 @@ impl Default for NativeSystem {
             configured: vec![],
             overrides: json!({}),
             pending_output: None,
+            arrangement: None,
             completed_rollback: None,
             loop_handle: None,
             #[cfg(feature = "drm")]
@@ -92,7 +94,7 @@ fn validate(values: &Value) -> Result<(), String> {
 }
 impl OrbitCompositor {
     pub fn native_system_capabilities(&self) -> Value {
-        json!({"virtual_keyboard":true,"input":cfg!(feature="drm")&&self.native_system.output.is_some(),"display":self.native_system.output.is_some(),"dpms":self.native_system.output.is_some()})
+        json!({"virtual_keyboard":true,"input":cfg!(feature="drm")&&self.native_system.output.is_some(),"display":self.native_system.output.is_some(),"display_arrangement":self.native_system.output.is_some(),"dpms":self.native_system.output.is_some()})
     }
 
     pub fn native_system_control(&mut self, value: &Value) -> Value {
@@ -127,7 +129,9 @@ impl OrbitCompositor {
                 }
                 Ok(json!({"ok":true}))
             }
+            "output_arrangement_begin" | "output_arrangement_keep" | "output_arrangement_revert" => self.output_arrangement(value),
             "output_checkpoint" => {
+                if self.arrangement_active() { return Err("A display arrangement preview is already active".into()); }
                 if self.native_system.output.is_none() { return Err("Display hardware controls require DRM".into()); }
                 if self.native_system.pending_output.is_some() { return Err("A display confirmation is already pending".into()); }
                 let name = value["name"].as_str().ok_or("Missing display name")?;
@@ -181,6 +185,7 @@ impl OrbitCompositor {
                 Ok(json!({"ok":true}))
             }
             "output_configure" | "output_power" | "output_resume" => {
+                if value["command"]=="output_configure" && self.arrangement_active() { return Err("A display arrangement preview is already active".into()); }
                 let mut callback = self
                     .native_system
                     .output
@@ -389,7 +394,7 @@ impl OrbitCompositor {
         json!([])
     }
 }
-pub fn transform_name(transform: smithay::utils::Transform) -> &'static str {
+pub(crate) fn transform_name(transform: smithay::utils::Transform) -> &'static str {
     use smithay::utils::Transform;
     match transform {
         Transform::Normal => "normal",
@@ -446,6 +451,44 @@ mod tests {
         let values = calls.borrow();assert_eq!(values.len(),2);assert_eq!(values[1]["settings"]["mode"],"1280x720@60.000Hz");assert_eq!(values[1]["settings"]["x"],10);drop(values);
         assert_eq!(data.state.native_system_control(&json!({"command":"output_rollback","token":token}))["ok"],true);
         assert_eq!(calls.borrow().len(),2);
+        let positions = json!([
+            {"name":"test-output","x":1290,"y":20,"original":{"x":10,"y":20,"width":1280,"height":720}},
+            {"name":"second-output","x":10,"y":20,"original":{"x":1290,"y":20,"width":1280,"height":720}},
+        ]);
+        let begin=|rows| json!({"command":"output_arrangement_begin","positions":rows});
+        let mut stale=positions.clone();stale[0]["original"]["width"]=json!(1279);
+        assert_eq!(data.state.native_system_control(&begin(stale))["ok"],false);
+        assert_eq!(data.state.space.output_geometry(&output).unwrap().loc.x,10);
+        let mut overlap=positions.clone();overlap[1]["x"]=json!(1291);
+        assert_eq!(data.state.native_system_control(&begin(overlap))["ok"],false);
+        let preview=data.state.native_system_control(&begin(positions.clone()));
+        assert_eq!(preview["ok"],true, "{preview}");
+        assert_eq!(data.state.space.output_geometry(&output).unwrap().loc.x,1290);
+        assert_eq!(data.state.space.output_geometry(&second).unwrap().loc.x,10);
+        assert_eq!(data.state.native_system_control(&json!({"command":"output_arrangement_revert","token":"wrong"}))["ok"],false);
+        assert_eq!(data.state.native_system_control(&json!({"command":"output_arrangement_revert","token":preview["token"]}))["ok"],true);
+        assert_eq!(data.state.space.output_geometry(&output).unwrap().loc.x,10);
+        assert_eq!(data.state.space.output_geometry(&second).unwrap().loc.x,1290);
+        assert_eq!(data.state.native_system_control(&begin(positions.clone()))["ok"],true);
+        data.state.space.unmap_output(&second);
+        assert!(!data.state.reconcile_arrangement());
+        assert_eq!(data.state.space.output_geometry(&output).unwrap().loc.x,10);
+        data.state.space.map_output(&second,(1290,20));
+        // Keep publishes both positions together in the private fixture.
+        let old_data=std::env::var_os("ORBIT_DATA");
+        let private_data=runtime.join("data");
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(&private_data).unwrap();
+        std::fs::set_permissions(&private_data,std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::env::set_var("ORBIT_DATA",&private_data);
+        let preview=data.state.native_system_control(&begin(positions));
+        assert_eq!(preview["ok"],true,"{preview}");
+        let kept=data.state.native_system_control(&json!({"command":"output_arrangement_keep","token":preview["token"]}));
+        assert_eq!(kept["ok"],true,"{kept}");
+        let saved:Value=serde_json::from_slice(&std::fs::read(private_data.join("outputs-native.json")).unwrap()).unwrap();
+        assert_eq!(saved["test-output"]["x"],1290);
+        assert_eq!(saved["second-output"]["x"],10);
+        if let Some(old_data)=old_data {std::env::set_var("ORBIT_DATA",old_data);} else {std::env::remove_var("ORBIT_DATA");}
         // Exercise the real seat setter/getter, not configured-code labels.
         for (layout,names) in [
             ("ca",vec!["French (Canada)"]),

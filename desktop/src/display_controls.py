@@ -10,16 +10,17 @@ class DisplayControls(QObject):
     changed=Signal();notice=Signal(str);completed=Signal(object)
     def __init__(self,enabled=True,config_path=None,requester=None):
         super().__init__();self.enabled=enabled;self.closed=False;self.rows=[];self.process=None;self.pending_output='';self.deadline=0
-        self.native_supported=False
+        self.native_supported=False;self.native_arrangement=False;self.arrangement_token='';self._refresh_pending=False
         if os.environ.get('ORBIT_NATIVE_CONTROL'):
             try:
                 from native_compositor import NativeCompositor
-                self.native_supported=bool(NativeCompositor(os.environ['ORBIT_NATIVE_CONTROL']).status().get('control_capabilities',{}).get('display'))
+                capabilities=NativeCompositor(os.environ['ORBIT_NATIVE_CONTROL']).status().get('control_capabilities',{})
+                self.native_supported=bool(capabilities.get('display'));self.native_arrangement=bool(capabilities.get('display_arrangement'))
             except (OSError,ValueError,RuntimeError):pass
         self.config_path=Path(config_path or (Path(os.environ.get('ORBIT_DATA',str(ROOT/'data')))/'outputs.conf')).absolute()
         if os.environ.get('ORBIT_NATIVE_CONTROL') and config_path is None:self.config_path=self.config_path.with_name('outputs-native.json')
         self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='orbit-display');self.requester=requester
-        self.data=dict(available=False,busy=False,error='',pending=False,secondsRemaining=0)
+        self.data=dict(available=False,busy=False,error='',pending=False,secondsRemaining=0,arrangement=self.native_arrangement)
         self.completed.connect(self._complete);self.timer=QTimer(self);self.timer.setInterval(250);self.timer.timeout.connect(self._tick)
     state=Property('QVariantMap',lambda s:dict(s.data),notify=changed)
     outputs=Property('QVariantList',lambda s:[dict(r) for r in s.rows],notify=changed)
@@ -41,6 +42,14 @@ class DisplayControls(QObject):
         return True
     @Slot()
     def refresh(self):
+        if self.closed:return
+        if self.data['busy']:
+            # A hotplug event may arrive while the previous snapshot is still
+            # in flight. Keep one latest refresh instead of publishing stale
+            # topology until another connector event happens.
+            self._refresh_pending=True
+            return
+        self._refresh_pending=False
         if not self.enabled or (not self.requester and not os.environ.get('SWAYSOCK') and not os.environ.get('ORBIT_NATIVE_CONTROL')):
             self.data.update(available=False,error='Display configuration requires an Orbit Wayland session');self.changed.emit();return
         self._submit(lambda:catalog(self._request(3)),'refresh')
@@ -80,6 +89,34 @@ class DisplayControls(QObject):
                 return result
             except Exception:self._retire(process);raise
         self.pending_output=name;self._submit(work,'apply')
+    def _arrangement_request(self,kind,**fields):
+        from native_compositor import NativeCompositor
+        return NativeCompositor(os.environ['ORBIT_NATIVE_CONTROL']).request(kind,**fields)
+    @Slot('QVariantList')
+    def applyArrangement(self,positions):
+        if self.closed or self.data['pending'] or self.data['busy'] or not self.enabled or not self.native_arrangement:return
+        try:
+            by_name={row['name']:row for row in self.rows}
+            if len(positions)!=len(by_name) or len(positions)<2:raise ValueError('Refresh displays before applying the arrangement')
+            seen=set();checked=[]
+            for row in positions:
+                name=row.get('name')
+                if name not in by_name or name in seen:raise ValueError('Refresh displays before applying the arrangement')
+                seen.add(name);current=by_name[name]
+                candidate=validated(self.rows,name,current['mode'],current['scale'],current['transform'],row.get('x'),row.get('y'))
+                checked.append({**{key:candidate[key] for key in ('name','x','y')},
+                                'original':{key:current[key] for key in ('x','y','width','height')}})
+        except (AttributeError,TypeError,ValueError) as error:
+            self.data['error']=str(error);self.changed.emit();return
+        def work():
+            result=self._arrangement_request('output_arrangement_begin',positions=checked)
+            self.arrangement_token=result['token']
+            if self.closed:
+                self._arrangement_request('output_arrangement_revert',token=self.arrangement_token)
+                self.arrangement_token=''
+                raise RuntimeError('Display panel closed; restoring previous positions')
+            return dict(deadline=time.monotonic()+result['seconds'])
+        self.pending_output='';self._submit(work,'arrange')
     @Slot()
     def confirm(self):self._decide(True)
     @Slot()
@@ -87,6 +124,10 @@ class DisplayControls(QObject):
     def _decide(self,keep):
         if self.closed or not self.data['pending'] or self.data['busy']:return
         def work():
+            token=self.arrangement_token
+            if token:
+                try:return self._arrangement_request('output_arrangement_keep' if keep else 'output_arrangement_revert',token=token)
+                finally:self.arrangement_token=''
             process=self.process
             if process is None:raise RuntimeError('Display transaction has already ended')
             try:
@@ -99,6 +140,9 @@ class DisplayControls(QObject):
     def _complete(self,result):
         if self.closed:return
         kind=result['kind'];self.data['busy']=False
+        if kind=='refresh' and self._refresh_pending:
+            self.refresh()
+            return
         if result.get('error'):
             self.data['error']=result['error'];self.notice.emit(result['error'])
             if kind=='refresh':self.rows=[];self.data['available']=False
@@ -106,13 +150,14 @@ class DisplayControls(QObject):
         elif kind=='refresh':
             self.rows=result['value'];self.data['available']=bool(self.rows) and (not os.environ.get('ORBIT_NATIVE_CONTROL') or self.native_supported)
             if os.environ.get('ORBIT_NATIVE_CONTROL') and not self.native_supported:self.data['error']='Native display mode changes and rollback are not supported by this backend yet'
-            if self.data['pending'] and not any(r['name']==self.pending_output for r in self.rows):self.revert()
-        elif kind=='apply':
+            if self.data['pending'] and self.pending_output and not any(r['name']==self.pending_output for r in self.rows):self.revert()
+        elif kind in ('apply','arrange'):
             self.deadline=result['value'].get('deadline',time.monotonic()+15)
             self.data.update(pending=True,secondsRemaining=max(0,math.ceil(self.deadline-time.monotonic())));self.timer.start()
         else:
-            self.timer.stop();self.data.update(pending=False,secondsRemaining=0);self.refresh()
-        self.changed.emit()
+            self.timer.stop();self.data.update(pending=False,secondsRemaining=0);self._refresh_pending=True
+        if self._refresh_pending and not self.data['busy']:self.refresh()
+        else:self.changed.emit()
     def _tick(self):
         if not self.data['pending']:self.timer.stop();return
         seconds=max(0,math.ceil(self.deadline-time.monotonic()))
@@ -127,3 +172,7 @@ class DisplayControls(QObject):
             except (OSError,ValueError):pass
         self.pool.shutdown(wait=True,cancel_futures=True)
         if self.process:self._retire(self.process)
+        if self.arrangement_token:
+            try:self._arrangement_request('output_arrangement_revert',token=self.arrangement_token)
+            except (OSError,ValueError,RuntimeError):pass # Compositor timer still owns rollback.
+            finally:self.arrangement_token=''

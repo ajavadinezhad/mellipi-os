@@ -61,7 +61,11 @@ FocusScope {
                     radius: Theme.corner(7)
                     color: hit.containsMouse ? Theme.hover : tab.active ? Qt.rgba(Theme.accent.r,Theme.accent.g,Theme.accent.b,.055) : "transparent"
                     border.width: tab.activeFocus ? 1 : 0;border.color: navigation.activeInk
-                    Behavior on color { ColorAnimation { duration: Theme.motion } }
+                    Behavior on color {
+                        enabled: Theme.controlMotionEnabled
+                        onEnabledChanged: if(!enabled && tintMotion.running)tintMotion.complete()
+                        ColorAnimation { id:tintMotion;duration:Theme.motion }
+                    }
                 }
                 Row {
                     anchors.centerIn: parent;anchors.verticalCenterOffset: -1;spacing: 8

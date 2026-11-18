@@ -13,7 +13,7 @@ Window {
         padding: 6
         Accessible.name: glyph.charAt(0).toUpperCase() + glyph.slice(1) + " Settings"
         contentItem: Image {
-            source: "image://icons/window-control/" + (Orbit.appearance.themePreset === "cyberpunk" ? "cyberpunk" : String(Theme.focusColor).slice(1)) + "/" + glyph
+            source: "image://icons/window-control/" + (Orbit.appearance.themePreset === "cyberpunk" ? "cyberpunk" : String(Theme.headerInk).slice(1)) + "/" + glyph
             fillMode: Image.PreserveAspectFit
         }
     }
@@ -34,13 +34,21 @@ Window {
         if(settingsWindow.visibility===Window.Maximized)settingsWindow.showNormal();
         else settingsWindow.showMaximized();
     }
-    Rectangle {objectName:"settingsWindowBackground";anchors.fill:parent;color:Theme.background;radius:settingsWindow.visibility===Window.Maximized ? 0 : Theme.corner(16);border.width:Orbit.appearance.matchWindows ? 1 : Theme.surfaceOutline;border.color:Orbit.appearance.matchWindows && settingsWindow.active && !Theme.highContrast ? Theme.accent : Theme.border}
+    Rectangle {objectName:"settingsWindowBackground";anchors.fill:parent;color:Theme.background;radius:settingsWindow.visibility===Window.Maximized ? 0 : Theme.corner(16);border.width:Orbit.appearance.matchWindows ? 1 : Theme.surfaceOutline;border.color:Theme.highContrast ? Theme.controlBorder : settingsWindow.active ? Theme.frameTrim : Theme.inactiveFrameTrim}
     ColumnLayout {
         anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;anchors.bottomMargin:8;spacing:0
         Item {
             id: titlebar
             objectName: "settingsWindowTitlebar"
             Layout.fillWidth:true;Layout.preferredHeight:Theme.extraCompact ? 30 : Theme.compact ? 36 : 42
+            Rectangle {
+                anchors.fill:parent
+                anchors.topMargin:3
+                color:Theme.headerSurface
+                border.width:1
+                border.color:Theme.headerEdge
+                radius:Theme.corner(8)
+            }
             MouseArea {
                 anchors.fill:parent
                 onDoubleClicked: settingsWindow.toggleMaximized()
@@ -49,9 +57,20 @@ Window {
                 target: null
                 onActiveChanged: if(active)settingsWindow.startSystemMove()
             }
-            Text {
-                anchors.left:parent.left;anchors.leftMargin:2;anchors.verticalCenter:parent.verticalCenter
-                text:"Settings";color:Theme.text;font.pixelSize:Theme.labelSize;font.weight:Font.Medium
+            Row {
+                anchors.left:parent.left;anchors.leftMargin:10;anchors.verticalCenter:parent.verticalCenter
+                spacing:8
+                Rectangle {
+                    width:22;height:22;radius:Theme.corner(5);color:Theme.selectedSurface
+                    Image {
+                        anchors.centerIn:parent;width:15;height:15
+                        source:Theme.symbolicIconSource("settings",Theme.headerInk)
+                    }
+                }
+                Text {
+                    anchors.verticalCenter:parent.verticalCenter
+                    text:"Settings";color:Theme.headerText;font.pixelSize:Theme.labelSize;font.weight:Font.Bold
+                }
             }
             Row {
                 anchors.right:parent.right;anchors.verticalCenter:parent.verticalCenter;spacing:4
@@ -72,7 +91,7 @@ Window {
                 }
             }
         }
-        Rectangle {Layout.fillWidth:true;Layout.preferredHeight:1;color:Theme.separator}
+        Rectangle {Layout.fillWidth:true;Layout.preferredHeight:1;color:Theme.separator;visible:Theme.highContrast}
         SystemPanel {Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins: Theme.extraCompact ? 3 : Theme.compact ? 5 : 6}
         Text {
             visible:!!Orbit.notice;Layout.fillWidth:true;Layout.leftMargin:8;Layout.rightMargin:8

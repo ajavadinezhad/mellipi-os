@@ -58,6 +58,7 @@ class SessionExit(QObject):
         self._active=False;self._armed=False;self._busy=False;self._closed=False;self._action='logout'
         self._windows=[];self._inhibitors=[];self._error='';self._generation=0;self._revision=0
         self._requested=set();self._targets=set();self._pool=None;self._again=False;self._sending=False;self._retry=False
+        self.locked=False
         self.completed.connect(self._complete)
         self._waitTimer=QTimer(self);self._waitTimer.setSingleShot(True)
         self._waitTimer.timeout.connect(self._closeTimedOut)
@@ -69,6 +70,7 @@ class SessionExit(QObject):
 
     @Slot(object)
     def setWindows(self,rows):
+        if self.locked:return
         normalized=[];seen=set()
         for row in rows:
             ident=str(row.get('id',''))
@@ -84,11 +86,22 @@ class SessionExit(QObject):
         self.changed.emit()
         if self._active and self._armed and not normalized and not self._sending:self._check()
 
+    def setSnapshot(self,rows,locked=False):
+        """A private compositor snapshot never proves that apps closed."""
+        if locked:
+            if not self.locked:
+                self.locked=True
+                self._windows=[];self._revision+=1
+                self.cancel()
+            return
+        self.locked=False
+        self.setWindows(rows)
+
     @Slot()
     @Slot(str)
     def openReview(self,action='logout'):
         if action not in ('logout','reboot','shutdown'):return
-        if not self.enabled or self._closed:return
+        if not self.enabled or self._closed or self.locked:return
         self._waitTimer.stop();self._retry=False
         self._action=action
         self._generation+=1;self._active=True;self._armed=False;self._error='';self._inhibitors=[]

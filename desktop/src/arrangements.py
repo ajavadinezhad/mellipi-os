@@ -15,6 +15,14 @@ def bounded_rect(rect,area):
     w=min(rect['width'],area['width']);h=min(rect['height'],area['height'])
     return dict(x=max(area['x'],min(rect['x'],area['x']+area['width']-w)),y=max(area['y'],min(rect['y'],area['y']+area['height']-h)),width=w,height=h)
 
+def restore_rect(row,area,undo):
+    if undo and row['area']==area:return bounded_rect(row['rect'],area)
+    prior=row['area'];r=row['rect']
+    return bounded_rect(dict(x=area['x']+round((r['x']-prior['x'])*area['width']/prior['width']),
+        y=area['y']+round((r['y']-prior['y'])*area['height']/prior['height']),
+        width=max(1,round(r['width']*area['width']/prior['width'])),
+        height=max(1,round(r['height']*area['height']/prior['height']))),area)
+
 def map_geometry(rect,area):
     if not valid_rect(rect) or not valid_rect(area):return {}
     rect=bounded_rect(rect,area)
@@ -36,7 +44,7 @@ def space_map(desktops,windows,current):
                               icon=row.get('icon') or 'application-x-executable',minimized=minimized,
                               tile={} if minimized else map_geometry(row.get('rect'),row.get('workarea'))))
         name=workspace.get('name','')
-        spaces.append(dict(id=ident,name=name if name and not name.isdecimal() else f'Space {ident+1}',
+        spaces.append(dict(id=ident,name=name if name and (workspace.get('customName') or not name.isdecimal()) else f'Space {ident+1}',customName=workspace.get('customName',''),
                            active=ident==current,count=len(windows),windows=shown,
                            tiles=[row for row in shown if row['tile']][:9]))
     return spaces
@@ -89,12 +97,14 @@ class ArrangementEngine:
                 if found and (ids is None or ident in ids):
                     target,_=found;rect=target['_outer_rect'];area=space.get('rect',{})
                     if valid_rect(rect) and valid_rect(area):
-                        rows.append(dict(id=ident,key=client_key(node),rect=dict(rect),area=dict(area),desktop=space['num'],output=output,floating=bool(target['_floating']),snap=node.get('snap'),fullscreen=bool(node.get('fullscreen_mode')),focused=bool(node.get('focused')),saved=copy.deepcopy(self.actions.saved.get(ident)),snapped=copy.deepcopy(self.actions.snapped.get(ident))))
+                        rows.append(dict(id=ident,key=client_key(node),rect=dict(rect),area=dict(area),desktop=space['num'],output=output,floating=bool(target['_floating']),snap=node.get('snap'),restore_rect=node.get('restore_rect'),fullscreen=bool(node.get('fullscreen_mode')),focused=bool(node.get('focused')),saved=copy.deepcopy(self.actions.saved.get(ident)),snapped=copy.deepcopy(self.actions.snapped.get(ident))))
             for child in node.get('nodes',[])+node.get('floating_nodes',[]):walk(child,space,output)
         walk(tree);return rows[:48]
-    def record_action(self,label,fn,ids=None):
+    def record_action(self,label,fn,ids=None,*,expected_desktop=None):
         with self.lock,self.actions.lock:
             before=self.capture(ids)
+            if expected_desktop is not None and (len(before)!=1 or before[0]['desktop']!=expected_desktop):
+                raise ValueError('That window is no longer in the original workspace.')
             try:return fn()
             finally:
                 # Retain partial changes too, so a failed multi-action is recoverable.
@@ -125,6 +135,8 @@ class ArrangementEngine:
         if not areas:raise ValueError('No workspace is available')
         return areas
     def restore_rows(self,rows,undo=False):
+        native=getattr(self.actions,'client',None)
+        if native:return self.restore_native_rows(native,rows,undo)
         count=0;skipped=0;areas=self._areas();focus=None
         for row in rows:
             found=find_window(self.actions.request(4),row['id'])
@@ -137,21 +149,8 @@ class ArrangementEngine:
             if desktop not in areas:
                 desktop=min(areas);self.actions.command(f'[con_id={ident}] move container to workspace number {desktop}')
             area=areas[desktop]
-            native=getattr(self.actions,'client',None)
-            output=None
-            if native and row.get('output'):
-                output=next((item for item in native.snapshot().get('outputs',[]) if item['name']==row['output']),None)
-                if output:area=output['workarea']
-            if undo and row['area']==area:rect=bounded_rect(row['rect'],area)
-            else:
-                prior=row['area'];r=row['rect']
-                rect=bounded_rect(dict(x=area['x']+round((r['x']-prior['x'])/prior['width']*area['width']),y=area['y']+round((r['y']-prior['y'])/prior['height']*area['height']),width=max(1,round(r['width']/prior['width']*area['width'])),height=max(1,round(r['height']/prior['height']*area['height']))),area)
-            if output:
-                native.request('resize',id=ident,rect=rect,output=output['name'])
-            else:
-                self.actions._resize(ident,rect)
-            if native and row.get('snap') and row['snap']!='maximize':
-                native.request('snap',id=ident,side=row['snap'],**({'output':output['name']} if output else {}))
+            rect=restore_rect(row,area,undo)
+            self.actions._resize(ident,rect)
             # Sway versions differ on whether floating resize includes the CSD
             # frame. Measure one configure reply rather than accumulating borders.
             time.sleep(.04)
@@ -172,6 +171,62 @@ class ArrangementEngine:
             for row in rows:self.sync(row['id'])
         if focus:self.actions.command(f'[con_id={focus}] focus')
         return dict(applied=count,skipped=skipped)
+    def restore_native_rows(self,native,rows,undo):
+        # Native IDs are monotonic within the compositor. One authoritative
+        # snapshot covers the batch; every mutating IPC rechecks the ID.
+        snapshot=native.snapshot()
+        windows={int(window['id']):window for window in snapshot['windows']}
+        areas={out['name']:out for out in snapshot['outputs'] if valid_rect(out.get('workarea'))}
+        desktops={d['id']+1 for d in snapshot['desktops']}
+        if not desktops or not areas:raise ValueError('No workspace is available')
+        applied=[];focus=None
+        for row in rows:
+            ident=row['id'];window=windows.get(ident)
+            if not window or window.get('minimized') or tuple(row['key'])!=(window.get('pid',0),window.get('klass') or 'native-window',0):continue
+            desktop=row['desktop'] if row['desktop'] in desktops else min(desktops)
+            output=areas.get(row.get('output'))
+            if output is None:
+                def overlap(out):
+                    left=window['rect'];right=out['rect']
+                    return max(0,min(left['x']+left['width'],right['x']+right['width'])-max(left['x'],right['x']))*max(0,min(left['y']+left['height'],right['y']+right['height'])-max(left['y'],right['y']))
+                output=max(areas.values(),key=overlap)
+            snap=row.get('snap')
+            def place(target):
+                if snap=='maximize':
+                    options={}
+                    if valid_rect(row.get('restore_rect')):
+                        geometry=dict(row,rect=row['restore_rect'])
+                        options['restore_rect']=restore_rect(geometry,target['workarea'],undo)
+                    native.request('snap',id=ident,side=snap,output=target['name'],**options)
+                else:
+                    native.request('resize',id=ident,rect=restore_rect(row,target['workarea'],undo),output=target['name'])
+                    if snap:native.request('snap',id=ident,side=snap,output=target['name'])
+                if row.get('fullscreen'):native.request('fullscreen',id=ident,enabled=True)
+            try:
+                if window.get('fullscreen'):native.request('fullscreen',id=ident,enabled=False)
+                if window['desktop']!=desktop-1:native.move(ident,desktop)
+                place(output)
+            except RuntimeError:
+                # If a client closed after the snapshot, skip it. A monitor
+                # can also disappear mid-batch: remap to a live output once.
+                live=native.snapshot()
+                if not any(int(w['id'])==ident and not w.get('minimized') for w in live['windows']):continue
+                fallback=next((out for out in live['outputs'] if valid_rect(out.get('workarea'))),None)
+                if fallback is None or any(out['name']==output['name'] for out in live['outputs']):raise
+                place(fallback)
+            for table,key in ((self.actions.saved,'saved'),(self.actions.snapped,'snapped')):
+                table.pop(ident,None)
+                if undo and row.get(key):table[ident]=copy.deepcopy(row[key])
+            applied.append(ident)
+            if row.get('focused'):focus=ident
+        self.actions._maximized=frozenset(self.actions.saved);self.actions._persist()
+        if self.sync:
+            for ident in applied:self.sync(ident)
+        if focus:
+            try:native.request('focus',id=focus)
+            except RuntimeError:
+                if any(int(w['id'])==focus for w in native.snapshot()['windows']):raise
+        return dict(applied=len(applied),skipped=len(rows)-len(applied))
     def undo(self):
         with self.lock,self.actions.lock:
             if not self.history:raise ValueError('There is no arrangement to undo')
@@ -191,7 +246,7 @@ class ArrangementEngine:
             for row in rows:
                 app=identities.get(str(row['id']))
                 if not app:continue
-                saved.append(dict(app=app,klass=str(row['key'][1])[:256],rect=row['rect'],area=row['area'],desktop=row['desktop'],output=row['output'],snap=row['snap'],floating=row['floating'],fullscreen=row['fullscreen']))
+                saved.append(dict(app=app,klass=str(row['key'][1])[:256],rect=row['rect'],area=row['area'],desktop=row['desktop'],output=row['output'],snap=row['snap'],restore_rect=row.get('restore_rect'),floating=row['floating'],fullscreen=row['fullscreen']))
             if not saved:raise ValueError('No recognized application windows to save')
             if len(saved)>24:raise ValueError('Save layouts with at most 24 application windows')
             if len(self.layouts)>=12:raise ValueError('Remove a saved layout first (limit 12)')
@@ -228,7 +283,7 @@ class ArrangementEngine:
             if candidate is None or (candidate.get('pid') and candidate['pid']!=current['key'][0]):raise ValueError('A selected window changed; refresh the preview')
             # Verify class again: an ID must never silently select another client.
             if str(current['key'][1])!=layout['klass']:raise ValueError('A selected application changed; refresh the preview')
-            rows.append(dict(current,rect=layout['rect'],area=layout['area'],desktop=layout['desktop'],output=layout.get('output',''),snap=layout.get('snap'),floating=True,fullscreen=layout['fullscreen'],focused=False))
+            rows.append(dict(current,rect=layout['rect'],area=layout['area'],desktop=layout['desktop'],output=layout.get('output',''),snap=layout.get('snap'),restore_rect=layout.get('restore_rect'),floating=True,fullscreen=layout['fullscreen'],focused=False))
         return self.record_action('Apply '+saved['name'],lambda:self.restore_rows(rows),ids)
     def load(self):
         try:
@@ -248,6 +303,8 @@ class ArrangementEngine:
                     if not isinstance(row,dict) or not valid_rect(row.get('rect')) or not valid_rect(row.get('area')) or type(row.get('desktop')) is not int or not 1<=row['desktop']<=99 or not all(isinstance(row.get(k),str) and 0<len(row[k])<=256 for k in ('app','klass')) or type(row.get('fullscreen')) is not bool or type(row.get('floating')) is not bool:raise ValueError('Invalid saved layout window')
                     if not isinstance(row.get('output',''),str) or len(row.get('output',''))>128 or row.get('snap') not in (None,'left','right','top','bottom','top-left','top-right','bottom-left','bottom-right','maximize'):
                         raise ValueError('Invalid saved output or tile')
+                    if row.get('restore_rect') is not None and not valid_rect(row['restore_rect']):
+                        raise ValueError('Invalid saved restore geometry')
             self.layouts=rows
         except (OSError,ValueError,TypeError,KeyError):pass
     def persist(self):

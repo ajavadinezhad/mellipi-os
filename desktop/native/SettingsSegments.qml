@@ -12,7 +12,7 @@ Rectangle {
     property bool indicatorReady: false
     function updateIndicator() {
         segmentSlide.stop();segmentSlide.to=selection.targetX;
-        if(indicatorReady && selectedIndex>=0 && !Theme.reducedMotion)segmentSlide.restart();
+        if(indicatorReady && selectedIndex>=0 && Theme.controlMotionEnabled)segmentSlide.restart();
         else selection.x=selection.targetX;
     }
     Component.onCompleted: {indicatorReady=true;selection.x=selection.targetX;}
@@ -39,7 +39,7 @@ Rectangle {
         Rectangle {anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom;anchors.bottomMargin:2;width:Math.min(parent.width,20);height:2;radius:1;color:Theme.accentInk}
     }
     NumberAnimation {id:segmentSlide;objectName:"segmentSlide";target:selection;property:"x";duration:Theme.motion;easing.type:Easing.OutCubic}
-    readonly property bool motionDisabled:Theme.reducedMotion
+    readonly property bool motionDisabled:!Theme.controlMotionEnabled
     onMotionDisabledChanged:if(motionDisabled){segmentSlide.stop();selection.x=selection.targetX;}
     Row {
         id: segmentRow;x: 2;y: 2;spacing: 1

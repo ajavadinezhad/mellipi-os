@@ -243,30 +243,39 @@ class BrightnessControls(QObject):
         else:self._refreshing=False
         if 'error' in result:
             self._state={**self._state,'reason':result['error'],'busy':self._writing}
+            self._state.pop('pendingPercent',None)
             self.notice.emit('Brightness: '+result['error'])
         else:
             self._device=result['device'];device=self._device
             self._state=dict(available=bool(device),percent=device['percent'] if device else 0,name=device['name'] if device else '',busy=self._writing,backend=device.get('backend','backlight') if device else 'ddc' if self._externalId else '',externalId=self._externalId,reason='' if device else 'Selected external display is unavailable; detect it again' if self._externalId else EMPTY['reason'])
             self.watch_device()
             if self._remember_on_read and device and device.get('backend')=='ddc':self.save_target(device['identity']);self._remember_on_read=False
-        self.changed.emit()
         if writing:
             desired,self._desired=self._desired,None
             if desired is not None and desired!=result['requested']:
-                if self._device and target_key(self._device)==result['requestedDevice']:self.begin_write(desired)
+                if self._device and target_key(self._device)==result['requestedDevice']:
+                    self.begin_write(desired);return
                 else:self.notice.emit('Brightness device changed; adjust it again')
             elif self._refresh_after_write:self._refresh_after_write=False;self.refresh()
         elif self._restore_pending:self.restore_target()
+        self.changed.emit()
     @Slot(int)
     def setBrightness(self,percent):
         if self._closed:return
         percent=max(1,min(100,int(percent)))
         if not self._device:self.notice.emit(self._state['reason']);return
         if self._discovering:self.notice.emit('Wait for external display detection to finish');return
-        if self._writing:self._desired=percent;return
+        if self._writing:
+            self._desired=percent
+            if self._device.get('backend')=='ddc':
+                self._state={**self._state,'pendingPercent':percent};self.changed.emit()
+            return
+        if percent==self._device['percent']:return
         self.begin_write(percent)
     def begin_write(self,percent):
-        self._writing=True;self._state={**self._state,'busy':True};self.changed.emit();device=dict(self._device)
+        self._writing=True;device=dict(self._device);self._state={**self._state,'busy':True}
+        if device.get('backend')=='ddc':self._state['pendingPercent']=percent
+        self.changed.emit()
         def work():
             if device.get('backend')=='ddc':set_external(device,percent);return read_external(device)
             self.setter(device,percent);return discover_backlight(self.root)

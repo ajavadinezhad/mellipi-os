@@ -10,11 +10,54 @@ from PyQt6.QtCore import QUrl
 from PyQt6.QtMultimedia import QMediaPlayer
 from PyQt6.QtWidgets import QApplication
 
-from mellipi_recorder import Recorder, Recording, level, saved_recordings
+from mellipi_recorder import CaptureWriter, Recorder, Recording, level, recover_recording, saved_recordings
 from preferences import Preferences
 
 
 class RecordingTest(unittest.TestCase):
+    def test_failed_publish_keeps_audio_and_can_be_recovered(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = Recording(Path(directory), 44100, 1)
+            data = struct.pack('=h', 1234) * 10
+            record.append(data)
+            with self.assertRaisesRegex(ValueError, 'still in use'):
+                recover_recording(record.staging)
+            with patch('mellipi_recorder.os.link', side_effect=OSError('disk error')):
+                with self.assertRaisesRegex(OSError, 'disk error'):
+                    record.finish()
+            recovered = recover_recording(record.staging)
+            self.assertFalse(record.staging.exists())
+            with wave.open(str(recovered), 'rb') as audio:
+                self.assertEqual(audio.readframes(10), struct.pack('<h', 1234) * 10)
+
+    def test_worker_drains_queued_audio_before_finishing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            writer = CaptureWriter(Recording(Path(directory), 44100, 1))
+            self.assertTrue(writer.submit(struct.pack('=h', 1234) * 10))
+            writer.stop()
+            writer.start()
+            self.assertTrue(writer.wait(3000))
+            self.assertEqual(writer.error, '')
+            with wave.open(str(writer.path), 'rb') as audio:
+                self.assertEqual(audio.getnframes(), 10)
+
+    def test_recovery_repairs_interrupted_wav_length_and_drops_partial_frame(self):
+        with tempfile.TemporaryDirectory() as directory:
+            record = Recording(Path(directory), 44100, 1)
+            record.append(struct.pack('=h', 90) * 3)
+            with patch('mellipi_recorder.os.link', side_effect=OSError('interrupted')):
+                with self.assertRaises(OSError):
+                    record.finish()
+            with record.staging.open('r+b') as stream:
+                stream.seek(40)
+                stream.write(struct.pack('<I', 2))
+                stream.seek(0, os.SEEK_END)
+                stream.write(b'x')
+            path = recover_recording(record.staging)
+            with wave.open(str(path), 'rb') as audio:
+                self.assertEqual(audio.getnframes(), 3)
+                self.assertEqual(audio.readframes(3), struct.pack('<h', 90) * 3)
+
     def test_chunk_boundaries_make_a_private_playable_wav(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / 'Recordings'
@@ -157,6 +200,6 @@ class RecordingLibraryTest(unittest.TestCase):
             self.app.processEvents()
         self.assertGreater(self.window.status.height(), self.window.status.fontMetrics().height())
         self.assertLess(self.window.library_menu.geometry().bottom(), self.window.library.geometry().top())
-        self.assertIn(self.window.rename_button, self.window.library_menu.menu().actions())
-        self.assertIn(self.window.trash_button, self.window.library_menu.menu().actions())
+        self.assertIn(self.window.rename_button, self.window.recording_menu.actions())
+        self.assertIn(self.window.trash_button, self.window.recording_menu.actions())
         self.assertGreater(self.window.status.geometry().top(), self.window.library.geometry().bottom())

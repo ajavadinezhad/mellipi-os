@@ -4,12 +4,16 @@ import json
 import math
 import os
 from pathlib import Path
+import stat
+import subprocess
 import sys
 import tempfile
 
 MAX_MARKS = 200
 MAX_NOTE = 1000
 MAX_REQUEST = 900_000
+MAX_PDF_BYTES = 256 * 1024 * 1024
+MAX_EXTRACT_PAGES = 100
 P = C.c_void_p
 D = C.c_double
 
@@ -135,7 +139,41 @@ class Poppler:
 
 def revision(path):
     value = path.stat()
+    return stat_revision(value)
+
+
+def stat_revision(value):
     return [value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns]
+
+
+def snapshot(source, destination, expected, destination_identity):
+    """Copy one bounded, unchanged revision into the viewer's anonymous file."""
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as reader:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_PDF_BYTES:
+            raise ValueError('Choose a readable PDF no larger than 256 MiB.')
+        if stat_revision(info) != expected:
+            raise ValueError('The PDF changed before opening. Open it again.')
+        if destination.parent != Path('/proc') / str(os.getppid()) / 'fd' or not destination.name.isdecimal():
+            raise ValueError('The PDF copy destination is not owned by this viewer.')
+        output = os.open(destination, os.O_WRONLY | os.O_NONBLOCK)
+        with os.fdopen(output, 'wb') as writer:
+            target = os.fstat(output)
+            if (not stat.S_ISREG(target.st_mode) or target.st_uid != os.getuid() or
+                    target.st_nlink != 0 or target.st_size != 0 or
+                    [target.st_dev, target.st_ino] != destination_identity):
+                raise ValueError('The private PDF copy destination changed.')
+            remaining = info.st_size
+            while remaining:
+                chunk = reader.read(min(1 << 20, remaining))
+                if not chunk:
+                    raise ValueError('The PDF changed while opening. Open it again.')
+                writer.write(chunk)
+                remaining -= len(chunk)
+        if stat_revision(os.fstat(descriptor)) != expected or revision(source) != expected:
+            raise ValueError('The PDF changed while opening. Open it again.')
+    return True
 
 
 def validate(mark):
@@ -151,6 +189,71 @@ def validate(mark):
     if not isinstance(contents, str) or len(contents) > MAX_NOTE or '\0' in contents:
         raise ValueError('Invalid annotation text.')
     return kind, number, points, contents
+
+
+def parse_pages(value, total):
+    pages = []
+    if not isinstance(value, str) or not value or len(value) > 1200:
+        raise ValueError('Enter page numbers or ranges, for example 1–3, 6.')
+    for token in value.replace('–', '-').split(','):
+        part = [n.strip() for n in token.strip().split('-')]
+        if not 1 <= len(part) <= 2 or any(not n.isascii() or not n.isdecimal() or len(n) > 8 for n in part):
+            raise ValueError('Enter page numbers or ranges, for example 1–3, 6.')
+        first, last = int(part[0]), int(part[-1])
+        if not 1 <= first <= last <= total:
+            raise ValueError(f'Choose pages between 1 and {total}.')
+        if len(pages) + last - first + 1 > MAX_EXTRACT_PAGES:
+            raise ValueError(f'Choose up to {MAX_EXTRACT_PAGES} pages.')
+        pages.extend(range(first, last + 1))
+    return list(dict.fromkeys(pages))
+
+
+def extract(source, request, destination):
+    source, destination = Path(source).absolute(), Path(destination).absolute()
+    expected = request['revision']
+    if revision(source) != expected or os.path.lexists(destination):
+        raise ValueError('The source changed or the destination already exists.')
+    pages = request['pages']
+    if (not isinstance(pages, list) or not 1 <= len(pages) <= MAX_EXTRACT_PAGES or
+            any(type(page) is not int or not 1 <= page <= 99_999_999 for page in pages) or
+            len(set(pages)) != len(pages)):
+        raise ValueError('The selected pages are invalid.')
+    def invoke(args, cwd):
+        try:
+            subprocess.run(args, cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=20)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            raise ValueError('Poppler could not extract the selected pages.') from error
+    with tempfile.TemporaryDirectory(prefix='.mellipi-pdf-', dir=destination.parent) as directory:
+        work = Path(directory)
+        input_path = source
+        marks = request.get('marks', [])
+        if marks:
+            input_path = work / 'marked.pdf'
+            execute('save', source, {'revision': expected, 'marks': marks}, input_path)
+        slices = []
+        size = 0
+        for page in pages:
+            invoke(['pdfseparate', '-f', str(page), '-l', str(page), str(input_path), 'page-%d.pdf'], work)
+            part = work / f'page-{page}.pdf'
+            size += part.stat().st_size
+            if size > MAX_PDF_BYTES:
+                raise ValueError('The extracted pages exceed 256 MiB.')
+            slices.append(part)
+        draft = work / 'pages.pdf'
+        if len(slices) == 1:
+            draft = slices[0]
+        else:
+            invoke(['pdfunite', *map(str, slices), str(draft)], work)
+        if revision(source) != expected:
+            raise ValueError('The source changed during export.')
+        os.chmod(draft, 0o600)
+        with draft.open('rb') as stream:
+            os.fsync(stream.fileno())
+        try:
+            os.link(draft, destination)
+        except FileExistsError as error:
+            raise ValueError('Choose a new filename; no existing PDF will be replaced.') from error
+    return True
 
 
 def execute(operation, source, request, destination=None):
@@ -207,12 +310,18 @@ def execute(operation, source, request, destination=None):
 def main():
     try:
         operation, source, *target = sys.argv[1:]
-        if operation not in ('save', 'notes') or len(target) != (operation == 'save'):
+        if operation not in ('save', 'notes', 'snapshot', 'extract') or len(target) != (operation in ('save', 'snapshot', 'extract')):
             raise ValueError('Invalid annotation request.')
         data = sys.stdin.buffer.read(MAX_REQUEST + 1)
         if len(data) > MAX_REQUEST:
             raise ValueError('Too many annotations in one request.')
-        result = execute(operation, source, json.loads(data), *target)
+        request = json.loads(data)
+        if operation == 'snapshot':
+            result = snapshot(Path(source), Path(target[0]), request['revision'], request['destination'])
+        elif operation == 'extract':
+            result = extract(source, request, target[0])
+        else:
+            result = execute(operation, source, request, *target)
         print(json.dumps({'result': result}, ensure_ascii=False))
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(json.dumps({'error': str(error)[:600]}, ensure_ascii=False))

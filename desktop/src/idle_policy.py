@@ -1,7 +1,7 @@
 """One event-driven swayidle child for Orbit's user-selected lock/display policy."""
-import os,shlex,shutil,subprocess,select,sys,time
+import os,shlex,shutil,subprocess,select,sys,time,threading
 from pathlib import Path
-from qt_compat import QObject,Property,Signal,Slot
+from qt_compat import QObject,Property,Signal,Slot,QTimer
 from project_paths import PROJECT_ROOT as ROOT, SOURCE_ROOT
 REAL_POPEN=subprocess.Popen
 
@@ -86,6 +86,8 @@ def retire_legacy_idle(environment):
 
 class IdlePolicy(QObject):
     changed=Signal();notice=Signal(str)
+    configured=Signal(object);childExited=Signal(object)
+    RESTART_DELAYS=(250,1000,3000)
     def __init__(self,preferences,enabled=True,spawn=None,environment=None,availability=None):
         super().__init__();self.preferences=preferences;self.environment=dict(os.environ if environment is None else environment)
         self.enabled=bool(enabled and (self.environment.get('SWAYSOCK') or self.environment.get('ORBIT_NATIVE_CONTROL')) and not self.environment.get('ORBIT_NESTED'));self.spawn=spawn or subprocess.Popen
@@ -100,15 +102,19 @@ class IdlePolicy(QObject):
             prerequisites=self.availability
             self.availability=lambda: bool(self.native_capabilities.get('secure_lock') and self.native_capabilities.get('idle_notify') and prerequisites())
         self.process=None;self.current=None;self.error='';self.closed=False;self.migrated=False
+        self.desired=None;self.changing=False;self.attempts=0;self.process_started=0
+        self.restart=QTimer(self);self.restart.setSingleShot(True);self.restart.timeout.connect(self._configure)
+        self.configured.connect(self._configured);self.childExited.connect(self._child_exited)
         self.apply()
     state=Property('QVariantMap',lambda self:dict(available=self.enabled and self.availability(),running=self.process is not None and self.process.poll() is None,error=self.error),notify=changed)
-    def _stop(self):
-        process,self.process=self.process,None
+    @staticmethod
+    def _stop_process(process):
         if process is not None:
             try:
                 process.terminate();process.wait(timeout=2)
             except subprocess.TimeoutExpired:
-                process.kill();process.wait(timeout=2)
+                try:process.kill();process.wait(timeout=2)
+                except (OSError,subprocess.TimeoutExpired):pass
             except OSError:pass
     @Slot()
     def apply(self):
@@ -118,22 +124,88 @@ class IdlePolicy(QObject):
             command=policy_command(self.preferences.values,native=self.native)
             if self.native and self.preferences.values.get('displayOffMinutes',0) and (not self.native_capabilities.get('dpms') or not self.preferences.values.get('idleLockEnabled',True)):raise ValueError('Native display-off requires working DPMS and automatic screen locking')
             if command and not self.availability():raise ValueError('Native idle locking requires validated secure-lock and idle-notification support' if self.native else 'Install swayidle and the system screen-lock prerequisites before enabling this policy')
-            if self.current==command and (not command or self.process is not None and self.process.poll() is None):return
-            if not self.migrated:
-                if self.spawn is subprocess.Popen:retire_legacy_idle(self.environment)
-                self.migrated=True
-            self._stop();self.current=None
-            if command:
-                env={k:v for k,v in self.environment.items() if not k.startswith('ORBIT_')}
-                for key in ('ORBIT_NATIVE_CONTROL','ORBIT_SETTINGS_FILE','ORBIT_DATA'):
-                    if self.environment.get(key):env[key]=self.environment[key]
-                settings=getattr(self.preferences,'path',None)
-                if settings is not None:env['ORBIT_SETTINGS_FILE']=str(settings)
-                for key in ('QT_WAYLAND_SHELL_INTEGRATION','QT_QPA_PLATFORM','QT_QUICK_BACKEND'):env.pop(key,None)
-                # The wrapper execs the timer, so it consumes no extra idle
-                # process and the timer dies even if Orbit itself is SIGKILLed.
-                self.process=spawn_timer(command,env,self.spawn)
-            self.current=command;self.error=''
+            if self.desired==command and (self.changing or self.restart.isActive() or
+                    self.process is not None and self.process.poll() is None):
+                return
+            self.attempts=0
+            self.desired=command;self.restart.stop()
+            self._configure()
         except (OSError,ValueError,subprocess.SubprocessError) as error:self.error=str(error);self.notice.emit(self.error)
         self.changed.emit()
-    def close(self):self.closed=True;self._stop()
+
+    def _configure(self):
+        command=self.desired
+        if self.closed or self.changing or command is None:return
+        if self.current==command and (not command or self.process is not None and self.process.poll() is None):return
+        old,self.process=self.process,None
+        env={k:v for k,v in self.environment.items() if not k.startswith('ORBIT_')}
+        for key in ('ORBIT_NATIVE_CONTROL','ORBIT_SETTINGS_FILE','ORBIT_DATA'):
+            if self.environment.get(key):env[key]=self.environment[key]
+        settings=getattr(self.preferences,'path',None)
+        if settings is not None:env['ORBIT_SETTINGS_FILE']=str(settings)
+        for key in ('QT_WAYLAND_SHELL_INTEGRATION','QT_QPA_PLATFORM','QT_QUICK_BACKEND'):env.pop(key,None)
+        migrate=not self.migrated and self.spawn is REAL_POPEN
+        self.migrated=True;self.changing=True
+        def work():
+            process=None;error=''
+            try:
+                if migrate:retire_legacy_idle(self.environment)
+                self._stop_process(old)
+                # The wrapper execs the timer and ties its lifetime to Orbit.
+                if command and not self.closed:process=spawn_timer(command,env,self.spawn)
+            except (OSError,ValueError,subprocess.SubprocessError) as exc:error=str(exc)
+            if self.closed:
+                self._stop_process(process);return
+            try:self.configured.emit((command,process,error))
+            except RuntimeError:
+                self._stop_process(process);return
+            # Linux ties PDEATHSIG to the creating thread. Keep this setup
+            # worker alive until its real child exits; watching it from a
+            # different thread would kill it as soon as setup returned.
+            if process is not None and self.spawn is REAL_POPEN:self._watch(process)
+        if self.spawn is REAL_POPEN:
+            threading.Thread(target=work,daemon=True,name='orbit-idle-setup').start()
+        else:work()
+
+    def _configured(self,result):
+        command,process,error=result
+        if self.closed:
+            if process is not None:threading.Thread(target=self._stop_process,args=(process,),daemon=True).start()
+            return
+        self.changing=False;self.process=process;self.current=command if not error else None
+        self.error=error
+        if self.desired!=command:
+            self._configure();return
+        if process is not None:
+            self.process_started=time.monotonic()
+            if self.spawn is not REAL_POPEN and hasattr(process,'wait'):
+                threading.Thread(target=self._watch,args=(process,),daemon=True,name='orbit-idle-reap').start()
+        elif error:self._retry(error)
+        self.changed.emit()
+
+    def _watch(self,process):
+        try:
+            process.wait();self.childExited.emit(process)
+        except (OSError,RuntimeError):pass
+
+    def _child_exited(self,process):
+        if self.closed or self.process is not process:return
+        self.process=None;self.current=None
+        if time.monotonic()-self.process_started>=60:self.attempts=0
+        self._retry('Automatic screen lock timer stopped')
+        self.changed.emit()
+
+    def _retry(self,message):
+        if not self.desired:return
+        if self.attempts<len(self.RESTART_DELAYS):
+            self.error=message+'; restarting…'
+            self.restart.start(self.RESTART_DELAYS[self.attempts]);self.attempts+=1
+        else:
+            self.error=message+'; check Lock settings to restart it.'
+            self.notice.emit(self.error)
+
+    def close(self):
+        self.closed=True;self.restart.stop()
+        process,self.process=self.process,None
+        if process is not None:
+            threading.Thread(target=self._stop_process,args=(process,),daemon=True,name='orbit-idle-stop').start()

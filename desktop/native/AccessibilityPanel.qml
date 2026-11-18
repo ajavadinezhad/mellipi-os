@@ -3,7 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "."
 ScrollView {
-    id: view;objectName: "accessibilityPanel";property bool sizesExpanded: false
+    id: view;objectName: "accessibilityPanel"
     readonly property var keyboardTool: DesktopTools.tools["keyboard"] || ({available:false,reason:"No compatible on-screen keyboard is installed."})
     clip: true;contentWidth: availableWidth;implicitHeight: content.implicitHeight
     function reveal(item) {
@@ -17,18 +17,18 @@ ScrollView {
         id: content;width: view.availableWidth;spacing: 10
         SettingsGroup {
             title: "Reading"
-            AudioDevicePicker {
-                objectName: "textScalePicker";accessibleLabel: "Desktop text size"
-                devices: [.85,1,1.15,1.3,1.5].map(s => ({name:String(s),description:Math.round(s*100)+"% text size"}))
-                selectedName: String(Theme.textScale);expanded: view.sizesExpanded
-                onToggled: view.sizesExpanded=!view.sizesExpanded
-                onSelected: name => {view.sizesExpanded=false;Orbit.setPreference("textScale",Number(name));}
+            OrbitButton {
+                text:"Desktop text size…";quiet:true;Layout.fillWidth:true
+                onClicked:Orbit.activateSystemAction("text-size")
             }
-            Text {Layout.fillWidth: true;Layout.margins: 6;text: "Desktop text size applies to Mellipi panels. High contrast is under Appearance.";wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11)}
+            Text {Layout.fillWidth: true;Layout.margins: 6;text: "High contrast is under Appearance.";wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11)}
         }
         SettingsGroup {
             title: "Keyboard and motion"
-            SettingRow {label: "Reduce motion";SettingToggle {objectName: "accessibilityMotionToggle";label: "Reduce desktop motion";checked: Orbit.appearance.reducedMotion;onClicked: Orbit.setPreference("reducedMotion",checked)}}
+            OrbitButton {
+                text:"Motion settings…";quiet:true;Layout.fillWidth:true
+                onClicked:Orbit.activateSystemAction("desktop-animations")
+            }
             Text {Layout.fillWidth: true;Layout.margins: 6;text: "Use Tab to move between controls. Apps, Unfold and notifications support arrow keys and Enter or Space to activate the selected item.";wrapMode: Text.Wrap;color: Theme.muted;font.pixelSize: Theme.fontSize(11)}
         }
         SettingsGroup {

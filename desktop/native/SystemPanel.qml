@@ -27,12 +27,16 @@ ColumnLayout {
         });
         var actions=typeof Orbit.systemActions==="undefined" ? [] : Orbit.systemActions || [];
         var controls=actions.filter(row => row.destination && row.destination.startsWith("setting:")).map(function(row){
-            return {name:row.name,description:row.description,icon:row.icon,action:row.id,words:row.searchText};
+            return {name:row.name,description:row.description,icon:row.icon,action:row.id,section:row.section,words:row.searchText};
         });
-        return pages.concat(controls).map(function(row,ordinal){
+        function matches(row) {
+            return tokens.every(token => (row.words || "").toLowerCase().indexOf(token)>=0);
+        }
+        var matchedControls=controls.filter(matches);
+        var shortcutSections=matchedControls.map(row=>row.section);
+        return pages.filter(row=>!shortcutSections.includes(row.section)).concat(matchedControls).map(function(row,ordinal){
             var name=row.name.toLowerCase();
-            var matches=tokens.every(token => (row.words || "").toLowerCase().indexOf(token)>=0);
-            return {row:row, rank:!matches ? -1 : name===query ? 0 : name.startsWith(query) ? 1
+            return {row:row, rank:!matches(row) ? -1 : name===query ? 0 : name.startsWith(query) ? 1
                     : tokens.every(token=>name.indexOf(token)>=0) ? 2 : 3, ordinal:ordinal};
         }).filter(match => match.rank>=0)
             .sort((a,b)=>a.rank-b.rank || a.ordinal-b.ordinal).map(match=>match.row);
@@ -54,9 +58,9 @@ ColumnLayout {
     Shortcut {sequence: StandardKey.Find;onActivated:settings.focusSearch()}
     NumberAnimation {
         id:pageFade;objectName:"settingsPageFade";target:page;property:"opacity"
-        from:0.76;to:1;duration:Theme.economy ? 80 : 130;easing.type:Easing.OutCubic
+        from:0.76;to:1;duration:Theme.motionDuration(130,80);easing.type:Easing.OutCubic
     }
-    readonly property bool motionDisabled:Theme.reducedMotion
+    readonly property bool motionDisabled:!Theme.panelMotionEnabled
     onMotionDisabledChanged:if(motionDisabled){pageFade.stop();page.opacity=1;}
     property string lastTargetSerial: ""
     function revealPending(attempt) {
@@ -113,7 +117,7 @@ ColumnLayout {
         {value:6,label:"Power mode",icon:"system-shutdown",group:"POWER"},
         {value:7,label:"Battery health",icon:"battery-good",group:"POWER"},
         {value:1,label:"Lock",icon:"system-lock-screen",group:"POWER",keywords:"screen lock sleep idle suspend display timeout"},
-        {value:4,label:"Accessibility",icon:"preferences-desktop-accessibility",group:"ACCESS",keywords:"text size font keyboard screen reader motion contrast"},
+        {value:4,label:"Accessibility",icon:"preferences-desktop-accessibility",group:"ACCESS",keywords:"keyboard screen reader assistive input"},
         {value:3,label:"Shortcuts",icon:"preferences-desktop-keyboard-shortcuts",group:"ACCESS",keywords:"keyboard bindings hotkeys"},
         {value:16,label:"System tools",icon:"preferences-system",group:"SYSTEM"},
     ]
@@ -260,7 +264,7 @@ ColumnLayout {
                 sourceComponent: [inputs,locks,displays,shortcuts,accessibility,network,power,battery,sound,bluetooth,appearance,null,help,null,null,brightness,systemTools][Math.max(0,Math.min(16,settings.section))]
                 onLoaded: {
                     pageFade.stop();page.opacity=1;
-                    if(settings.contentReady && !Theme.reducedMotion)pageFade.start();
+                    if(settings.contentReady && Theme.panelMotionEnabled)pageFade.start();
                     settings.queueNotice();settings.queueReveal();
                 }
             }

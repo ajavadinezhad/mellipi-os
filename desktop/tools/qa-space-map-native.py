@@ -83,6 +83,27 @@ def main():
                                     stdout=log, stderr=log, start_new_session=True))
                 qa.wait(lambda:window(title), 10)
 
+            # Save and restore a real maximized state while its workspace
+            # is hidden, then verify the client's later Unmaximize geometry.
+            output=client.snapshot()['outputs'][0]
+            area=output['workarea']
+            normal=dict(x=area['x']+72,y=area['y']+76,width=415,height=260)
+            for title in ('map-wayland-fixture','map-x11-fixture'):
+                ident=window(title)['id']
+                client.move(ident,2)
+                client.request('snap',id=ident,side='maximize',output=output['name'],restore_rect=normal)
+                qa.wait(lambda:window(title)['maximized'])
+                assert window(title)['desktop']==1, window(title)
+                assert window(title)['restore_rect']==normal, window(title)
+                client.switch_workspace(2)
+                qa.wait(lambda:client.status()['workspace']==2)
+                client.request('maximize',id=ident,restore=True)
+                qa.wait(lambda:not window(title)['maximized'] and window(title)['rect']==normal)
+                client.move(ident,1)
+                client.switch_workspace(1)
+                qa.wait(lambda:client.status()['workspace']==1)
+            print('PASS hidden-workspace maximize and exact normal restore geometry for Wayland and Xwayland',flush=True)
+
             def host_view(node):
                 if str(node.get('name','')).startswith('Orbit Native'):
                     return node
@@ -112,9 +133,43 @@ def main():
                     return qa.wait(lambda:qa.control('qa-shell-item:'+name), 5)
 
                 def click(name):
-                    row=item(name)
+                    row=qa.wait(lambda:current if (current:=item(name))['enabled'] else None, 5)
                     pointer.click(offset_x+row['x']+row['width']/2, offset_y+row['y']+row['height']/2,
                                   outer['width'], outer['height'])
+
+                def drag(source, target, screenshot=None, cancel=False):
+                    def center(name):
+                        row=item(name)
+                        assert row['visible'], (name, row)
+                        return offset_x+row['x']+row['width']/2, offset_y+row['y']+row['height']/2
+
+                    sx, sy=center(source)
+                    tx, ty=center(target)
+
+                    def button(pressed):
+                        stamp=int(time.monotonic()*1000)&0xffffffff
+                        pointer.send(5, 2, struct.pack('=III', stamp, 272, pressed))
+                        pointer.send(5, 4)
+                        pointer.roundtrip()
+
+                    pointer.move(sx, sy, outer['width'], outer['height'])
+                    time.sleep(.10)
+                    button(1)
+                    try:
+                        for step in range(1, 11):
+                            ratio=step/10
+                            pointer.move(sx+(tx-sx)*ratio, sy+(ty-sy)*ratio,
+                                         outer['width'], outer['height'])
+                            time.sleep(.025)
+                        qa.wait(lambda:qa.control('qa-shell-item:spaceMapDragPreview'), 2)
+                        if cancel:
+                            key(1)  # Cancel while still holding the pointer over a valid target.
+                            qa.wait(lambda:not qa.control('qa-shell-item:spaceMapDragPreview'),2)
+                        if screenshot:
+                            subprocess.run(['grim', screenshot], env=child, check=True, timeout=5)
+                    finally:
+                        button(0)
+                    time.sleep(.20)
 
                 def key(code):
                     stamp=int(time.monotonic()*1000)&0xffffffff
@@ -123,6 +178,12 @@ def main():
                     pointer.roundtrip()
                     time.sleep(.12)
 
+                def checkpoints():
+                    return qa.control('qa-arrangement-state')['checkpoints']
+
+                def wait_for_checkpoint(previous):
+                    qa.wait(lambda: bool(rows:=checkpoints()) and rows[0]['id']!=previous,5)
+
                 click('spineSpaceMap')
                 qa.wait(lambda:qa.control('status')['panel']=='space-map')
                 for index in range(4):
@@ -130,30 +191,54 @@ def main():
                 qa.wait(lambda:item('spaceMapTile0').get('activeFocus'),5)
                 key(106)  # Right
                 qa.wait(lambda:item('spaceMapTile1').get('activeFocus'),5)
-                click('spaceMapSwitch')
+                key(28)  # Enter opens the space selected by the arrow key.
                 qa.wait(lambda:client.status()['workspace']==2)
                 qa.control('workspace:1')
                 qa.wait(lambda:client.status()['workspace']==1)
                 print('PASS opens from workspace strip, arrow navigation, and switch at 150% text size', flush=True)
 
-                for title in ('map-wayland-fixture', 'map-x11-fixture'):
+                if qa.control('status')['panel']!='space-map':
+                    qa.control('space-map')
+                click('spaceMapTile0')
+                click('spaceMapRename')
+                qa.wait(lambda:item('spaceMapNameField').get('activeFocus'),5)
+                for code in (31,20,22,32,21):  # study
+                    key(code)
+                key(28)
+                qa.wait(lambda:json.loads(settings.read_text()).get('spaceNames',{}).get('0')=='study',5)
+                assert client.status()['workspace']==1
+                print('PASS keyboard workspace rename persists without switching or moving a window',flush=True)
+                qa.wait(lambda:item('spaceMapTile0').get('activeFocus'),5)
+                qa.control('space-map')
+                qa.wait(lambda:qa.control('status')['panel']=='',5)
+
+                # A real pointer gesture, rather than invoking the QML slot,
+                # verifies the nested compositor seat, pointer grab and drop.
+                for title, source_name in (('map-wayland-fixture', 'spaceMapWindow'),
+                                           ('map-x11-fixture', 'spaceMapDiagramWindow')):
                     before=window(title)
                     qa.control('space-map')
-                    button='spaceMapMove'+before['id']
-                    def laid_out():
-                        view, target = item('panelBody'), item(button)
-                        return target['x'] > view['x']+view['width']/2
-                    qa.wait(laid_out,5)
-                    click(button)
-                    qa.wait(lambda:item('spaceMapDestination1').get('activeFocus'),5)
-                    key(28)  # Enter
-                    try:
-                        qa.wait(lambda:window(title)['desktop']==1,5)
-                    except AssertionError:
-                        print('move debug',window(title),qa.control('qa-shell-item:spaceMapMove'+before['id']),
-                              qa.control('qa-shell-item:spaceMapDestination1'),file=sys.stderr)
-                        raise
+                    source=source_name+before['id']
+                    history=checkpoints()
+                    if title=='map-wayland-fixture':
+                        drag(source, 'spaceMapCheckpoints')
+                        drag(source, 'spaceMapTile0')
+                        drag(source, 'spaceMapTile1', cancel=True)
+                        assert window(title)['id']==before['id']
+                        assert window(title)['desktop']==0, window(title)
+                        assert qa.control('status')['panel']=='space-map'
+                        assert checkpoints()==history
+                        print('PASS invalid, same-space, and Escape-canceled drops leave windows and history intact', flush=True)
+                    capture=os.environ.get('MELLIPI_SPACE_MAP_DRAG_SCREENSHOT') if title=='map-wayland-fixture' else None
+                    drag(source, 'spaceMapTile1', screenshot=capture)
+                    qa.wait(lambda:window(title)['desktop']==1,5)
+                    wait_for_checkpoint(history[0]['id'] if history else None)
+                    assert window(title)['id']==before['id']
+                    assert client.status()['workspace']==1, 'Drop should not switch away from the current space'
                     click('spaceMapCheckpoints')
+                    item('spaceCheckpoint0')
+                    checkpoint_id=checkpoints()[0]['id']
+                    time.sleep(.18)  # Allow the scrolling viewport to finish relayout.
                     click('spaceCheckpoint0')
                     assert item('restoreSpaceCheckpoint')['enabled']
                     click('restoreSpaceCheckpoint')
@@ -161,9 +246,33 @@ def main():
                     click('spaceMapUndo')
                     qa.wait(lambda:window(title)['desktop']==1,5)
                     assert window(title)['id']==before['id']
+                    print('PASS pointer drag, checkpoint restore and undo for '+title, flush=True)
+
+                    # Restore and move from the focused row without a Move button.
+                    click('restoreSpaceCheckpoint')
+                    qa.wait(lambda:window(title)['desktop']==0,5)
+                    key(1)  # Close the checkpoint first, returning to its row.
+                    def checkpoint_returned():
+                        names=['spaceCheckpoint'+str(i) for i,row in enumerate(checkpoints()) if row['id']==checkpoint_id]
+                        return bool((qa.control('qa-shell-item:'+(names[0] if names else 'spaceMapCheckpoints')) or {}).get('activeFocus'))
+                    qa.wait(checkpoint_returned,5)
+                    key(1)  # Now dismiss Space Map.
+                    qa.wait(lambda:qa.control('status')['panel']=='')
+                    qa.control('space-map')
+                    row='spaceMapWindow'+before['id']
+                    history=checkpoints()
+                    assert not qa.control('qa-shell-item:spaceMapMove'+before['id'])
+                    for _ in range(20):
+                        if item(row).get('activeFocus'):break
+                        key(15)  # Tab
+                    assert item(row).get('activeFocus')
+                    key(106)  # Right on the focused window row
+                    qa.wait(lambda:window(title)['desktop']==1,5)
+                    wait_for_checkpoint(history[0]['id'] if history else None)
+                    assert window(title)['id']==before['id']
                     key(1)  # Escape
                     qa.wait(lambda:qa.control('status')['panel']=='')
-                    print('PASS move, preview, restore and undo for '+title, flush=True)
+                    print('PASS keyboard fallback move for '+title, flush=True)
                 errors=qa.control('status')['qml_errors']
                 assert not errors, errors
         except Exception:

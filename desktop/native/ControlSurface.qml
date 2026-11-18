@@ -36,7 +36,9 @@ Rectangle {
         : focused ? primary ? foreground : Theme.focusColor : Theme.controlBorder
 
     Behavior on color {
-        enabled: surface.animate && !Theme.reducedMotion
-        ColorAnimation { duration: surface.pressed ? Math.min(60, Theme.motion) : Theme.motion }
+        id: fillBehavior
+        enabled: surface.animate && Theme.controlMotionEnabled
+        onEnabledChanged: if(!enabled && fillMotion.running)fillMotion.complete()
+        ColorAnimation {id: fillMotion;duration: surface.pressed ? Math.min(60, Theme.motion) : Theme.motion }
     }
 }

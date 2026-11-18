@@ -73,6 +73,34 @@ class ArchiveTests(unittest.TestCase):
         self.assertTrue((output / source.name / 'empty').is_dir())
         self.assert_no_staging()
 
+    def test_compress_rejects_file_replaced_after_selection(self):
+        source = self.root / 'notes.txt'
+        source.write_text('original')
+        expected = {source: archives.archive_identity(source.lstat())}
+        replacement = self.root / 'replacement'
+        replacement.write_text('replacement')
+        replacement.replace(source)
+        target = self.root / 'copy.zip'
+        with self.assertRaisesRegex(ValueError, 'selected item changed'):
+            archives.compress([source], target, publish, expected_sources=expected)
+        self.assertFalse(target.exists())
+        self.assert_no_staging()
+
+    def test_compress_rejects_destination_redirected_after_selection(self):
+        source = self.root / 'notes.txt'
+        source.write_text('safe')
+        folder = self.root / 'output'
+        folder.mkdir()
+        expected = archives.folder_identity(folder.stat())
+        prior = folder.rename(self.root / 'prior')
+        outside = self.root / 'outside'
+        outside.mkdir()
+        folder.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, 'destination folder changed'):
+            archives.compress([source], folder / 'copy.zip', publish, expected_folder=expected)
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(list(prior.iterdir()), [])
+
     def test_tar_modes_support_root_entry_unicode_and_long_paths(self):
         for suffix, mode in (('tar', 'w'), ('tgz', 'w:gz'), ('tar.bz2', 'w:bz2'), ('tar.xz', 'w:xz')):
             with self.subTest(mode=mode):

@@ -78,7 +78,7 @@ def main():
             child.pop('SWAYSOCK',None);child.pop('DISPLAY',None)
             for color in ('#ff5500','#0055ff'):
                 previous={w['id'] for w in client.windows()}
-                code='from PyQt5.QtWidgets import QApplication,QWidget;from PyQt5.QtCore import Qt;a=QApplication([]);w=QWidget();w.setWindowFlags(Qt.FramelessWindowHint);w.setWindowTitle("Orbit native color fixture");w.setStyleSheet("background:'+color+'");w.resize(360,240);w.show();a.exec()'
+                code='from PyQt6.QtWidgets import QApplication,QWidget;from PyQt6.QtCore import Qt;a=QApplication([]);w=QWidget();w.setWindowFlags(Qt.WindowType.FramelessWindowHint);w.setWindowTitle("Orbit native color fixture");w.setStyleSheet("background:'+color+'");w.resize(360,240);w.show();a.exec()'
                 fixture=subprocess.Popen(['/usr/bin/python3','-c',code],env=child,stdout=parent_log,stderr=parent_log);fixtures.append(fixture)
                 window=wait(lambda:next((w for w in client.windows() if w['id'] not in previous),None));wait(lambda:client.status().get('window_animations',0)>0,2)
                 wait(lambda:not client.status()['animating'],3)
@@ -142,6 +142,18 @@ def main():
             wait(lambda:not client.status()['animating'],3)
             client.request('maximize',id=red);wait(lambda:not client.status()['animating'],3)
             record('window effects remain enabled when only workspace transitions are disabled')
+            client.request('maximize',id=red,restore=True)
+            wait(lambda:client.status()['window_animations']>0,2)
+            client.request('motion',settings=dict(economy=False,reduced_motion=False,enabled=True,windows=False))
+            state=client.status()
+            require(not state['window_motion_enabled'] and not state['reduced_motion'] and not state['window_animations'],
+                    'Disabling window effects cancels them without disabling workspace motion')
+            client.request('maximize',id=red)
+            require(not client.status()['window_animations'],'Window effects stayed disabled during maximize')
+            client.request('motion',settings=dict(economy=False,reduced_motion=True,enabled=True,windows=True))
+            state=client.status()
+            require(state['reduced_motion'] and not state['window_motion_enabled'],'Reduce Motion overrides both controls')
+            record('native window toggle is independent; Reduce Motion overrides it')
             client.request('motion',settings=dict(economy=False,reduced_motion=False,enabled=True))
             record('rapid minimize/restore and reduced-motion cancellation leave no retained effects')
             def slide(target,direction,label):

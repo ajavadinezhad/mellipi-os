@@ -16,10 +16,26 @@ SettingsChoice {
     Accessible.description: selectedTheme ? selectedTheme.description : "Choose a theme"
     popupLimit:306;popupObjectName:"themePickerPopup";implicitHeight:Math.max(40,Theme.fontSize(12)+18);implicitWidth:220;leftPadding:10;rightPadding:32
     onActivated:index=>{if(index>=0 && index<model.length)picker.themeSelected(model[index].id);}
+    component PaletteSample: Rectangle {
+        id:sample
+        required property color header
+        required property color body
+        required property color accent
+        Layout.preferredWidth:34
+        Layout.preferredHeight:20
+        radius:Theme.corner(4)
+        border.width:1
+        color:body
+        Rectangle {x:3;y:3;width:parent.width-6;height:5;radius:1;color:sample.header}
+        Rectangle {x:5;y:11;width:10;height:4;radius:1;color:sample.accent}
+    }
     contentItem:RowLayout {
         spacing:10
-        Rectangle {Layout.preferredWidth:22;Layout.preferredHeight:22;radius:Theme.corner(3);color:picker.selectedTheme ? picker.selectedTheme.background : Theme.background;border.color:picker.selectedTheme ? picker.selectedTheme.palette.border : Theme.border
-            Rectangle {x:5;y:8;width:12;height:5;radius:1;color:picker.selectedTheme ? picker.selectedTheme.accent : picker.previewAccent}
+        PaletteSample {
+            body:picker.selectedTheme ? picker.selectedTheme.palette.surface : Theme.surface
+            border.color:picker.selectedTheme ? (picker.selectedTheme.frame || {}).trim || picker.selectedTheme.palette.border : Theme.frameTrim
+            accent:picker.selectedTheme ? picker.selectedTheme.accent : picker.previewAccent
+            header:picker.selectedTheme ? (picker.selectedTheme.frame || {}).header || picker.selectedTheme.palette.raised : Theme.headerSurface
         }
         Text {Layout.fillWidth:true;text:picker.displayText;color:Theme.text;font.pixelSize:Theme.fontSize(12);elide:Text.ElideRight}
     }
@@ -33,8 +49,10 @@ SettingsChoice {
         Accessible.selected: picker.currentIndex===index
         contentItem:RowLayout {
             spacing:10
-            Rectangle {Layout.preferredWidth:18;Layout.preferredHeight:18;radius:Theme.corner(3);color:modelData.background;border.color:modelData.palette.border
-                Rectangle {anchors.centerIn:parent;width:10;height:4;color:modelData.accent}
+            PaletteSample {
+                body:modelData.palette.surface;border.color:(modelData.frame || {}).trim || modelData.palette.border
+                accent:modelData.accent
+                header:(modelData.frame || {}).header || modelData.palette.raised
             }
             Text {Layout.fillWidth:true;text:modelData.name;color:Theme.text;font.pixelSize:Theme.fontSize(12);elide:Text.ElideRight}
             ControlMark {Layout.preferredWidth:12;Layout.preferredHeight:12;check:true;opacity:picker.currentIndex===index ? 1 : 0;ink:Theme.accentInk}

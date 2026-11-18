@@ -126,7 +126,7 @@ class NativeWindowActions:
                         box=candidate['rect'];return max(0,min(rect['x']+rect['width'],box['x']+box['width'])-max(rect['x'],box['x']))*max(0,min(rect['y']+rect['height'],box['y']+box['height'])-max(rect['y'],box['y']))
                     assigned=max(outputs,key=overlap)['name'] if outputs else ''
                     if window['desktop']!=desktop['id'] or assigned!=output['name']:continue
-                    view=dict(type='con',id=int(window['id']),app_id=window['klass'] or 'native-window',pid=window['pid'],name=window['title'],rect=rect,deco_rect=dict(height=0),focused=window['active'],snap=window.get('snap'),fullscreen_mode=1 if window.get('fullscreen') else 0,nodes=[],floating_nodes=[])
+                    view=dict(type='con',id=int(window['id']),app_id=window['klass'] or 'native-window',pid=window['pid'],name=window['title'],rect=rect,deco_rect=dict(height=0),focused=window['active'],snap='maximize' if window.get('maximized') else window.get('snap'),restore_rect=window.get('restore_rect'),fullscreen_mode=1 if window.get('fullscreen') else 0,nodes=[],floating_nodes=[])
                     space['floating_nodes'].append(dict(type='floating_con',id=int(window['id'])+2**48,rect=rect,nodes=[view],floating_nodes=[]))
         return root
     def configure_input(self,values,keys,device=''):return self.client.request('input_configure',values=values,keys=list(keys),device=device)

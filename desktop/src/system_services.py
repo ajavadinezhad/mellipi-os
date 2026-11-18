@@ -176,6 +176,8 @@ class SystemServices(QObject):
     def __init__(self,enabled=True):
         super().__init__();self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='orbit-system');self.audio_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='abstract-audio');self.pending=set();self.pending_lock=threading.Lock();self.desiredVolume=None;self.desiredInputVolume=None;self.desiredOutputDevice=None;self.desiredInputDevice=None;self.audio_refresh_again=False;self.closed=False;self.audio_process=None;self.bus=None
         self.audio_stop=threading.Event();self.audio_process_lock=threading.Lock()
+        self.wifi_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='mellipi-wifi-scan')
+        self.wifi_revision=0;self.wifi_refresh_after_scan=False
         self.session_actions_enabled=enabled and not bool(os.environ.get('ORBIT_NESTED'))
         self.desiredAudioProfiles={}
         self.audio_profiles_dirty=True
@@ -207,10 +209,10 @@ class SystemServices(QObject):
                 raise RuntimeError('The desktop did not confirm its lock; staying in this session')
             return run(['dm-tool','switch-to-greeter'])
         self.submit('switch-user',work)
-    def submit(self,key,work,done=None,on_error=None):
+    def submit(self,key,work,done=None,on_error=None,*,revision=None):
         def task():
-            try:return dict(key=key,value=work(),done=done)
-            except Exception as e:return dict(key=key,error=str(e),on_error=on_error)
+            try:return dict(key=key,value=work(),done=done,revision=revision)
+            except Exception as e:return dict(key=key,error=str(e),on_error=on_error,revision=revision)
         # Audio must not wait behind network authentication. Each lane has one
         # demand-started worker; existing per-key coalescing bounds slider work.
         audio=key in ('audio','set-volume','mute','output-device','input-device','input-volume','input-mute') or key.startswith('audio-profile:')
@@ -220,22 +222,34 @@ class SystemServices(QObject):
                 if key=='audio':self.audio_refresh_again=True
                 return False
             self.pending.add(key)
-            future=(self.audio_pool if audio else self.pool).submit(task)
+            future=(self.audio_pool if audio else self.wifi_pool if key=='wifi' else self.pool).submit(task)
         future.add_done_callback(lambda f:self.update.emit(f.result()) if not f.cancelled() and not self.closed else None)
         return True
     @Slot(object)
     def apply(self,result):
         if self.closed:return
+        if 'wifiCache' in result:
+            if result['revision']==self.wifi_revision and self.state['wifiEnabled']:
+                self.state['wifiNetworks']=result['wifiCache'];self.changed.emit()
+            return
         if 'key' not in result:self.state.update(result);self.changed.emit();return
         with self.pending_lock:
             self.pending.discard(result['key'])
             again=result['key']=='audio' and self.audio_refresh_again
             if result['key']=='audio':self.audio_refresh_again=False
         if again:self.refreshAudio()
+        if result['key']=='wifi':
+            self.state['wifiScanning']=False
+            if result['revision']!=self.wifi_revision:
+                self.changed.emit()
+                if self.wifi_refresh_after_scan and self.state['wifiEnabled']:
+                    self.wifi_refresh_after_scan=False;self.refreshWifi(False)
+                return
         if result['key'] in ('connect-wifi','wifi'):
             if result['key']=='connect-wifi':self.state.update(wifiConnecting=False,wifiTarget='')
             else:self.state['wifiScanning']=False
-            if 'error' in result:self.state['wifiError']=result['error']
+            if 'error' in result and (result['key']=='connect-wifi' or not self.state['wifiError']):
+                self.state['wifiError']=result['error']
             self.changed.emit()
         if 'error' in result:
             if result['key']=='audio':
@@ -268,11 +282,23 @@ class SystemServices(QObject):
     @Slot(bool)
     def refreshWifi(self,rescan=True):
         with self.pending_lock:
-            if self.closed or 'wifi' in self.pending or 'connect-wifi' in self.pending:return
+            if self.closed or 'connect-wifi' in self.pending or 'wifi-radio' in self.pending:return
+            if 'wifi' in self.pending:
+                if not rescan:self.wifi_refresh_after_scan=True
+                return
+        revision=self.wifi_revision
         self.state.update(wifiScanning=True)
         if rescan:self.state['wifiError']=''
         self.changed.emit()
-        if not self.submit('wifi',lambda:wifi_scan(rescan),lambda rows:(self.state.update(wifiNetworks=rows),self.changed.emit())):
+        def work():
+            if rescan:
+                try:rows=wifi_scan(False)
+                except (ValueError,OSError,RuntimeError,subprocess.SubprocessError):pass
+                else:
+                    if rows and not self.closed:self.update.emit(dict(wifiCache=rows,revision=revision))
+            return wifi_scan(rescan)
+        self.wifi_refresh_after_scan=False
+        if not self.submit('wifi',work,lambda rows:(self.state.update(wifiNetworks=rows),self.changed.emit()),revision=revision):
             self.state['wifiScanning']=False;self.changed.emit()
 
     def watchAudio(self):
@@ -345,12 +371,19 @@ class SystemServices(QObject):
     @Slot()
     def toggleInputMute(self):self.submit('input-mute',lambda:set_input_control('set-source-mute','toggle'),lambda _:self.refreshAudio())
     @Slot(bool)
-    def setWifi(self,enabled):self.submit('wifi-radio',lambda:run(['nmcli','radio','wifi','on' if enabled else 'off']),lambda _:self.refreshNetwork())
+    def setWifi(self,enabled):
+        def done(_):
+            if not enabled:
+                self.state['wifiNetworks']=[];self.changed.emit()
+            self.refreshNetwork()
+        if self.submit('wifi-radio',lambda:run(['nmcli','radio','wifi','on' if enabled else 'off']),done):
+            self.wifi_revision+=1;self.wifi_refresh_after_scan=False
     @Slot(str,str)
     def connectWifi(self,ssid,password):
         if not ssid or len(ssid)>128 or '\n' in password or len(password)>128:return
         with self.pending_lock:
             if self.closed or 'connect-wifi' in self.pending:return
+        self.wifi_revision+=1
         self.state.update(wifiConnecting=True,wifiTarget=ssid,wifiError='');self.changed.emit()
         def work():
             if not password:return run(['nmcli','--wait','10','device','wifi','connect',ssid])
@@ -359,7 +392,8 @@ class SystemServices(QObject):
                 with os.fdopen(fd,'w') as handle:handle.write('802-11-wireless-security.psk:'+password+'\n')
                 return run(['nmcli','--wait','10','--passwd-file',path,'device','wifi','connect',ssid])
             finally:os.unlink(path)
-        if not self.submit('connect-wifi',work,lambda _:(self.notice.emit('Network connected'),self.refreshNetwork(),self.refreshWifi(False))):
+        if not self.submit('connect-wifi',work,lambda _:(self.notice.emit('Network connected'),self.refreshNetwork(),self.refreshWifi(False)),
+                           on_error=lambda:self.refreshWifi(False)):
             self.state.update(wifiConnecting=False,wifiTarget='');self.changed.emit()
     @Slot(str)
     def power(self,action):
@@ -440,6 +474,7 @@ class SystemServices(QObject):
         # connection command may begin while shutdown waits for another worker.
         self.pool.shutdown(wait=False,cancel_futures=True)
         self.audio_pool.shutdown(wait=False,cancel_futures=True)
+        self.wifi_pool.shutdown(wait=False,cancel_futures=True)
         self.audio_stop.set()
         with self.audio_process_lock:
             process=self.audio_process

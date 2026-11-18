@@ -1,9 +1,10 @@
 """Exercise Calculator's session-only history with Qt and real key events."""
 from unittest import TestCase
+from unittest.mock import patch
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLineEdit, QPushButton
 
 from mellipi_calculator import Calculator, HISTORY_LIMIT
 
@@ -24,6 +25,25 @@ class CalculatorHistoryTests(TestCase):
         self.window.field.setText(expression)
         self.window.edited()
         QTest.keyClick(self.window.field, Qt.Key.Key_Return)
+
+    def test_percentage_shortcuts_calculate_and_reject_zero_base(self):
+        def run(change, first, second):
+            def enter(dialog):
+                fields = dialog.findChildren(QLineEdit)
+                fields[0].setText(first)
+                fields[1].setText(second)
+                next(button for button in dialog.findChildren(QPushButton) if button.text() == 'Calculate').click()
+                return dialog.result()
+            with patch('mellipi_calculator.exec_owned_dialog', side_effect=enter):
+                self.window.percentage(change)
+        run(False, '15', '240')
+        self.assertEqual(self.window.field.text(), '36')
+        run(True, '80', '100')
+        self.assertEqual(self.window.field.text(), '25')
+        self.assertIn('(%)', self.window.feedback.text())
+        run(True, '0', '100')
+        self.assertEqual(self.window.field.text(), '25')
+        self.assertEqual(self.window.history.count(), 2)
 
     def test_keyboard_history_recall_copy_and_escape(self):
         window = self.window

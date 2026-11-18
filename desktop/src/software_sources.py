@@ -138,6 +138,10 @@ def transaction(arguments, observe=None):
     return output[process.stdout].decode('utf-8', errors='replace')
 
 
+MELLIPI_COMPATIBILITY = {'abstract-shell': 'Mellipi Shell compatibility',
+                        'abstract-desktop': 'Mellipi Desktop compatibility'}
+
+
 def apt_search(query):
     if not (executable(APT_CACHE) and executable(DPKG_QUERY)):
         return SourceResult(status='APT is unavailable.')
@@ -156,7 +160,7 @@ def apt_search(query):
     packages = []
     for line in run([APT_CACHE, 'search', '--', re.escape(query)]).splitlines():
         identifier, separator, description = line.partition(' - ')
-        if separator and APT_ID.fullmatch(identifier):
+        if separator and identifier not in MELLIPI_COMPATIBILITY and APT_ID.fullmatch(identifier):
             packages.append(Package('apt', identifier, identifier, description,
                                     installed=identifier in installed))
     return SourceResult(rank(packages, query), 'APT is ready.')
@@ -369,7 +373,7 @@ def apt_installed():
             continue
         identifier, status, version, summary = row
         name, separator, arch = identifier.partition(':')
-        if status == 'installed' and APT_ID.fullmatch(name) and (
+        if status == 'installed' and name not in MELLIPI_COMPATIBILITY and APT_ID.fullmatch(name) and (
                 not separator or re.fullmatch(r'[a-z0-9-]+', arch)):
             packages.append(Package('apt', identifier, name, summary, version, installed=True))
     return SourceResult(packages, f'APT: {len(packages)} installed.')
@@ -436,7 +440,8 @@ def apt_updates():
         match = re.match(r'^Inst (\S+) \[([^\]]+)\] \((\S+)', row)
         if match and APT_INSTALLED_ID.fullmatch(match[1]):
             identifier, installed, candidate = match.groups()
-            packages.append(Package('apt', identifier, identifier, '', installed,
+            name=MELLIPI_COMPATIBILITY.get(identifier.split(':',1)[0],identifier)
+            packages.append(Package('apt', identifier, name, '', installed,
                                     installed=True, update_version=candidate))
     return SourceResult(packages, f'APT: {len(packages)} eligible from the local index.', checked=True)
 
@@ -564,6 +569,36 @@ def manage_arguments(package, action):
     return [PKEXEC, SNAP, 'refresh' if action == 'update' else 'remove', '--', package.identifier]
 
 
+def apt_preview(packages, action):
+    packages = tuple(package for package in dict.fromkeys(packages) if package.source == 'apt')
+    if not packages:
+        return ()
+    if action == 'install' and len(packages) == 1:
+        arguments = install_arguments(packages[0])[2:]
+    elif action == 'update':
+        arguments = manage_arguments(packages[0], action)[2:]
+        arguments.extend(manage_arguments(package, action)[-1] for package in packages[1:])
+    elif action == 'remove' and len(packages) == 1 and can_manage(packages[0], action):
+        arguments = ['remove', '--', packages[0].identifier]
+    else:
+        raise ValueError('Cannot preview this APT transaction.')
+    output = run([APT_GET, '--simulate', *arguments], timeout=30)
+    rows = []
+    for line in output.splitlines():
+        if not line.startswith(('Inst ', 'Remv ', 'Purg ')):
+            continue
+        verb, name, *_ = line.split()
+        if not APT_INSTALLED_ID.fullmatch(name) or len(rows) >= 4000:
+            raise RuntimeError('APT returned a package plan that could not be reviewed safely.')
+        if verb != 'Inst' and (action != 'remove' or name.split(':')[0] != packages[0].identifier.split(':')[0]):
+            raise RuntimeError(f'APT would also remove {name}. Nothing changed.')
+        operation = ('Upgrade' if re.match(r'^Inst \S+ \[', line) else 'Install') if verb == 'Inst' else 'Remove'
+        rows.append((operation, name, line.split(maxsplit=2)[-1] if operation != 'Remove' else ''))
+    if not rows and action in ('install', 'remove'):
+        raise RuntimeError('APT did not include the selected change. Refresh the package list and try again.')
+    return tuple(rows)
+
+
 def manage(package, action, observe=None):
     arguments = manage_arguments(package, action)
     if package.source == 'apt':
@@ -585,3 +620,36 @@ def manage(package, action, observe=None):
         after = run([DPKG_QUERY, '-W', '-f=${Version}', '--', package.identifier]).strip()
         return after != before[5]
     return None
+
+
+def manage_updates(packages, observe=None):
+    """Update selected packages in one transaction per manager and scope."""
+    unique = tuple(dict.fromkeys(packages))
+    if not 1 <= len(unique) <= 100 or not all(can_manage(p, 'update') for p in unique):
+        raise ValueError('Select 1–100 supported updates.')
+    groups = {}
+    for package in unique:
+        key = (package.source, package.scope if package.source == 'flatpak' else '')
+        groups.setdefault(key, []).append(package)
+    # Validate every APT target before starting any group; holds stay respected.
+    for package in groups.get(('apt', ''), []):
+        state = run([DPKG_QUERY, '-W', '-f=${db:Status-Want} ${db:Status-Status}', '--',
+                     package.identifier]).strip()
+        if state == 'hold installed':
+            raise RuntimeError(f'{package.name} is on hold.')
+        if not state.endswith(' installed'):
+            raise RuntimeError(f'{package.name} is no longer installed. Check for updates again.')
+    completed = 0
+    for packages_in_group in groups.values():
+        first, *rest = packages_in_group
+        command = manage_arguments(first, 'update')
+        command.extend(manage_arguments(package, 'update')[-1] for package in rest)
+        try:
+            transaction(command, observe)
+        except (AuthorizationDeclined, RuntimeError, OSError) as error:
+            if completed:
+                error_type = AuthorizationDeclined if isinstance(error, AuthorizationDeclined) else RuntimeError
+                raise error_type(f'{completed} earlier update(s) completed. {error}') from error
+            raise
+        completed += len(packages_in_group)
+    return completed

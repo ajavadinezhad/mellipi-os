@@ -10,6 +10,8 @@ QtObject {
     id: shell
     property string renderedPanel: ""
     property bool overlayShown: false
+    property bool overlayReady: false
+    Component.onCompleted: {overlayReady=true;if(Orbit.panel!=="")syncPanel(false);}
     property bool launcherPrepared: false
     property int sw: Orbit.screenGeometry.width
     property int sh: Orbit.screenGeometry.height
@@ -80,7 +82,24 @@ QtObject {
         function onPanelChanged() {
             shell.query="";shell.launchTab="Apps";
             if(Orbit.panel!=="launcher")shell.launcherPrepared=false;
+            if(shell.overlayReady)shell.syncPanel(Theme.panelMotionEnabled);
+        }
+    }
+    readonly property bool panelMotionEnabled: Theme.panelMotionEnabled
+    onPanelMotionEnabledChanged: if(overlayReady && !panelMotionEnabled)syncPanel(false)
+    function syncPanel(animate) {
             enterPanel.stop();exitPanel.stop();swapPanel.stop();
+            surfaceShift.y=0;
+            if(!animate) {
+                var changed=shell.renderedPanel!==Orbit.panel;
+                surface.opacity=1;
+                shell.renderedPanel=Orbit.panel;
+                shell.overlayShown=Orbit.panel!=="";
+                if(Orbit.panel==="launcher")Qt.callLater(overlay.focusLauncher);
+                else if(Orbit.panel==="space-map" && pageLoader.item)Qt.callLater(pageLoader.item.focusSelected);
+                else if(changed && shell.overlayShown)overlayItem.forceActiveFocus();
+                return;
+            }
             if(Orbit.panel === "")exitPanel.restart();
             else if(Orbit.panel==="launcher") {
                 // A Super press is immediately actionable, even over another sheet.
@@ -92,7 +111,6 @@ QtObject {
             else if(!shell.overlayShown) {shell.renderedPanel=Orbit.panel;shell.overlayShown=true;enterPanel.restart();}
             else if(shell.renderedPanel !== Orbit.panel)swapPanel.restart();
             else enterPanel.restart();
-        }
     }
     function queuePanelGeometry() {if(overlayShown && renderedPanel!=="")panelGeometryTimer.restart();}
     onPanelWidthChanged: queuePanelGeometry()
@@ -104,21 +122,20 @@ QtObject {
     onRenderedPanelChanged: {Orbit.positionPanel(renderedPanel);queuePanelGeometry();}
     property SequentialAnimation enterPanel: SequentialAnimation {
         PropertyAction { target: surface;property: "opacity";value: shell.renderedPanel==="launcher" ? 0.85 : 0 }
-        PropertyAction { target: surfaceShift;property: "y";value: Theme.reducedMotion || shell.renderedPanel==="launcher" ? 0 : 7 }
+        PropertyAction { target: surfaceShift;property: "y";value: Theme.economy || shell.renderedPanel==="launcher" ? 0 : 7 }
         ParallelAnimation {
-            NumberAnimation { target: surface;property: "opacity";to: 1;duration: Theme.motion;easing.type: Easing.OutCubic }
-            NumberAnimation { target: surfaceShift;property: "y";to: 0;duration: Theme.motion;easing.type: Easing.OutCubic }
+            NumberAnimation { target: surface;property: "opacity";to: 1;duration: Theme.panelMotion;easing.type: Easing.OutCubic }
+            NumberAnimation { target: surfaceShift;property: "y";to: 0;duration: Theme.panelMotion;easing.type: Easing.OutCubic }
         }
     }
     property SequentialAnimation exitPanel: SequentialAnimation {
-        NumberAnimation { target: surface;property: "opacity";to: 0;duration: Theme.reducedMotion ? 0 : Theme.economy ? 85 : 120;easing.type: Easing.InCubic }
+        NumberAnimation { target: surface;property: "opacity";to: 0;duration: Theme.motionDuration(120,85);easing.type: Easing.InCubic }
         ScriptAction { script: {shell.overlayShown=false;shell.renderedPanel="";} }
     }
     property SequentialAnimation swapPanel: SequentialAnimation {
-        NumberAnimation { target: surface;property: "opacity";to: 0;duration: Theme.reducedMotion ? 0 : Theme.economy ? 45 : 60 }
+        NumberAnimation { target: surface;property: "opacity";to: 0;duration: Theme.motionDuration(60,45) }
         ScriptAction { script: shell.renderedPanel=Orbit.panel }
-        PauseAnimation { duration: Theme.reducedMotion ? 0 : 20 }
-        NumberAnimation { target: surface;property: "opacity";to: 1;duration: Theme.reducedMotion ? 0 : Theme.economy ? 80 : 110;easing.type: Easing.OutCubic }
+        NumberAnimation { target: surface;property: "opacity";to: 1;duration: Theme.motionDuration(110,80);easing.type: Easing.OutCubic }
     }
 
     property Window desktopWindow: Window {
@@ -461,7 +478,7 @@ QtObject {
                 anchors.fill: parent
                 Rectangle {width: 4;height: 4;radius: 2;color: Theme.accentInk;anchors.horizontalCenter: parent.horizontalCenter;y: 3}
                 Rectangle {width: 4;height: 4;radius: 2;color: Theme.accentInk;opacity: .45;anchors.verticalCenter: parent.verticalCenter;x: 3}
-                RotationAnimator on rotation {from: 0;to: 360;duration: 900;loops: Animation.Infinite;running: busyPointer.visible && !Theme.reducedMotion}
+                RotationAnimator on rotation {from: 0;to: 360;duration: 900;loops: Animation.Infinite;running: busyPointer.visible && Theme.desktopMotionEnabled && !Theme.economy}
             }
         }
     }
@@ -490,7 +507,7 @@ QtObject {
         flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
         onVisibleChanged: {Orbit.syncContextSurface();if(visible && Orbit.context.items!==undefined && !Orbit.isWayland)requestActivate();}
         property Connections contextState: Connections { target: Orbit;function onInteractionChanged(){Orbit.syncContextSurface();}function onPanelChanged(){Orbit.syncContextSurface();} }
-        NumberAnimation { id: contextEnter;target: contextPopup;property: "opacity";to: 1;duration: Theme.motion;easing.type: Easing.OutCubic }
+        NumberAnimation { id: contextEnter;target: contextPopup;property: "opacity";to: 1;duration: Theme.panelMotion;easing.type: Easing.OutCubic }
         Item {
             id: contextRoot;anchors.fill: parent;focus: true
             Keys.onEscapePressed: {if(Orbit.context.items!==undefined)Orbit.cancelContext();else Orbit.dismiss();}
@@ -500,7 +517,16 @@ QtObject {
             MouseArea { anchors.fill: parent;acceptedButtons: Qt.LeftButton | Qt.RightButton;onClicked: {if(Orbit.context.items!==undefined)Orbit.closeContext();else Orbit.dismiss();} }
             Rectangle {
                 id: contextPopup;objectName: "contextPopup";visible: Orbit.context.items !== undefined
-                onVisibleChanged: if(visible){Orbit.syncContextSurface();contextRoot.forceActiveFocus();contextList.currentIndex=0;opacity=Theme.reducedMotion ? 1 : 0;if(!Theme.reducedMotion)contextEnter.restart();}
+                readonly property bool motionEnabled: Theme.panelMotionEnabled
+                onMotionEnabledChanged:if(!motionEnabled){contextEnter.stop();opacity=1;}
+                onVisibleChanged: {
+                    contextEnter.stop();
+                    opacity=1;
+                    if(visible) {
+                        Orbit.syncContextSurface();contextRoot.forceActiveFocus();contextList.currentIndex=0;
+                        if(motionEnabled){opacity=.82;contextEnter.restart();}
+                    }
+                }
                 width: Math.max(1,Math.min(Orbit.context.opener ? 320 : 250,parent.width-16));height: Math.min(contextList.contentHeight+12,Math.max(1,parent.height-48));radius: Theme.corner(10);color: Theme.surface;border.color: Theme.border;border.width: Theme.surfaceOutline
                 readonly property string anchorEdge: Orbit.context.edge || ""
                 x: Math.max(8,Math.min((Orbit.context.x || 0)-shell.sx+

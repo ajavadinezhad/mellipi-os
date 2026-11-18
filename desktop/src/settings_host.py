@@ -2,14 +2,17 @@
 import json,os,sys,subprocess,threading
 from pathlib import Path
 from project_paths import PROJECT_ROOT, SOURCE_ROOT
-from qt_compat import QObject,QLocalServer,QTimer,QT5
+from qt_compat import QObject,QLocalServer,QTimer,Signal,QT5
 from control import socket_path
 from qt5_a11y_runtime import scoped_environment
 ORBIT_PROPERTIES=('appearance','compact','economy','themeMode','accentColor','accentPresets','themePresets','outputs','apps','launcherApps','isWayland','nativeCompositor','nativePaletteSupported','nativeSnapSupported','settingsSection','settingsTarget','canSwitchUser','notice','workspaceMotion','systemActions')
-ORBIT_METHODS={'setPreference','resetAppearance','applyTheme','applyAppearance','rememberSettingsSection','settingsPageOpened','showPanel','openSettingsSection','launch','switchUser','activateSystemAction'}
+ORBIT_METHODS={'moveQuickControl','setPreference','resetAppearance','applyTheme','applyAppearance','rememberSettingsSection','settingsPageOpened','showPanel','openSettingsSection','launch','switchUser','activateSystemAction'}
 class SettingsHost(QObject):
+    processExited=Signal(object)
     def __init__(self,bridge,objects):
-        super().__init__(bridge);self.bridge=bridge;self.objects=objects;self.clients={};self.process=None;self.active=False;self.closed=False;self.centered=set();self.pending=set();self.ready=False;self.errors=[];self.show_pending=False;self.show_attempts=0;self.launched=False
+        super().__init__(bridge);self.bridge=bridge;self.objects=objects;self.clients={};self.process=None;self.active=False;self.closed=False;self.centered=set();self.pending=set();self.ready=False;self.errors=[];self.show_pending=False;self.show_process=None
+        self.show_timeout=QTimer(self);self.show_timeout.setSingleShot(True);self.show_timeout.setInterval(5000);self.show_timeout.timeout.connect(self.show_timed_out)
+        self.processExited.connect(self.process_exited)
         self.path=socket_path()+'-settings';self.server=QLocalServer(self);self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         QLocalServer.removeServer(self.path)
         if not self.server.listen(self.path):raise RuntimeError(self.server.errorString())
@@ -34,6 +37,7 @@ class SettingsHost(QObject):
             for signal in signals:
                 getattr(obj,signal).connect(lambda *args,n=name:self.queue(n))
         bridge.windowsChanged.connect(self.center_new_window)
+        bridge.windowsChanged.connect(self.finish_show)
     def values(self,name):
         obj=self.objects[name]
         return {key:getattr(obj,key) for key in self.schema[name]['properties']}
@@ -58,7 +62,8 @@ class SettingsHost(QObject):
         self.send(client,{'schema':self.schema,'values':{name:self.values(name) for name in self.objects}})
     def disconnected(self,client):
         self.clients.pop(client,None);client.deleteLater()
-        self.bridge.settingsPageOpened('');self.active=False
+        self.bridge.settingsPageOpened('');self.active=False;self.ready=False
+        if not self.process and self.show_process is None:self.start_show_process()
     def read(self,client):
         buffer=self.clients.get(client)
         if buffer is None:return
@@ -69,10 +74,14 @@ class SettingsHost(QObject):
             try:
                 call=json.loads(raw)
                 if call.get('ready') is True:
-                    self.ready=True;self.errors=[str(e)[:300] for e in call.get('errors',[])[:20]];continue
+                    self.ready=True;self.errors=[str(e)[:300] for e in call.get('errors',[])[:20]];self.finish_show();continue
                 if call.get('closing') is True:
-                    self.show_pending=False;self.active=False
-                    self.bridge.settingsPageOpened('');continue
+                    if self.show_process is self.process and self.process is not None:
+                        self.show_pending=False;self.show_timeout.stop()
+                    # The bridge accepts page updates only from an active
+                    # Settings window. Release page resources before closing it.
+                    self.bridge.settingsPageOpened('')
+                    self.active=False;self.ready=False;continue
                 if 'visible' in call:
                     if type(call['visible']) is not bool:raise ValueError('Invalid visibility')
                     if not call['visible']:self.bridge.settingsPageOpened('')
@@ -84,32 +93,63 @@ class SettingsHost(QObject):
             except (ValueError,TypeError,KeyError,AttributeError,OSError,RuntimeError) as error:
                 self.send(client,{'error':str(error)[:220]})
     def show(self,section):
+        if self.closed:return
         self.bridge.rememberSettingsSection(section)
         if self.show_pending:return
-        self.show_pending=True;self.show_attempts=0;self.launched=False;self.finish_show()
+        self.show_pending=True;self.show_process=None
+        if self.finish_show():return
+        self.show_timeout.start()
+        self.start_show_process()
+    def start_show_process(self):
+        if self.closed or not self.show_pending or self.clients or (self.process and self.process.poll() is None):return
+        env=dict(os.environ);env['QT_WAYLAND_SHELL_INTEGRATION']='xdg-shell';env['QT_WAYLAND_DISABLE_WINDOWDECORATION']='1'
+        for key in ('ORBIT_NATIVE_CONTROL','SWAYSOCK'):env.pop(key,None)
+        root=PROJECT_ROOT
+        env=scoped_environment(env,root)
+        self.ready=False;self.errors=[]
+        try:self.process=subprocess.Popen([sys.executable,str(SOURCE_ROOT/'settings_app.py'),'--endpoint',self.path],env=env,cwd=root,start_new_session=True)
+        except OSError:
+            self.fail_show('Settings could not start');return
+        process=self.show_process=self.process
+        def wait():
+            process.wait()
+            try:self.processExited.emit(process)
+            except RuntimeError:pass
+        threading.Thread(target=wait,name='orbit-settings-reap',daemon=True).start()
     def finish_show(self):
-        if self.closed or not self.show_pending:return
+        if self.closed or not self.show_pending or not self.clients or not self.ready:return False
         row=next((w for w in self.bridge._windows if w['klass']=='orbit-settings'),None)
-        if self.clients and row:
-            for client in self.clients:self.send(client,{'show':True})
-            self.bridge.focusWindow(row['id']);self.show_pending=False;return
-        if not self.process or self.process.poll() is not None:
-            if self.launched:
-                self.show_pending=False;self.bridge.notify('Settings could not start');return
-            if self.clients:
-                for client in list(self.clients):client.disconnectFromServer()
-            else:
-                env=dict(os.environ);env['QT_WAYLAND_SHELL_INTEGRATION']='xdg-shell';env['QT_WAYLAND_DISABLE_WINDOWDECORATION']='1'
-                for key in ('ORBIT_NATIVE_CONTROL','SWAYSOCK'):env.pop(key,None)
-                root=PROJECT_ROOT
-                env=scoped_environment(env,root)
-                self.ready=False;self.errors=[];self.launched=True
-                self.process=subprocess.Popen([sys.executable,str(SOURCE_ROOT/'settings_app.py'),'--endpoint',self.path],env=env,cwd=root,start_new_session=True)
-                threading.Thread(target=self.process.wait,name='orbit-settings-reap',daemon=True).start()
-        self.show_attempts+=1
-        if self.show_attempts>=50:
-            self.show_pending=False;self.bridge.notify('Settings is taking too long to open');return
-        QTimer.singleShot(100,self.finish_show)
+        if not row:return False
+        self.show_pending=False;self.show_timeout.stop()
+        for client in list(self.clients):self.send(client,{'show':True})
+        self.bridge.focusWindow(row['id'])
+        return True
+    def process_exited(self,process):
+        if self.closed or self.process is not process:return
+        self.process=None
+        if self.show_process is process:self.fail_show('Settings could not start')
+        else:self.start_show_process()
+    def fail_show(self,message):
+        if self.show_pending:
+            self.show_pending=False;self.show_timeout.stop();self.bridge.notify(message)
+    def show_timed_out(self):
+        process=self.show_process
+        # Only retire a child that this request launched and that never
+        # completed its handshake. A previously opened Settings window may
+        # contain a draft and is not safe to terminate.
+        retire=self.show_pending and process is not None and self.process is process and not self.ready
+        self.fail_show('Settings is taking too long to open. Try again.')
+        if not retire or process.poll() is not None:return
+        self.show_process=None
+        for client in list(self.clients):client.disconnectFromServer()
+        try:process.terminate()
+        except OSError:pass
+
+        def kill_unready():
+            if self.process is process and process.poll() is None and not self.ready:
+                try:process.kill()
+                except OSError:pass
+        QTimer.singleShot(750,kill_unready)
     def center_new_window(self):
         if not self.bridge.windowActions:return
         for row in self.bridge._windows:
@@ -123,6 +163,6 @@ class SettingsHost(QObject):
             target=dict(x=screen['x']+(screen['width']-width)//2,y=screen['y']+(screen['height']-height)//2,width=width,height=height)
             self.bridge.windowTask(row['id'],'settings-center',lambda ident=int(row['id']),r=target:self.bridge.windowActions._resize(ident,r))
     def close(self):
-        self.closed=True
+        self.closed=True;self.show_timeout.stop();self.show_pending=False
         for client in list(self.clients):client.disconnectFromServer()
         self.server.close();QLocalServer.removeServer(self.path)

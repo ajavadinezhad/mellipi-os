@@ -6,18 +6,22 @@ SettingsGroup {
     id: brightness;objectName: "brightnessPanel"
     property bool displayOptions: false
     property bool showDisplayOptions: true
+    readonly property bool external: Brightness.state.backend==="ddc"
     title: "Brightness"
     SettingRow {
         label: Brightness.state.available ? Brightness.state.name : "Display"
-        Text { text: Brightness.state.available ? Brightness.state.percent+"%" : "Unavailable";color: Theme.muted;font.pixelSize: Theme.fontSize(11) }
+        Text { text: !Brightness.state.available ? "Unavailable" : Brightness.state.pendingPercent!==undefined ? "Applying "+Brightness.state.pendingPercent+"%…" : Math.round(brightnessSlider.value)+"%";color: Theme.muted;font.pixelSize: Theme.fontSize(11) }
     }
     OrbitSlider {
         id: brightnessSlider;objectName:"brightnessSlider";property bool userAdjusting: false
         Accessible.name: "Display brightness"
         visible: Brightness.state.available;Layout.fillWidth: true;Layout.leftMargin: 6;Layout.rightMargin: 6
-        from: 1;to: 100;stepSize: 1;value: Brightness.state.percent;enabled: Brightness.state.available
-        onMoved: {userAdjusting=true;brightnessTimer.restart();}
-        onPressedChanged: if(!pressed && userAdjusting){brightnessTimer.stop();Brightness.setBrightness(Math.round(value));userAdjusting=false;}
+        from: 1;to: 100;stepSize: 1;value: Brightness.state.pendingPercent!==undefined ? Brightness.state.pendingPercent : Brightness.state.percent;enabled: Brightness.state.available
+        onMoved: {userAdjusting=true;if(!brightness.external || !pressed)brightnessTimer.restart();}
+        onPressedChanged: {
+            if(pressed && brightness.external)brightnessTimer.stop();
+            else if(!pressed && userAdjusting){brightnessTimer.stop();Brightness.setBrightness(Math.round(value));userAdjusting=false;}
+        }
         Timer { id: brightnessTimer;interval: 120;onTriggered: {Brightness.setBrightness(Math.round(brightnessSlider.value));if(!brightnessSlider.pressed)brightnessSlider.userAdjusting=false;} }
     }
     Text { visible: !Brightness.state.available;Layout.fillWidth: true;Layout.margins: 6;text: Brightness.state.reason || "Brightness controls unavailable";color: Theme.faint;font.pixelSize: Theme.fontSize(10);wrapMode: Text.Wrap;maximumLineCount: 3;elide: Text.ElideRight;textFormat: Text.PlainText }

@@ -8,29 +8,32 @@ import re
 import sqlite3
 import stat
 import sys
+import tempfile
 import time
 from contextlib import closing
+from collections import OrderedDict
 
 os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt, QTimer, QRectF, pyqtSignal
+from PyQt6.QtCore import QProcess, QProcessEnvironment, QRegularExpression, Qt, QTimer, QRectF, QSize, pyqtSignal
 from PyQt6.QtGui import QShortcut, QIcon, QImage, QKeySequence, QColor, QPainter, QPen
 from PyQt6.QtPrintSupport import QPrinterInfo
 from PyQt6.QtWidgets import (QApplication, QBoxLayout, QDialog, QDialogButtonBox, QHBoxLayout,
-                             QLineEdit, QMenu, QPlainTextEdit, QSizePolicy, QVBoxLayout)
+                             QLineEdit, QMenu, QPlainTextEdit, QPushButton, QSizePolicy, QVBoxLayout)
 
 from file_chooser import FileChooser
 from mellipi_photos import Canvas, PhotoSurface, action, local_file, status_label
 from qt_app import exec_owned_dialog, style_dialog, ThemedInput, AppWindow, themed_choice
 from installed_launcher import user_environment
-from pdf_annotations import MAX_MARKS, MAX_NOTE, MAX_REQUEST, revision
+from pdf_annotations import MAX_MARKS, MAX_NOTE, MAX_PDF_BYTES, MAX_REQUEST, parse_pages, revision
 
-MAX_PDF_BYTES = 256 * 1024 * 1024
 MAX_SEARCH_PAGES = 1000
 PNG_LIMIT = 20 * 1024 * 1024
 TEXT_LIMIT = 8 * 1024 * 1024
+PAGE_CACHE_BYTES = 40 * 1024 * 1024
+PAGE_CACHE_COUNT = 4
 MAX_READING_POSITIONS = 100
 MAX_BOOKMARKS_PER_PDF = 64
 MAX_BOOKMARKS = 4096
@@ -315,6 +318,9 @@ class PdfWindow(AppWindow):
         self.resize(860, 680)
         self.setMinimumSize(430, 320)
         self.document = None
+        self.snapshot_file = None
+        self.snapshot_path = None
+        self.source_revision = None
         self.page = 1
         self.count = 0
         self.matches = []
@@ -329,6 +335,12 @@ class PdfWindow(AppWindow):
         self.position_timer.timeout.connect(self.save_position)
         self.inspector, self.renderer, self.finder, self.printer, self.annotation_reader, self.exporter = (
             Process(self) for _ in range(6))
+        self.snapshotter = Process(self)
+        self.prefetcher, self.text_reader = Process(self), Process(self)
+        self.page_cache = OrderedDict()
+        self.cache_revision = None
+        self.prefetch_timer = QTimer(self, interval=220, singleShot=True)
+        self.prefetch_timer.timeout.connect(self.prefetch_page)
         self.marks = []
         self.annotation_mode = ''
         self.annotation_revision = None
@@ -383,10 +395,14 @@ class PdfWindow(AppWindow):
         self.print_button = action('Print PDF', 'document-print-symbolic', self.print_pdf, self)
         self.more = action('More PDF actions', 'open-menu', lambda: None, self)
         more_menu = QMenu(self.more)
-        for caption, widget in zip(('Zoom out', 'Zoom in', 'Fit page'), self.zoom_controls):
-            more_menu.addAction(caption, widget.click)
-        more_menu.addSeparator()
+        self.overflow_zoom = [more_menu.addAction(caption, widget.click)
+                              for caption, widget in zip(('Zoom out', 'Zoom in', 'Fit page'), self.zoom_controls)]
+        self.overflow_separator = more_menu.addSeparator()
         self.print_action = more_menu.addAction('Print PDF…', self.print_pdf)
+        self.page_text_action = more_menu.addAction('Read or copy page text…', self.show_page_text)
+        self.extract_action = more_menu.addAction('Save selected pages…', self.extract_pages)
+        self.page_text_shortcut = QShortcut(QKeySequence('Ctrl+Shift+T'), self)
+        self.page_text_shortcut.activated.connect(self.show_page_text)
         self.print_shortcut = QShortcut(QKeySequence.StandardKey.Print, self)
         self.print_shortcut.activated.connect(self.print_pdf)
         self.more.setMenu(more_menu)
@@ -443,6 +459,9 @@ class PdfWindow(AppWindow):
             self.open_path(value)
 
     def update_toolbar_layout(self):
+        icon_size = max(16, min(24, round(16 * self.theme['text_scale'])))
+        for button in self.findChildren(QPushButton, 'photoAction'):
+            button.setIconSize(QSize(icon_size, icon_size))
         _, section, control = self.layout_spacing()
         self.toolbar.setSpacing(section)
         for group in (self.navigation, self.tools):
@@ -455,10 +474,11 @@ class PdfWindow(AppWindow):
                     + (len(buttons) - 1) * control)
 
         available = self.viewport_width()
-        compact = available < combined_width((*self.zoom_controls, *common, self.print_button))
+        compact = available < combined_width((*self.zoom_controls, *common, self.print_button, self.more))
         for widget in (*self.zoom_controls, self.print_button):
             widget.setVisible(not compact)
-        self.more.setVisible(compact)
+        for action in (*self.overflow_zoom, self.overflow_separator, self.print_action):
+            action.setVisible(compact)
         horizontal = not compact or available >= combined_width((*common, self.more))
         direction = QBoxLayout.Direction.LeftToRight if horizontal else QBoxLayout.Direction.TopToBottom
         if self.toolbar.direction() != direction:
@@ -485,6 +505,17 @@ class PdfWindow(AppWindow):
             return False
         if not self.can_leave_document(lambda: self.open_path(value)):
             return False
+        try:
+            source_revision = revision(path)
+            source_path = path.resolve(strict=True)
+            snapshot_file = tempfile.TemporaryFile(prefix='mellipi-pdf-reader-')
+        except (OSError, ValueError) as error:
+            self.status.setText(str(error))
+            return False
+        try:
+            key = self.positions.key(path)
+        except (OSError, RuntimeError):
+            key = None
         self.start_stage.hide()
         self.open_button.show()
         self.canvas.show()
@@ -498,12 +529,18 @@ class PdfWindow(AppWindow):
         self.setWindowTitle('PDF Viewer')
         self.title.setText('PDF Viewer')
         self.title.setToolTip('')
-        try:
-            source_revision = revision(path)
-            key = self.positions.key(path)
-        except (OSError, RuntimeError):
-            source_revision = key = None
-        self.renderer.cancel()
+        for process in (self.snapshotter, self.inspector, self.renderer, self.prefetcher,
+                        self.text_reader, self.finder, self.printer):
+            process.cancel()
+        self.clear_snapshot()
+        self.snapshot_file = snapshot_file
+        descriptor = snapshot_file.fileno()
+        self.snapshot_path = pinned = Path('/proc') / str(os.getpid()) / 'fd' / str(descriptor)
+        info = os.fstat(descriptor)
+        self.source_revision = source_revision
+        self.prefetch_timer.stop()
+        self.page_cache.clear()
+        self.cache_revision = None
         self.clear_matches()
         self.document = None
         self.position_key = None
@@ -513,17 +550,28 @@ class PdfWindow(AppWindow):
         self.canvas.show_message('Opening PDF…')
         self.status.setText('Opening PDF…')
 
+        def failed(message):
+            self.canvas.show_message(message)
+            self.status.setText(message)
+            self.clear_snapshot()
+
         def ready(output, error):
             match = re.search(rb'^Pages:\s+([0-9]{1,8})\s*$', output, re.MULTILINE)
             if error or not match or not int(match[1]):
                 message = error or 'This file does not appear to be a readable PDF.'
-                self.canvas.show_message(message)
-                self.status.setText(message)
+                failed(message)
                 return
             self.document, self.count = path, int(match[1])
             self.position_key = key
             self.bookmarked_pages = self.positions.bookmarks(key, self.count) if key else ()
-            self.annotation_revision = source_revision
+            try:
+                self.annotation_revision = self.cache_revision = revision(pinned)
+            except OSError:
+                self.document = None
+                self.count = 0
+                self.update_buttons()
+                failed('Could not read the private PDF copy.')
+                return
             self.canvas.zoom = None
             self.setWindowTitle(f'{path.name} — PDF Viewer')
             self.title.setText(path.name)
@@ -531,21 +579,113 @@ class PdfWindow(AppWindow):
             page = self.positions.get(key, self.count) if key else 1
             self.go(page, resumed=page > 1)
 
-        self.inspector.run('pdfinfo', [str(path)], ready)
+        def copied(output, error):
+            try:
+                result = json.loads(output) if not error else {}
+            except (ValueError, UnicodeError):
+                result = {}
+            if not result.get('result'):
+                failed(error or result.get('error') or 'Could not copy the PDF for reading.')
+                return
+            self.inspector.run('pdfinfo', [str(pinned)], ready)
+
+        helper = Path(__file__).with_name('pdf_annotations.py')
+        self.snapshotter.run(sys.executable, [str(helper), 'snapshot', str(source_path), str(pinned)],
+                             copied, payload=json.dumps({'revision': source_revision,
+                                                         'destination': [info.st_dev, info.st_ino]}).encode('utf-8'))
         return True
+
+    def clear_snapshot(self):
+        self.snapshot_path = None
+        self.source_revision = None
+        snapshot_file, self.snapshot_file = self.snapshot_file, None
+        if snapshot_file is not None:
+            snapshot_file.close()
+
+    def reader_path(self):
+        return self.snapshot_path or self.document
+
+    def source_notice(self):
+        if self.snapshot_path and self.document:
+            try:
+                if revision(self.document) == self.source_revision:
+                    return ''
+            except OSError:
+                pass
+            return ' · Original changed; viewing the opened copy'
+        return ''
+
+    def render_args(self, page):
+        return ['-f', str(page), '-l', str(page), '-singlefile', '-scale-to', '2200',
+                '-cropbox', '-png', str(self.reader_path())]
+
+    def remember_page(self, page, image):
+        if not self.cache_revision or image.sizeInBytes() > PAGE_CACHE_BYTES:
+            return
+        self.page_cache[page] = image
+        self.page_cache.move_to_end(page)
+        while len(self.page_cache) > PAGE_CACHE_COUNT or sum(
+                image.sizeInBytes() for image in self.page_cache.values()) > PAGE_CACHE_BYTES:
+            self.page_cache.popitem(last=False)
+
+    def current_cache_revision(self):
+        try:
+            value = revision(self.reader_path())
+        except OSError:
+            value = None
+        if self.cache_revision != value:
+            self.cache_revision = value
+            self.page_cache.clear()
+        return value
+
+    def prefetch_page(self):
+        if not self.document or not self.current_cache_revision():
+            return
+        page = next((page for page in (self.page + 1, self.page - 1)
+                     if 1 <= page <= self.count and page not in self.page_cache), None)
+        if page is not None:
+            before = self.cache_revision
+
+            def ready(output, error):
+                if error or before != self.current_cache_revision():
+                    return
+                image = QImage.fromData(output, 'PNG')
+                if not image.isNull():
+                    self.remember_page(page, image)
+
+            self.prefetcher.run('pdftoppm', self.render_args(page), ready, maximum=PNG_LIMIT)
 
     def go(self, page, *, resumed=False):
         if not self.document or not 1 <= page <= self.count:
             return
         self.annotation_reader.cancel()
+        self.renderer.cancel()
+        self.prefetcher.cancel()
+        self.prefetch_timer.stop()
+        before = self.current_cache_revision()
         self.page = page
         self.canvas.label.set_tool(self.annotation_mode)
         self.refresh_marks()
-        self.canvas.show_message('Loading page…')
         self.update_buttons()
-        self.status.setText(f'Page {page} of {self.count}')
+        self.status.setText(f'Page {page} of {self.count}' + self.source_notice())
 
         key = self.position_key
+        def display(image):
+            self.canvas.set_image(image)
+            if resumed:
+                self.status.setText(f'Resumed at page {page} of {self.count}' + self.source_notice())
+            if key:
+                self.pending_position = (key, page)
+                self.position_timer.start()
+            self.prefetch_timer.start()
+
+        if page in self.page_cache:
+            self.page_cache.move_to_end(page)
+            display(self.page_cache[page])
+            return
+
+        self.canvas.show_message('Loading page…')
+
         def ready(output, error):
             image = QImage.fromData(output, 'PNG') if not error else QImage()
             if image.isNull():
@@ -553,16 +693,46 @@ class PdfWindow(AppWindow):
                 self.canvas.show_message(message)
                 self.status.setText(message)
                 return
-            self.canvas.set_image(image)
-            if resumed:
-                self.status.setText(f'Resumed at page {page} of {self.count}')
-            if key:
-                self.pending_position = (key, page)
-                self.position_timer.start()
+            if before == self.current_cache_revision():
+                self.remember_page(page, image)
+            display(image)
 
-        self.renderer.run('pdftoppm', ['-f', str(page), '-l', str(page), '-singlefile',
-                                       '-scale-to', '2200', '-cropbox', '-png', str(self.document)],
-                          ready, maximum=PNG_LIMIT)
+        self.renderer.run('pdftoppm', self.render_args(page), ready, maximum=PNG_LIMIT)
+
+    def show_page_text(self):
+        if not self.document:
+            return
+        page = self.page
+        dialog = style_dialog(QDialog(self), self)
+        dialog.setWindowTitle(f'Page {page} text')
+        dialog.resize(620, 500)
+        layout = QVBoxLayout(dialog)
+        viewer = QPlainTextEdit()
+        viewer.setReadOnly(True)
+        viewer.setAccessibleName(f'Selectable text on PDF page {page}')
+        viewer.setPlaceholderText('Reading text…')
+        layout.addWidget(viewer)
+        controls = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        controls.rejected.connect(dialog.reject)
+        layout.addWidget(controls)
+        query = self.query.text().strip()
+
+        def ready(output, error):
+            value = output.decode('utf-8', 'replace').strip()
+            viewer.setPlainText(value)
+            viewer.setPlaceholderText(error or 'This page has no selectable text.')
+            if query and not error:
+                pattern = r'\s+'.join(QRegularExpression.escape(word) for word in query.split())
+                matches = QRegularExpression(pattern, QRegularExpression.PatternOption.CaseInsensitiveOption)
+                viewer.find(matches)
+
+        self.text_reader.run('pdftotext', ['-f', str(page), '-l', str(page), '-enc', 'UTF-8',
+                                           str(self.reader_path()), '-'], ready, maximum=TEXT_LIMIT)
+        try:
+            exec_owned_dialog(dialog)
+        finally:
+            self.text_reader.cancel()
+            dialog.deleteLater()
 
     def can_leave_document(self, after_save):
         if self.exporting:
@@ -627,7 +797,7 @@ class PdfWindow(AppWindow):
             self.status.setText('Last mark removed.')
 
     def annotation_request(self, worker, operation, request, callback, destination=None):
-        args = [str(Path(__file__).with_name('pdf_annotations.py')), operation, str(self.document)]
+        args = [str(Path(__file__).with_name('pdf_annotations.py')), operation, str(self.reader_path())]
         if destination:
             args.append(str(destination))
         payload = json.dumps(request, ensure_ascii=False).encode('utf-8')
@@ -694,6 +864,9 @@ class PdfWindow(AppWindow):
         path = Path(value)
         if path.suffix.lower() != '.pdf':
             path = path.with_name(path.name + '.pdf')
+        if path.resolve() == self.document.resolve():
+            self.status.setText('Choose a new filename for the annotated copy.')
+            return
         self.exporting = True
         self.set_annotation_mode('')
         self.status.setText('Saving annotated copy…')
@@ -788,7 +961,7 @@ class PdfWindow(AppWindow):
             self.advance_match(1)
 
         self.finder.run('pdftotext', ['-f', '1', '-l', str(min(self.count, MAX_SEARCH_PAGES)),
-                                      '-enc', 'UTF-8', str(self.document), '-'],
+                                      '-enc', 'UTF-8', str(self.reader_path()), '-'],
                         ready, maximum=TEXT_LIMIT)
 
     def advance_match(self, step):
@@ -809,10 +982,47 @@ class PdfWindow(AppWindow):
             return
         printer, ok = ThemedInput.getItem(self, 'Print PDF', 'Printer', printers, 0, False)
         if ok and self.document:
-            self.printer.run('lp', ['-d', printer, '--', str(self.document)],
+            self.printer.run('lp', ['-d', printer, '-t', self.document.name, '--', str(self.reader_path())],
                              lambda _output, error: self.status.setText(error or 'PDF sent to printer.'))
 
+    def extract_pages(self):
+        if not self.document or self.exporting:
+            return
+        value, ok = ThemedInput.getText(self, 'Save selected pages', 'Pages, e.g. 1–3, 6', text=str(self.page))
+        if not ok:
+            return
+        try:
+            pages = parse_pages(value, self.count)
+        except ValueError as error:
+            self.status.setText(str(error))
+            return
+        proposed = self.document.with_name(self.document.stem + ' — pages.pdf')
+        value, _ = FileChooser.getSaveFileName(self, 'Save selected pages', str(proposed), 'PDF documents (*.pdf)',
+                                               options=FileChooser.Option.DontConfirmOverwrite)
+        if not value:
+            return
+        path = Path(value)
+        if path.suffix.lower() != '.pdf':
+            path = path.with_name(path.name + '.pdf')
+        self.exporting = True
+        self.extract_action.setEnabled(False)
+        self.set_annotation_mode('')
+        self.update_annotation_actions()
+        self.status.setText('Saving selected pages…')
+
+        def ready(result, error):
+            self.exporting = False
+            self.extract_action.setEnabled(True)
+            self.update_annotation_actions()
+            self.status.setText(f'Saved {len(pages)} selected pages to {path.name}.' if result and not error
+                                else error or 'Could not save selected pages.')
+        selected = set(pages)
+        self.annotation_request(self.exporter, 'extract',
+                                {'revision': self.annotation_revision, 'pages': pages,
+                                 'marks': [mark for mark in self.marks if mark[1] in selected]}, ready, path)
+
     def update_buttons(self):
+        self.extract_action.setEnabled(bool(self.count) and not self.exporting)
         self.page_button.setText(f'Page {self.page} / {self.count}' if self.count else 'Page — / —')
         self.page_button.setAccessibleName(f'Page {self.page} of {self.count} — Go to page' if self.count else 'Go to page')
         self.update_toolbar_layout()
@@ -821,7 +1031,7 @@ class PdfWindow(AppWindow):
         self.bookmark_button.setEnabled(bool(self.count and self.position_key))
         self.bookmark_shortcut.setEnabled(self.bookmark_button.isEnabled())
         for button in (self.page_button, *self.zoom_controls, self.search, self.more, self.print_button, self.print_action,
-                       self.print_shortcut):
+                       self.print_shortcut, self.page_text_action, self.page_text_shortcut):
             button.setEnabled(bool(self.count))
         self.update_annotation_actions()
 
@@ -840,8 +1050,11 @@ class PdfWindow(AppWindow):
             event.ignore()
             return
         self.save_position()
-        for process in (self.inspector, self.renderer, self.finder, self.printer, self.annotation_reader, self.exporter):
+        self.prefetch_timer.stop()
+        for process in (self.snapshotter, self.inspector, self.renderer, self.finder, self.printer, self.annotation_reader, self.exporter,
+                        self.prefetcher, self.text_reader):
             process.close()
+        self.clear_snapshot()
         super().closeEvent(event)
 
 

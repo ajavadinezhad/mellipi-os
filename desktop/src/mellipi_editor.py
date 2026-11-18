@@ -1,6 +1,8 @@
 """Mellipi Editor: themed plain text, safe saves, and private crash recovery."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from difflib import unified_diff
 import hashlib
 import json
 import os
@@ -8,18 +10,21 @@ from pathlib import Path
 import re
 import stat
 import sys
+import tempfile
+from threading import Event
 import uuid
 
-from PyQt6.QtCore import QIODevice, QLockFile, QSaveFile, QSize, Qt, QTimer, QUrl
+from PyQt6.QtCore import QIODevice, QLockFile, QSaveFile, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QFontDatabase, QIcon, QKeySequence, QShortcut, QTextCursor, QTextOption
 from PyQt6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
     QPlainTextEdit, QPushButton, QSizePolicy, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from file_chooser import FileChooser
+from desktop_icons import rename_no_replace
 from installed_launcher import user_environment
-from qt_app import AppWindow, themed_choice, symbolic_icon, themed_prompt
+from qt_app import action_ink, AppWindow, exec_owned_dialog, style_dialog, themed_choice, symbolic_icon, themed_prompt
 
 MAX_BYTES = 8 * 1024 * 1024
 MAX_TABS = 24
@@ -61,7 +66,17 @@ def signature(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def write_atomic(path, data, private=False):
+def file_identity(path):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        raise ValueError('Choose a regular text file, not a folder or link.')
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def write_atomic(path, data, private=False, *, before_commit=None):
     target = QSaveFile(str(path))
     target.setDirectWriteFallback(False)
     if not target.open(QIODevice.OpenModeFlag.WriteOnly):
@@ -75,8 +90,41 @@ def write_atomic(path, data, private=False):
     if target.write(data) != len(data):
         target.cancelWriting()
         raise OSError(target.errorString())
+    if before_commit is not None:
+        try:
+            before_commit()
+        except (OSError, ValueError):
+            target.cancelWriting()
+            raise
     if not target.commit():
         raise OSError(target.errorString())
+
+
+def write_new_file(path, data):
+    with tempfile.TemporaryDirectory(prefix='.mellipi-editor-', dir=path.parent) as private:
+        staged = Path(private) / 'text'
+        write_atomic(staged, data)
+        rename_no_replace(staged, path)
+
+
+def stage_draft(path, payload, canceled):
+    """Encode and sync a private draft without holding the UI's document lock."""
+    text = payload['text']
+    if len(text.replace('\n', payload['newline']).encode('utf-8')) + (3 if payload['bom'] else 0) > MAX_BYTES:
+        raise ValueError('This document exceeds the editor size limit.')
+    if canceled.is_set():
+        return None
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix='.pending-draft-')
+    stage = Path(name)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(payload, stream, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        return stage
+    except BaseException:
+        stage.unlink(missing_ok=True)
+        raise
 
 
 class Document(QPlainTextEdit):
@@ -103,6 +151,8 @@ class Document(QPlainTextEdit):
 
     def data(self):
         text = self.plain_text()
+        if '\0' in text:
+            raise ValueError('Remove NUL characters before saving a UTF-8 text file.')
         data = text.replace('\n', self.newline).encode('utf-8')
         if self.bom:
             data = b'\xef\xbb\xbf' + data
@@ -112,11 +162,14 @@ class Document(QPlainTextEdit):
 
 
 class Editor(AppWindow):
+    draftFinished = pyqtSignal(str, object, object)
     extra_style = '''
         QPlainTextEdit { background: %(surface)s; color: %(text)s;
-                         border: 1px solid %(control_border)s; padding: 8px; }
+                         border: 1px solid %(input_edge)s; padding: 12px; }
         QPlainTextEdit:focus { border-color: %(focus)s; }
         QTabWidget::pane { border: 0; }
+        QPushButton#saveDocument:enabled { background: %(accent)s; color: %(accent_text)s; font-weight: 600; }
+        QPushButton#saveDocument:enabled:hover, QPushButton#saveDocument:enabled:focus { border-color: %(accent_text)s; }
         QPushButton#editorMatchCase:checked { border-color: %(focus)s; }
     '''
 
@@ -125,12 +178,16 @@ class Editor(AppWindow):
         self.resize(860, 570)
         self.setMinimumSize(520, 340)
         self.recovery = recovery or Path(user_environment()['XDG_STATE_HOME']) / 'mellipi' / 'editor-drafts'
+        self.draft_pool = None
+        self.draft_jobs = {}
+        self.draftFinished.connect(self.finish_draft)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(700)
         self.timer.timeout.connect(self.flush_drafts)
 
         self.tabs = QTabWidget(documentMode=True, movable=True)
+        self.tabs.tabBar().setDrawBase(False)
         self.tabs.setElideMode(Qt.TextElideMode.ElideMiddle)
         self.tabs.setAccessibleName('Open documents')
         self.tabs.tabCloseRequested.connect(self.close_tab)
@@ -139,6 +196,9 @@ class Editor(AppWindow):
         actions = QHBoxLayout()
         self.content.addLayout(actions)
         self.save_button = self.button('Save', 'document-save', self.save)
+        self.save_button.setObjectName('saveDocument')
+        self.save_button.setProperty('mellipiPrimary', True)
+        self.save_button.setIcon(symbolic_icon('document-save', self.theme['accent_text']))
         new = self.button('New', 'tab-new', self.new_tab)
         open_file = self.button('Open', 'document-open', self.choose_open)
         find = self.button('Find', 'edit-find', self.show_find)
@@ -254,7 +314,7 @@ class Editor(AppWindow):
         if icon_only:
             button.setMinimumSize(32, 32)
         button.setProperty('mellipiSymbolicIcon', icon)
-        button.setIcon(symbolic_icon(icon, self.theme['accent_ink']))
+        button.setIcon(symbolic_icon(icon, action_ink(self.theme, icon)))
         button.clicked.connect(lambda _checked=False: handler())
         return button
 
@@ -350,7 +410,8 @@ class Editor(AppWindow):
         try:
             if force_dialog or not path:
                 start = str(path or Path.home() / 'Untitled.txt')
-                value, _ = FileChooser.getSaveFileName(self, 'Save text file', start)
+                value, _ = FileChooser.getSaveFileName(self, 'Save text file', start,
+                    options=QFileDialog.Option.DontConfirmOverwrite)
                 if not value:
                     return False
                 path = local_path(value)
@@ -360,21 +421,71 @@ class Editor(AppWindow):
                     raise ValueError('This path is already open in another tab.')
             if path == doc.path:
                 try:
-                    external = signature(read_regular(path))
+                    disk_data = read_regular(path)
+                    external = signature(disk_data)
                 except FileNotFoundError:
+                    disk_data = None
                     external = None
                 except (OSError, ValueError):
+                    disk_data = None
                     external = MODIFIED
-                if external != doc.digest and not themed_prompt(
-                    self, 'File changed on disk',
-                    f'{doc.name} changed outside Editor. Overwrite with the contents of this tab?',
-                    'Overwrite', 'Cancel',
-                ):
-                    return False
+                if external != doc.digest:
+                    choice = themed_choice(
+                        self, 'File changed on disk',
+                        f'{doc.name} changed outside Editor. Reload the disk version or overwrite it. '
+                        'Reload keeps any unsaved edits in a separate tab.',
+                        'Overwrite', 'Cancel', 'Reload' if disk_data is not None else None,
+                        secondary='Compare with Disk' if disk_data is not None else None,
+                    )
+                    if choice == 3:
+                        self.compare_disk(doc)
+                        return False
+                    if choice == 2:
+                        disk_data = read_regular(path)
+                        content, newline, bom = decode(disk_data)
+                        if doc.document().isModified():
+                            if self.tabs.count() >= MAX_TABS:
+                                raise ValueError('Close a tab before reloading so Editor can keep your edits.')
+                            self.keep_reload_draft(doc)
+                        doc.setPlainText(content)
+                        doc.newline, doc.bom, doc.digest = newline, bom, signature(disk_data)
+                        doc.document().setModified(False)
+                        self.clear_draft(doc)
+                        self.refresh_tab(doc)
+                        self.status.setText(f'Reloaded {doc.name}')
+                        return False
+                    if choice != 1:
+                        return False
+                    try:
+                        latest = signature(read_regular(path))
+                    except FileNotFoundError:
+                        latest = None
+                    if latest != external:
+                        raise ValueError('The file changed again during confirmation. Review the latest version.')
                 if external == doc.digest and not doc.document().isModified():
                     return True
             data = doc.data()
-            write_atomic(path, data)
+            if path != doc.path:
+                expected = file_identity(path)
+                if expected is None:
+                    write_new_file(path, data)
+                else:
+                    if not themed_prompt(self, 'Replace file?', f'{path.name} already exists.',
+                                         'Replace File', 'Cancel'):
+                        return False
+                    def check_destination():
+                        if file_identity(path) != expected:
+                            raise ValueError('The destination changed. Check it before trying again.')
+                    write_atomic(path, data, before_commit=check_destination)
+            else:
+                expected = file_identity(path)
+                if expected is None:
+                    write_new_file(path, data)
+                else:
+                    def check_source():
+                        if file_identity(path) != expected or signature(read_regular(path)) != external:
+                            raise ValueError('The file changed while saving. Check it before trying again.')
+                    write_atomic(path, data, before_commit=check_source)
         except (OSError, ValueError, UnicodeError) as error:
             themed_prompt(self, 'Could not save file', str(error), 'OK')
             return False
@@ -385,6 +496,40 @@ class Editor(AppWindow):
         self.refresh_tab(doc)
         self.status.setText(f'Saved {doc.name}')
         return True
+
+    def compare_disk(self, doc):
+        """Compare a bounded snapshot without changing the current buffer or its draft."""
+        try:
+            content, _, _ = decode(read_regular(doc.path))
+            current = doc.plain_text()
+            if max(len(content), len(current)) > 256_000:
+                raise ValueError('The comparison limit is 256,000 characters.')
+            previous, edited = content.splitlines(keepends=True), current.splitlines(keepends=True)
+            if max(len(previous), len(edited)) > 2_000:
+                raise ValueError('The comparison limit is 2,000 lines.')
+            lines = unified_diff(previous, edited, 'On disk', 'Current draft', lineterm='')
+            comparison = '\n'.join(line.rstrip('\n') for line in lines)
+        except (OSError, ValueError, UnicodeError) as error:
+            themed_prompt(self, 'Could not compare file', str(error), 'OK')
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Compare with Disk')
+        style_dialog(dialog, self)
+        layout = QVBoxLayout(dialog)
+        preview = QPlainTextEdit()
+        preview.setReadOnly(True)
+        preview.setAccessibleName('Differences: on disk and current draft')
+        preview.setPlainText(comparison or 'No text differences.')
+        preview.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        layout.addWidget(preview)
+        close = QPushButton('Close')
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
+        dialog.resize(620, 420)
+        try:
+            exec_owned_dialog(dialog)
+        finally:
+            dialog.deleteLater()
 
     def refresh_tab(self, doc):
         index = self.tabs.indexOf(doc)
@@ -600,6 +745,9 @@ class Editor(AppWindow):
         self.timer.stop()
         for doc in docs:
             self.clear_draft(doc)
+        if self.draft_pool is not None:
+            self.draft_pool.shutdown(wait=False, cancel_futures=True)
+            self.draft_pool = None
         event.accept()
 
     def recovery_directory(self):
@@ -607,6 +755,29 @@ class Editor(AppWindow):
         info = self.recovery.lstat()
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
             raise PermissionError('The editor recovery folder is not private.')
+
+    def keep_reload_draft(self, doc):
+        """Persist the preserved tab before replacing text or dropping its old draft."""
+        copy = Document(text=doc.plain_text(), newline=doc.newline, bom=doc.bom)
+        self.recovery_directory()
+        path = self.draft_path(copy)
+        copy.draft_lock = self.lock_draft(path)
+        if not copy.draft_lock:
+            raise OSError('Could not reserve a recovery file for your unsaved edits.')
+        staged = None
+        try:
+            staged = stage_draft(path, dict(path=None, text=copy.plain_text(), newline=copy.newline,
+                                            bom=copy.bom, digest=None), Event())
+            os.replace(staged, path)
+            copy.draft_written = True
+            self.add_document(copy)
+            copy.document().setModified(True)
+        except (OSError, ValueError, UnicodeError):
+            copy.draft_lock.unlock()
+            raise
+        finally:
+            if staged is not None:
+                staged.unlink(missing_ok=True)
 
     def queue_draft(self, doc):
         doc.draft_pending = True
@@ -626,12 +797,13 @@ class Editor(AppWindow):
             doc = self.tabs.widget(index)
             if not doc.draft_pending:
                 continue
+            if doc.draft_id in self.draft_jobs:
+                continue
             doc.draft_pending = False
             if not doc.document().isModified():
                 self.clear_draft(doc)
                 continue
             try:
-                doc.data()  # Bound recovery growth before encoding.
                 self.recovery_directory()
                 path = self.draft_path(doc)
                 if not doc.draft_lock:
@@ -640,14 +812,54 @@ class Editor(AppWindow):
                     raise OSError('The recovery file is already owned by another editor.')
                 payload = dict(path=str(doc.path) if doc.path else None, text=doc.plain_text(),
                                newline=doc.newline, bom=doc.bom, digest=doc.digest)
-                encoded = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-                write_atomic(path, encoded, private=True)
-                doc.draft_written = True
+                if self.draft_pool is None:
+                    self.draft_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='editor-drafts')
+                canceled = Event()
+                self.draft_jobs[doc.draft_id] = (doc, path, canceled)
+                future = self.draft_pool.submit(stage_draft, path, payload, canceled)
+
+                def complete(task, token=doc.draft_id, stop=canceled):
+                    try:
+                        staged = task.result()
+                    except Exception as error:
+                        if not stop.is_set():
+                            self.draftFinished.emit(token, None, error)
+                        return
+                    if staged is None:
+                        return
+                    if stop.is_set():
+                        staged.unlink(missing_ok=True)
+                    else:
+                        self.draftFinished.emit(token, staged, None)
+
+                future.add_done_callback(complete)
             except (OSError, ValueError, UnicodeError):
                 self.status.setText('Could not write a recovery draft. Save changes to keep them.')
 
+    def finish_draft(self, token, staged, error):
+        job = self.draft_jobs.pop(token, None)
+        try:
+            if job is None:
+                return
+            doc, path, canceled = job
+            if error is not None:
+                raise error
+            if staged is not None and not canceled.is_set():
+                os.replace(staged, path)
+                doc.draft_written = True
+            if doc.draft_pending and not self.timer.isActive():
+                self.timer.start()
+        except (OSError, ValueError, UnicodeError):
+            self.status.setText('Could not write a recovery draft. Save changes to keep them.')
+        finally:
+            if staged is not None:
+                staged.unlink(missing_ok=True)
+
     def clear_draft(self, doc):
         doc.draft_pending = False
+        job = self.draft_jobs.pop(doc.draft_id, None)
+        if job is not None:
+            job[-1].set()
         try:
             if doc.draft_written:
                 self.draft_path(doc).unlink(missing_ok=True)
@@ -658,6 +870,10 @@ class Editor(AppWindow):
             if doc.draft_lock:
                 doc.draft_lock.unlock()
                 doc.draft_lock = None
+            if job is not None:
+                # A queued completion from the previous save cannot target a
+                # later draft of this document.
+                doc.draft_id = uuid.uuid4().hex
 
     def restore_drafts(self):
         try:

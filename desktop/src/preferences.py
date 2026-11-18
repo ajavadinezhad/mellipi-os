@@ -4,13 +4,16 @@ from copy import deepcopy
 from pathlib import Path
 from app_palette import contrast_palette
 from project_paths import PROJECT_ROOT as ROOT
-from theme_catalog import THEME_IDS,theme,palette,wallpaper_source
+from theme_catalog import frame_colors,THEME_IDS,theme,palette,wallpaper_source
 DEFAULTS={'compact':True,'accent':'#a9d9c3','profile':'economy','mode':'dark','pins':['firefox.desktop','mellipi-files.desktop','mellipi-terminal.desktop','mellipi-software.desktop','orbit-settings.desktop'],'workspaceMotion':True,'wallpaper':'auto','backgroundColor':'#18242b','corners':'rounded','dockAlign':'center','clock24':False,'clockDate':True,'reducedMotion':False,'output':'','matchWindows':True,'matchApps':True,'frameStyle':'auto','frameWidth':2,'launcherSort':'frequent','aiEnabled':False,'darkLevel':'normal','desktopIcons':True,'shellLayout':'fold','panelPosition':'left','taskbarLength':'full','taskbarFloating':False,'topbarConnected':False}
 PRESETS=[{'name':'Sage','color':'#a9d9c3'},{'name':'Blue','color':'#a8c9ff'},{'name':'Violet','color':'#c8b6ff'},{'name':'Rose','color':'#f3b6c6'},{'name':'Amber','color':'#edcd98'},{'name':'Coral','color':'#ffb59e'}]
 LOCK_KEYS=frozenset(('idleLockEnabled','idleLockMinutes','displayOffMinutes','lockBeforeSleep'))
 DEFAULTS.update(idleLockEnabled=True,idleLockMinutes=10,displayOffMinutes=0,lockBeforeSleep=True)
 DEFAULTS.update(taskbarIconScale=100,desktopIconScale=100,eventSounds=True)
 DEFAULTS.update(cursorAccent=True,density='compact',textScale=1.0,highContrast=False,themeContrast={},themePreset='custom')
+DEFAULTS.update(panelMotion=True,controlMotion=True,desktopMotion=True,windowMotion=True,motionPace='standard')
+QUICK_CONTROLS=('volume','brightness','connections','power')
+DEFAULTS.update(spaceNames={},quickControlOrder=list(QUICK_CONTROLS))
 DEFAULTS.update(windowSnap=True,windowPlacementEnabled=True,windowPlacement='auto',appPlacements={},independentWorkspaces=False)
 THEME_PREFERENCES=('custom',*THEME_IDS)
 THEME_COLOR_KEYS=frozenset(('mode','darkLevel','accent','backgroundColor'))
@@ -42,10 +45,19 @@ class Preferences:
     @staticmethod
     def validate(key,value):
         if key in ('taskbarIconScale','desktopIconScale') and type(value) in (int,float) and value in (75,100,125,150):return int(value)
+        if key=='spaceNames' and isinstance(value,dict) and all(
+            ident in ('0','1','2','3') and isinstance(label,str) and 0<len(label)<=32
+            and label==label.strip() and all(char.isprintable() for char in label) for ident,label in value.items()
+        ):return dict(value)
+        if key=='quickControlOrder' and isinstance(value,list) and len(value)==len(QUICK_CONTROLS) and all(
+            isinstance(control,str) and control in QUICK_CONTROLS for control in value
+        ) and len(set(value))==len(QUICK_CONTROLS):return list(value)
         if key=='density' and value in ('comfortable','compact','extra'):return value
         if key=='themePreset' and value in THEME_PREFERENCES:return value
         if key=='highContrast' and type(value) is bool:return value
-        if key in ('windowSnap','windowPlacementEnabled','independentWorkspaces') and type(value) is bool:return value
+        if key in ('windowSnap','windowPlacementEnabled','independentWorkspaces','panelMotion','controlMotion',
+                   'desktopMotion','windowMotion') and type(value) is bool:return value
+        if key=='motionPace' and value in ('quick','standard','relaxed'):return value
         if key=='appPlacements' and isinstance(value,dict) and len(value)<=64:
             from window_actions import valid_rect
             if all(isinstance(app,str) and 0<len(app)<=256 and isinstance(row,dict)
@@ -87,14 +99,14 @@ class Preferences:
         colors=palette(self.values['themePreset'])
         if self.values['highContrast']:
             colors=contrast_palette(self.values,colors)
-        return dict(self.values,themePalette=colors,themeWallpaper=wallpaper_source(self.values['wallpaper']))
+        return dict(self.values,themePalette=colors,themeFrame=frame_colors(self.values['themePreset']),themeWallpaper=wallpaper_source(self.values['wallpaper']))
     def apply_theme(self,ident):
         row=theme(ident)
         self.update(dict(themePreset=row['id'],mode=row['mode'],darkLevel=row['darkLevel'],accent=row['accent'],backgroundColor=row['background'],wallpaper=row['wallpaper']))
     def set(self,key,value):
         self.update({key:value})
     def reset_appearance(self):
-        self.update({k:v for k,v in DEFAULTS.items() if k not in ('pins','profile','output','launcherSort','textScale','highContrast','themeContrast','windowPlacement','windowPlacementEnabled','appPlacements') and k not in LOCK_KEYS})
+        self.update({k:v for k,v in DEFAULTS.items() if k not in ('pins','profile','output','launcherSort','textScale','highContrast','themeContrast','reducedMotion','windowPlacement','windowPlacementEnabled','appPlacements','spaceNames','quickControlOrder') and k not in LOCK_KEYS})
     def update(self,changes):
         checked={key:self.validate(key,value) for key,value in changes.items()}
         if 'density' in checked:checked['compact']=checked['density']!='comfortable'

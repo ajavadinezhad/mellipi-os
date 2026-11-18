@@ -362,6 +362,7 @@ impl OrbitCompositor {
                         | "output_power"
                         | "output_resume"
                         | "output_rollback"
+                        | "output_arrangement_revert"
                 )
             )
         {
@@ -441,14 +442,15 @@ impl OrbitCompositor {
                     || ["economy", "reduced_motion", "enabled"]
                         .iter()
                         .any(|key| !settings[key].is_boolean())
+                    || settings.get("windows").is_some_and(|value| !value.is_boolean())
                 {
-                    return json!({"ok":false,"error":"motion settings need economy, reduced_motion and enabled booleans"});
+                    return json!({"ok":false,"error":"motion settings require boolean values"});
                 }
                 self.economy = settings["economy"].as_bool().unwrap();
-                self.window_motion_enabled = !settings["reduced_motion"].as_bool().unwrap();
+                let reduce = settings["reduced_motion"].as_bool().unwrap();
+                self.window_motion_enabled = !reduce && settings["windows"].as_bool().unwrap_or(true);
                 if !self.window_motion_enabled {self.clear_window_motions();}
-                self.reduced_motion = settings["reduced_motion"].as_bool().unwrap()
-                    || !settings["enabled"].as_bool().unwrap();
+                self.reduced_motion = reduce || !settings["enabled"].as_bool().unwrap();
                 if self.reduced_motion {
                     self.transition = None;
                     if let Some((workspace, direction)) = self.pending_workspace.take() {
@@ -501,7 +503,7 @@ impl OrbitCompositor {
                 }
                 Err(error) => json!({"ok":false,"error":error}),
             },
-            "input_get" | "input_configure" | "output_configure" | "output_power" | "output_resume" | "output_checkpoint" | "output_commit" | "output_rollback" => {
+            "input_get" | "input_configure" | "output_configure" | "output_power" | "output_resume" | "output_checkpoint" | "output_commit" | "output_rollback" | "output_arrangement_begin" | "output_arrangement_keep" | "output_arrangement_revert" => {
                 self.native_system_control(&value)
             }
             "focus" | "minimize" | "restore" | "snap" | "resize" | "fullscreen" | "constrain" => {
@@ -610,6 +612,24 @@ fn window_id(value: &Value) -> u64 {
         .or_else(|| value["id"].as_str().and_then(|s| s.parse().ok()))
         .unwrap_or(0)
 }
+fn parse_window_rect(r: &Value) -> Option<Rectangle<i32, Logical>> {
+    let mut values = ["x", "y", "width", "height"].into_iter().map(|key| {
+        r[key].as_i64()
+            .filter(|value| (-2_000_000..=2_000_000).contains(value))
+            .map(|value| value as i32)
+    });
+    let (x, y, w, h) = (values.next()??, values.next()??, values.next()??, values.next()??);
+    (w > 0 && h > 0).then(|| Rectangle::new((x, y).into(), (w, h).into()))
+}
+
+fn clamp_window_rect(mut rect: Rectangle<i32, Logical>, area: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
+    rect.size.w = rect.size.w.max(1).min(area.size.w.max(1));
+    rect.size.h = rect.size.h.max(1).min(area.size.h.max(1));
+    rect.loc.x = rect.loc.x.clamp(area.loc.x, area.loc.x + (area.size.w - rect.size.w).max(0));
+    rect.loc.y = rect.loc.y.clamp(area.loc.y, area.loc.y + (area.size.h - rect.size.h).max(0));
+    rect
+}
+
 fn rect_value(rect: Rectangle<i32, Logical>) -> Value {
     json!({"x":rect.loc.x,"y":rect.loc.y,"width":rect.size.w,"height":rect.size.h})
 }
@@ -703,7 +723,12 @@ impl OrbitCompositor {
                 contains("x", "width", location.x) && contains("y", "height", location.y)
             }).map(|output| output["workarea"].clone()).unwrap_or(default_area.clone());
             let frame=if !minimized&&crate::decoration::needs_header(window){json!({"x":geometry.loc.x,"y":geometry.loc.y-crate::decoration::HEIGHT,"width":geometry.size.w,"height":crate::decoration::HEIGHT})}else{json!({})};
-            Some(json!({"id":id.to_string(),"workspace":workspace+1,"desktop":workspace,"pid":pid,"klass":klass.chars().take(256).collect::<String>().to_lowercase(),"app_id":klass.chars().take(256).collect::<String>(),"title":title.chars().take(512).collect::<String>(),"transient":transient,"auto_floating":self.auto_float.contains(id),"active":active,"minimized":minimized,"maximized":maximized,"fullscreen":fullscreen,"snap":self.snapped_windows.get(id).filter(|snap| !matches!(snap.zone, crate::window_snap::SnapZone::GridCell { .. })).map(|snap| snap.zone.name()),"workarea":area,"rect":rect_value(geometry),"x":geometry.loc.x,"y":geometry.loc.y,"width":geometry.size.w,"height":geometry.size.h,"frame":frame,"native":true}))
+            let restore_rect = if maximized {
+                self.snapped_windows.get(id).map(|snap|snap.restore)
+                    .or_else(||self.normal_geometry.get(id).copied())
+                    .or_else(||self.xwayland.restore.get(id).copied()).map(rect_value)
+            } else { None };
+            Some(json!({"id":id.to_string(),"workspace":workspace+1,"desktop":workspace,"pid":pid,"klass":klass.chars().take(256).collect::<String>().to_lowercase(),"app_id":klass.chars().take(256).collect::<String>(),"title":title.chars().take(512).collect::<String>(),"transient":transient,"auto_floating":self.auto_float.contains(id),"active":active,"minimized":minimized,"maximized":maximized,"fullscreen":fullscreen,"snap":self.snapped_windows.get(id).filter(|snap| !matches!(snap.zone, crate::window_snap::SnapZone::GridCell { .. })).map(|snap| snap.zone.name()),"restore_rect":restore_rect,"workarea":area,"rect":rect_value(geometry),"x":geometry.loc.x,"y":geometry.loc.y,"width":geometry.size.w,"height":geometry.size.h,"frame":frame,"native":true}))
         }).take(256).collect()
         };
         json!({"backend":"orbit-native","windows":windows,"desktops":(0..self.workspaces.len()).map(|index|json!({"id":index,"active":index==self.active_workspace(),"auto_paused":self.auto_paused_workspaces.contains(&index),"name":format!("Space {}",index+1)})).collect::<Vec<_>>(),"outputs":outputs,"independent_workspaces":self.independent_workspaces,"locked":locked})
@@ -962,6 +987,7 @@ impl OrbitCompositor {
                     Some("top-right") => SnapZone::TopRight,
                     Some("bottom-left") => SnapZone::BottomLeft,
                     Some("bottom-right") => SnapZone::BottomRight,
+                    Some("maximize") => SnapZone::Maximize,
                     _ => return json!({"ok":false,"error":"invalid snap side"}),
                 };
                 let Some(tile) = self.snap_rect(&window, &output, zone)
@@ -980,49 +1006,29 @@ impl OrbitCompositor {
                         return json!({"ok":true,"placed":false});
                     }
                 }
-                let restore = self.snapped_windows.get(&id).map(|snap| snap.restore)
-                    .or_else(|| self.normal_geometry.get(&id).copied())
-                    .or_else(|| self.xwayland.restore.get(&id).copied())
-                    .unwrap_or(rect);
+                let restore = if let Some(value) = value.get("restore_rect") {
+                    let Some(restore) = parse_window_rect(value) else {
+                        return json!({"ok":false,"error":"invalid restore rectangle"});
+                    };
+                    clamp_window_rect(restore, area)
+                } else {
+                    self.snapped_windows.get(&id).map(|snap| snap.restore)
+                        .or_else(|| self.normal_geometry.get(&id).copied())
+                        .or_else(|| self.xwayland.restore.get(&id).copied())
+                        .unwrap_or(rect)
+                };
                 return json!({"ok":self.apply_window_snap(id,&window,&output,zone,tile,restore),"placed":true});
             }
             "resize" => {
-                let r = &value["rect"];
-                let fields = ["x", "y", "width", "height"];
-                if fields
-                    .iter()
-                    .any(|key| r[key].as_i64().is_none_or(|n| n.abs() > 2_000_000))
-                    || r["width"].as_i64().unwrap_or(0) <= 0
-                    || r["height"].as_i64().unwrap_or(0) <= 0
-                {
+                let Some(requested) = parse_window_rect(&value["rect"]) else {
                     return json!({"ok":false,"error":"invalid rectangle"});
-                }
-                rect = Rectangle::new(
-                    (
-                        r["x"].as_i64().unwrap() as i32,
-                        r["y"].as_i64().unwrap() as i32,
-                    )
-                        .into(),
-                    (
-                        r["width"].as_i64().unwrap() as i32,
-                        r["height"].as_i64().unwrap() as i32,
-                    )
-                        .into(),
-                );
+                };
+                rect = requested;
             }
             "constrain" => {}
             _ => return json!({"ok":false,"error":"unsupported action"}),
         }
-        rect.size.w = rect.size.w.max(1).min(area.size.w.max(1));
-        rect.size.h = rect.size.h.max(1).min(area.size.h.max(1));
-        rect.loc.x = rect
-            .loc
-            .x
-            .clamp(area.loc.x, area.loc.x + (area.size.w - rect.size.w).max(0));
-        rect.loc.y = rect
-            .loc
-            .y
-            .clamp(area.loc.y, area.loc.y + (area.size.h - rect.size.h).max(0));
+        let rect = clamp_window_rect(rect, area);
         json!({"ok":self.set_native_rect(id,rect)})
     }
 }

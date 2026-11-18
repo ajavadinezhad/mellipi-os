@@ -1,4 +1,6 @@
 import importlib.util
+import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +23,62 @@ class IdleResumeTests(unittest.TestCase):
   env=launched[0][1]['env']
   self.assertEqual(env['ORBIT_SETTINGS_FILE'],str(prefs.path));self.assertEqual(env['ORBIT_DATA'],'/tmp/data')
   self.assertEqual(env['XDG_CONFIG_HOME'],'/tmp/config');self.assertNotIn('ORBIT_API_KEY',env);obj.process=None
+ def test_exited_idle_child_restarts_with_bounded_backoff(self):
+  from qt_compat import QApplication
+  app=QApplication.instance() or QApplication([])
+  children=[]
+  class Child:
+   def __init__(self):self.exited=threading.Event()
+   def wait(self,timeout=None):self.exited.wait(timeout);return 1
+   def poll(self):return 1 if self.exited.is_set() else None
+   def terminate(self):self.exited.set()
+  def spawn(*args,**kwargs):
+   children.append(Child());return children[-1]
+  def until(predicate):
+   deadline=time.monotonic()+2
+   while not predicate() and time.monotonic()<deadline:
+    app.processEvents();time.sleep(.005)
+   self.assertTrue(predicate())
+  prefs=SimpleNamespace(values=dict(idleLockEnabled=True,lockBeforeSleep=True,idleLockMinutes=10,displayOffMinutes=0))
+  with patch.object(idle_policy.IdlePolicy,'RESTART_DELAYS',(1,2)):
+   obj=idle_policy.IdlePolicy(prefs,spawn=spawn,availability=lambda:True,environment={'SWAYSOCK':'/tmp/private-sway'})
+   try:
+    self.assertTrue(obj.state['running'])
+    for count in (2,3):
+     children[-1].exited.set()
+     until(lambda:len(children)==count)
+     self.assertTrue(obj.state['running'])
+    children[-1].exited.set()
+    until(lambda:'check Lock settings' in obj.state['error'])
+    self.assertFalse(obj.state['running'])
+    self.assertEqual(len(children),3)
+   finally:obj.close()
+ def test_real_idle_child_survives_startup_worker_and_restarts(self):
+  from qt_compat import QApplication
+  app=QApplication.instance() or QApplication([])
+  prefs=SimpleNamespace(values={})
+  def until(predicate):
+   deadline=time.monotonic()+3
+   while time.monotonic()<deadline:
+    app.processEvents()
+    if predicate():return
+    time.sleep(.005)
+   self.fail('Idle child did not reach expected state')
+  with patch.object(idle_policy,'policy_command',return_value=['/usr/bin/sleep','20']):
+   obj=idle_policy.IdlePolicy(prefs,availability=lambda:True,environment={'SWAYSOCK':'/tmp/private-sway'})
+   try:
+    until(lambda:obj.state['running'])
+    first=obj.process
+    deadline=time.monotonic()+.15
+    while time.monotonic()<deadline:
+     app.processEvents();time.sleep(.005)
+    self.assertIs(obj.process,first)
+    self.assertIsNone(first.poll())
+    first.terminate()
+    until(lambda:obj.state['running'] and obj.process is not first)
+    second=obj.process
+   finally:obj.close()
+   until(lambda:second.poll() is not None)
  def test_resume_helper_typed_dispatch_and_transient_retry(self):
   path=Path(__file__).resolve().parents[1]/'tools/native-output-power.py'
   spec=importlib.util.spec_from_file_location('resume_helper',path);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)

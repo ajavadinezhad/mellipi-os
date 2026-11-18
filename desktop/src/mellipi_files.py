@@ -7,6 +7,7 @@ import os
 import sys
 import weakref
 from pathlib import Path
+from threading import Event
 
 os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
@@ -19,18 +20,20 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QAction, QFileSystemModel, QDesktopServices, QDrag, QFontMetrics, QIcon, QKeySequence, QPainter
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMainWindow, QMenu, QProgressBar, QPushButton, QScrollArea, QStackedWidget, QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QMainWindow, QMenu, QProgressBar, QPushButton, QScrollArea, QStackedWidget, QTabBar, QToolButton, QTreeView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 from gi.repository import Gio
 from qt_app import style_dialog, ThemedInput, AppIdentityBadge, BASE_STYLE, ThemeWatch, apply_titlebar, original_icon, themed_prompt, widget_palette, exec_owned_dialog
 from qt_titlebar import TitleBar
 from desktop_icons import rename_no_replace, safe_name, trash_item
 from device_monitor import DeviceMonitor
-from file_transfers import MAX_SOURCES, Cancelled, CancelToken, Transfer, new_receipt
-from file_archives import archive_suffix, compress, extract_here, preview_archive
+from file_transfers import MAX_SOURCES, Cancelled, CancelToken, Transfer, identity, new_receipt
+from file_archives import archive_identity, archive_suffix, compress, extract_here, folder_identity, preview_archive
 from storage_analyzer import analyze
 from files_icons import ACTIONS, PLACES, file_icon, icon as phosphor_icon, place_icon
 
+
+from folder_search import find_nested_names
 
 class FileJob(QThread):
     def __init__(self, operation, parent):
@@ -711,7 +714,6 @@ class Files(QMainWindow):
         top = self.navigation_layout = QHBoxLayout()
         top.setSpacing(4)
         self.identity_badge = AppIdentityBadge(self)
-        top.addWidget(self.identity_badge)
         self.places_button = QPushButton('Places')
         self.places_button.setObjectName('navigation')
         self.places_button.setProperty('symbolicIcon', 'folder')
@@ -750,6 +752,17 @@ class Files(QMainWindow):
         self.search_layout = QHBoxLayout(self.search_row)
         self.search_layout.setContentsMargins(0, 0, 0, 0)
         self.search_layout.addWidget(self.search, 1)
+        self.nested_button = self.button('Subfolders', self.toggle_nested_search)
+        self.nested_button.setCheckable(True)
+        self.nested_button.setAccessibleName('Search subfolders')
+        self.nested_button.setToolTip('Search inside this folder and its subfolders')
+        self.search_layout.addWidget(self.nested_button)
+        self.nested_job = None
+        self.nested_token = None
+        self.nested_pending = False
+        self.nested_timer = QTimer(self)
+        self.nested_timer.setSingleShot(True)
+        self.nested_timer.timeout.connect(self.start_nested_search)
         close_search = self.button('×', self.close_search)
         close_search.setProperty('symbolicIcon', 'window-close')
         close_search.setObjectName('navigation')
@@ -822,18 +835,57 @@ class Files(QMainWindow):
         self.results_layout.setContentsMargins(0, 0, 0, 0)
         self.results_layout.addWidget(self.search_row)
         self.results_layout.addWidget(self.view, 1)
+        self.nested_results = QTreeWidget()
+        self.nested_results.setHeaderLabels(['Name', 'Folder'])
+        self.nested_results.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.nested_results.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.nested_results.setUniformRowHeights(True)
+        self.nested_results.setRootIsDecorated(False)
+        self.nested_results.setAccessibleName('Subfolder search results')
+        self.nested_results.installEventFilter(self)
+        self.nested_results.setSelectionMode(self.view.selectionMode())
+        self.nested_results.itemActivated.connect(self.open_nested_result)
+        self.nested_results.hide()
+        self.results_layout.addWidget(self.nested_results, 1)
         body.addLayout(self.results_layout, 1)
         central = QWidget()
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(8, 0, 8, 8)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.titlebar = TitleBar(self, top)
+        title = QHBoxLayout()
+        title.setSpacing(8)
+        title.addWidget(self.identity_badge)
+        title_label = QLabel('Files', objectName='windowTitle')
+        title.addWidget(title_label, 1)
+        self.titlebar = TitleBar(self, title)
         layout.addWidget(self.titlebar)
-        rule = QFrame()
-        rule.setObjectName('divider')
-        rule.setFixedHeight(1)
-        layout.addWidget(rule)
+        self.navigation_bar = QWidget(objectName='folderNavigation')
+        self.navigation_bar.setLayout(top)
+        layout.addWidget(self.navigation_bar)
         self.content_layout = QVBoxLayout()
+        tab_row = QHBoxLayout()
+        self.folder_tabs = QTabBar()
+        self.folder_tabs.setAccessibleName('Open folders')
+        self.folder_tabs.setDrawBase(False)
+        self.folder_tabs.setExpanding(False)
+        self.folder_tabs.setElideMode(Qt.TextElideMode.ElideMiddle)
+        self.folder_tabs.setChangeCurrentOnDrag(False)
+        self.folder_tabs.setAcceptDrops(True)
+        self.folder_tabs.installEventFilter(self)
+        self.folder_tab_state = {}
+        self.folder_tab_id = 0
+        self.active_folder_tab = 0
+        self.tab_restore = None
+        self.folder_tabs.currentChanged.connect(self.switch_folder_tab)
+        self.folder_tabs.tabCloseRequested.connect(self.close_folder_tab)
+        self.add_folder_tab = self.button('Open folder tab', self.new_folder_tab)
+        self.add_folder_tab.setProperty('symbolicIcon', 'tab-new')
+        self.add_folder_tab.setToolTip('New folder tab (Ctrl+T)')
+        self.add_folder_tab.setText('')
+        self.add_folder_tab.setAccessibleName('New folder tab')
+        tab_row.addWidget(self.folder_tabs, 1)
+        tab_row.addWidget(self.add_folder_tab)
+        self.content_layout.addLayout(tab_row)
         self.content_layout.addLayout(body, 1)
         layout.addLayout(self.content_layout, 1)
         self.transfer_strip = TransferStrip(self)
@@ -854,9 +906,10 @@ class Files(QMainWindow):
         self.proxy.rowsInserted.connect(self.update_count)
         self.proxy.rowsRemoved.connect(self.update_count)
         self.model.directoryLoaded.connect(self.update_count)
+        self.model.directoryLoaded.connect(self.restore_folder_selection)
         self.actions = []
         for label, icon, shortcut, callback in (
-            ('Open', 'document-open', 'Return', lambda: self.open_index(self.view.currentIndex())),
+            ('Open', 'document-open', 'Return', self.open_current),
             ('New folder', 'folder-new', 'Ctrl+Shift+N', self.new_folder),
             ('Copy', 'edit-copy', 'Ctrl+C', lambda: self.copy(False)),
             ('Cut', 'edit-cut', 'Ctrl+X', lambda: self.copy(True)),
@@ -901,7 +954,11 @@ class Files(QMainWindow):
             [*self.actions, None, *self.archive_actions, None, bookmark, storage])
         actions_button.clicked.connect(self.open_file_actions)
         top.addWidget(actions_button)
-        for shortcut, callback in (('Ctrl+L', self.edit_location), ('Ctrl+F', self.show_search)):
+        for shortcut, callback in (('Ctrl+L', self.edit_location), ('Ctrl+F', self.show_search),
+                                   ('Ctrl+T', self.new_folder_tab),
+                                   ('Ctrl+W', self.close_current_folder_tab),
+                                   ('Ctrl+Tab', lambda: self.step_folder_tab(1)),
+                                   ('Ctrl+Shift+Tab', lambda: self.step_folder_tab(-1))):
             action = QAction(self)
             action.setShortcut(QKeySequence(shortcut))
             action.triggered.connect(callback)
@@ -911,8 +968,114 @@ class Files(QMainWindow):
         self.apply_theme()
         if not self.navigate(initial):
             self.navigate(Path.home())
+        self.append_folder_tab(self.folder)
+        self.view.setFocus()
+
+    def append_folder_tab(self, folder):
+        ident = self.folder_tab_id
+        self.folder_tab_id += 1
+        self.folder_tab_state[ident] = dict(folder=folder, history=[folder], position=0)
+        with QSignalBlocker(self.folder_tabs):
+            index = self.folder_tabs.addTab(folder.name or '/')
+            self.folder_tabs.setTabData(index, ident)
+            self.folder_tabs.setTabToolTip(index, str(folder))
+            button = QToolButton(self.folder_tabs, objectName='mellipiTabClose')
+            button.setAccessibleName('Close folder tab')
+            button.setToolTip('Close folder tab')
+            button.clicked.connect(lambda: self.close_folder_identity(ident))
+            self.paint_folder_tab_close(button)
+            self.folder_tabs.setTabButton(index, QTabBar.ButtonPosition.RightSide, button)
+        return index
+
+    def close_folder_identity(self, ident):
+        for index in range(self.folder_tabs.count()):
+            if self.folder_tabs.tabData(index) == ident:
+                self.close_folder_tab(index)
+                break
+
+    def paint_folder_tab_close(self, button):
+        palette = self.theme_watch.tokens
+        side = round(22 * palette['text_scale'])
+        glyph = round(13 * palette['text_scale'])
+        button.setFixedSize(side, side)
+        button.setIconSize(QSize(glyph, glyph))
+        button.setIcon(original_icon('window-close', palette['accent_ink']))
+
+    def new_folder_tab(self):
+        if self.folder_tabs.count() >= 16:
+            self.statusBar().showMessage('Up to 16 folder tabs can be open.', 5000)
+            return
+        self.folder_tabs.setCurrentIndex(self.append_folder_tab(self.folder))
+
+    def step_folder_tab(self, step):
+        self.folder_tabs.setCurrentIndex((self.folder_tabs.currentIndex() + step) % self.folder_tabs.count())
+
+    def close_current_folder_tab(self):
+        if self.folder_tabs.count() == 1:
+            self.close()
+        else:
+            self.close_folder_tab(self.folder_tabs.currentIndex())
+
+    def close_folder_tab(self, index):
+        if self.folder_tabs.count() == 1:
+            self.close()
+            return
+        ident = self.folder_tabs.tabData(index)
+        self.folder_tabs.removeTab(index)
+        self.folder_tab_state.pop(ident, None)
+
+    def switch_folder_tab(self, index):
+        if index < 0:
+            return
+        ident = self.folder_tabs.tabData(index)
+        if ident == self.active_folder_tab or ident not in self.folder_tab_state:
+            return
+        self.folder_tab_state[self.active_folder_tab] = dict(
+            folder=self.folder, history=list(self.history), position=self.position,
+            search=self.search.text(), searching=not self.search_row.isHidden(),
+            nested=self.nested_button.isChecked(), selected=self.selected())
+        state = self.folder_tab_state[ident]
+        self.active_folder_tab = ident
+        self.tab_restore = None
+        self.reset_nested_search()
+        with QSignalBlocker(self.search):
+            self.search.clear()
+        self.search_row.hide()
+        self.view.clearSelection()
+        self.search_selection = []
+        self.proxy.set_query(state['folder'], '')
+        self.history, self.position = list(state['history']), state['position']
+        if not self.navigate(state['folder'], record=False):
+            self.navigate(Path.home())
+            return
+        self.tab_restore = (ident, str(self.folder), set(state.get('selected', ())))
+        if state.get('searching'):
+            self.search_row.show()
+            self.nested_button.setChecked(state.get('nested', False))
+            self.search.setText(state.get('search', ''))
+            if self.nested_button.isChecked() and not self.search.text():
+                self.queue_nested_search('')
+        if not self.nested_button.isChecked():
+            self.restore_folder_selection(str(self.folder))
+
+    def restore_folder_selection(self, folder):
+        pending = self.tab_restore
+        if pending is None or pending[:2] != (self.active_folder_tab, folder) or self.nested_button.isChecked():
+            return
+        selection = self.view.selectionModel()
+        for path in sorted(pending[2]):
+            index = self.proxy.mapFromSource(self.model.index(str(path)))
+            if index.isValid():
+                selection.select(index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+                if not selection.currentIndex().isValid() or not selection.isSelected(selection.currentIndex()):
+                    selection.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
+                pending[2].remove(path)
+        if not pending[2]:
+            self.tab_restore = None
 
     def update_count(self, *_):
+        if self.nested_button.isChecked():
+            return
         count = self.proxy.rowCount(self.view.rootIndex())
         noun = 'match' if self.proxy.query else 'item'
         self.item_count.setText(f'{count} {noun}' + ('' if count == 1 else 'es' if noun == 'match' else 's'))
@@ -955,11 +1118,20 @@ class Files(QMainWindow):
         self.search.selectAll()
 
     def close_search(self):
+        self.reset_nested_search()
         self.search.clear()
         self.search_row.hide()
         self.view.setFocus()
 
     def focus_results(self):
+        if self.nested_button.isChecked() and self.search.text().strip():
+            if self.nested_timer.isActive():
+                self.nested_timer.stop()
+                self.start_nested_search()
+            if self.nested_results.topLevelItemCount() and not self.nested_results.currentItem():
+                self.nested_results.setCurrentItem(self.nested_results.topLevelItem(0))
+            self.nested_results.setFocus()
+            return
         if not self.view.currentIndex().isValid():
             self.view.setCurrentIndex(self.proxy.index(0, 0, self.view.rootIndex()))
         self.view.setFocus()
@@ -970,6 +1142,9 @@ class Files(QMainWindow):
 
     def filter_folder(self, query):
         if not hasattr(self, 'folder'):
+            return
+        if self.nested_button.isChecked():
+            self.queue_nested_search(query)
             return
         previous = self.proxy.query
         if not previous and query.strip():
@@ -988,6 +1163,104 @@ class Files(QMainWindow):
         finally:
             self.filtering = False
         self.update_count()
+
+    def toggle_nested_search(self):
+        if self.nested_button.isChecked():
+            self.view.clearSelection()
+            self.queue_nested_search(self.search.text())
+        else:
+            self.reset_nested_search()
+            self.filter_folder(self.search.text())
+        self.search.setFocus()
+
+    def reset_nested_search(self):
+        self.nested_timer.stop()
+        self.nested_pending = False
+        if self.nested_token:
+            self.nested_token.set()
+        self.nested_button.setChecked(False)
+        self.nested_results.clear()
+        self.nested_results.hide()
+        self.view.show()
+
+    def queue_nested_search(self, query):
+        self.nested_timer.stop()
+        if self.nested_token:
+            self.nested_token.set()
+        self.nested_pending = False
+        self.nested_results.clear()
+        active = bool(query.strip())
+        self.nested_results.setVisible(active)
+        self.view.setVisible(not active)
+        self.item_count.setText('Searching subfolders…' if active else 'Type a name to search subfolders')
+        if active:
+            self.nested_timer.start(200)
+
+    def start_nested_search(self):
+        if self.nested_job is not None:
+            self.nested_pending = True
+            return
+        if not self.nested_button.isChecked() or not (query := self.search.text().strip()):
+            return
+        root, token = self.folder, Event()
+        hidden = bool(self.model.filter() & QDir.Filter.Hidden)
+        self.nested_token = token
+        job = self.nested_job = FileJob(lambda: find_nested_names(root, query, token, hidden=hidden), self)
+        job.finished.connect(lambda: self.finish_nested_search(job, root, token))
+        job.start()
+
+    def finish_nested_search(self, job, root, token):
+        self.nested_job = None
+        self.nested_token = None
+        if not token.is_set() and self.nested_button.isChecked() and self.folder == root:
+            if job.error:
+                self.item_count.setText('Could not search subfolders')
+            else:
+                paths, limited, skipped = job.value
+                for path in sorted(paths, key=lambda p: (p.name.casefold(), str(p))):
+                    folder = str(path.parent.relative_to(root))
+                    item = QTreeWidgetItem([path.name, 'This folder' if folder == '.' else folder])
+                    item.setData(0, Qt.ItemDataRole.UserRole, path)
+                    item.setToolTip(0, str(path))
+                    self.nested_results.addTopLevelItem(item)
+                note = ' · Refine search for more' if limited else ''
+                pending = self.tab_restore
+                if pending is not None and pending[:2] == (self.active_folder_tab, str(root)):
+                    lead = False
+                    for index in range(self.nested_results.topLevelItemCount()):
+                        item = self.nested_results.topLevelItem(index)
+                        if item.data(0, Qt.ItemDataRole.UserRole) in pending[2]:
+                            if not lead:
+                                self.nested_results.setCurrentItem(item)
+                                lead = True
+                            item.setSelected(True)
+                    self.tab_restore = None
+                if skipped:
+                    note += f' · {skipped} folders skipped'
+                self.item_count.setText(f'{len(paths)} matches{note}')
+        job.deleteLater()
+        if self.close_when_idle:
+            self.finish_deferred_close()
+        elif self.nested_pending:
+            self.nested_pending = False
+            self.start_nested_search()
+
+    def open_nested_result(self, item, _):
+        self.open_path(item.data(0, Qt.ItemDataRole.UserRole))
+
+    def open_current(self):
+        if self.nested_button.isChecked() and self.nested_results.isVisible():
+            item = self.nested_results.currentItem()
+            if item is not None and item.isSelected():
+                self.open_nested_result(item, 0)
+            return
+        self.open_index(self.view.currentIndex())
+
+    def open_path(self, path):
+        if path.is_dir():
+            self.navigate(path)
+        elif not path.exists() or not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+            self.statusBar().showMessage('Could not open this file', 5000)
 
     def edit_location(self):
         self.address.setCurrentWidget(self.location)
@@ -1080,6 +1353,37 @@ class Files(QMainWindow):
         self.crumb_layout.addStretch()
 
     def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.DragEnter,QEvent.Type.DragMove,QEvent.Type.Drop):
+            tabs = getattr(self, 'folder_tabs', None)
+            folder = None
+            if watched is tabs and tabs is not None:
+                index = tabs.tabAt(event.position().toPoint())
+                ident = tabs.tabData(index) if index>=0 else None
+                state = self.folder_tab_state.get(ident)
+                folder = self.folder if ident==self.active_folder_tab else state['folder'] if state else None
+            else:
+                folder = next((path for path,button in self.places.items() if button is watched), None)
+            if watched is tabs or folder is not None:
+                paths = local_paths(event.mimeData().urls())
+                move = isinstance(event.source(),FolderView) and bool(event.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
+                action = Qt.DropAction.MoveAction if move else Qt.DropAction.CopyAction
+                monitor = getattr(QApplication.instance(), 'files_device_monitor', None)
+                if (watched is tabs and event.type()==QEvent.Type.DragEnter and 1<=len(paths)<=MAX_SOURCES
+                        and event.possibleActions() & action):
+                    event.setDropAction(action)
+                    event.accept()
+                    return True
+                if (folder is not None and folder.is_dir() and os.access(folder,os.W_OK|os.X_OK)
+                        and self.job is None and not (monitor and monitor.files_active_request is not None)
+                        and 1<=len(paths)<=MAX_SOURCES and event.possibleActions() & action
+                        and not any(path==folder or path in folder.parents for path in paths)
+                        and not any(path.parent==folder for path in paths)):
+                    event.setDropAction(action)
+                    event.accept()
+                    if event.type()==QEvent.Type.Drop:self.transfer_paths(paths,folder,move)
+                else:
+                    event.ignore()
+                return True
         if (event.type() == QEvent.Type.Resize and watched is self.centralWidget()
                 and hasattr(self, 'action_sheet') and self.action_sheet.isVisible()):
             self.action_sheet.place()
@@ -1095,6 +1399,10 @@ class Files(QMainWindow):
             if event.key() == Qt.Key.Key_Down:
                 self.focus_results()
                 return True
+        if (watched is getattr(self, 'nested_results', None) and event.type() == QEvent.Type.KeyPress
+                and event.key() == Qt.Key.Key_Escape):
+            self.close_search()
+            return True
         if watched is self.location and event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
             self.location.setText(str(self.folder))
             self.address.setCurrentWidget(self.breadcrumbs)
@@ -1135,6 +1443,9 @@ class Files(QMainWindow):
         button.setObjectName('place')
         button.setCheckable(True)
         self.places[path] = button
+        if path != Path("/"):
+            button.setAcceptDrops(True)
+            button.installEventFilter(self)
         self.sidebar.addWidget(button)
 
     def read_bookmarks(self):
@@ -1318,12 +1629,14 @@ class Files(QMainWindow):
         preferences = self.theme_watch.preferences
         app = QApplication.instance()
         app.setPalette(widget_palette(palette))
-        ink = palette['text']
-        self.identity_badge.theme('Mellipi Files', palette)
+        self.identity_badge.theme('Mellipi Files', palette, surface='chrome')
+        for button in self.folder_tabs.findChildren(QToolButton, 'mellipiTabClose'):
+            self.paint_folder_tab_close(button)
         for control in [*self.findChildren(QAction), *self.findChildren(QPushButton)]:
             name = control.property('symbolicIcon')
             if not name:
                 continue
+            ink = palette['accent_ink']
             if (control.objectName() == 'place' or name == 'drive-harddisk') and name in PLACES:
                 icon = place_icon(name, palette)
             else:
@@ -1339,30 +1652,33 @@ class Files(QMainWindow):
         self.model.file_inks = palette['accent_ink'], palette['accent'], palette['text']
         self.view.viewport().update()
         density = preferences.values['density']
-        for button in self.titlebar.findChildren(QPushButton):
+        for button in (*self.titlebar.findChildren(QPushButton), *self.navigation_bar.findChildren(QPushButton)):
             button.setIconSize(QSize(16, 16))
-            button.setMinimumHeight(30)
             if button.objectName() == 'navigation':
+                button.setMinimumHeight(30)
                 button.setFixedWidth(32 if button.menu() is None else 36)
         padding = palette['padding']
         self.navigation_layout.setSpacing(max(3, padding - 2))
+        self.navigation_layout.setContentsMargins(padding + 4, padding, padding + 4, padding)
         self.sidebar.setSpacing(max(2, padding // 2))
         self.browse_layout.setSpacing(padding)
         self.results_layout.setSpacing(padding)
         self.search_layout.setSpacing(max(3, padding - 2))
         sidebar_width = {'comfortable': 148, 'compact': 132, 'extra': 116}[density]
         text_scale = preferences.values['textScale']
+        place_font_size = round((10 if density=='extra' else 11) * text_scale)
+        place_row_min = {'comfortable': 38, 'compact': 32, 'extra': 26}[density]
+        place_padding = 12 if density=='extra' else 16
         self.sidebar.setContentsMargins(padding, padding, padding, padding)
-        self.content_layout.setContentsMargins(0, padding, 0, 0)
+        self.content_layout.setContentsMargins(padding + 4, padding, padding + 4, padding)
         self.content_layout.setSpacing(padding)
-        radius = {'square': 0, 'soft': 4, 'rounded': 8}[preferences.values['corners']]
-        self.setStyleSheet('''
+        self.setStyleSheet((BASE_STYLE + '''
             QMainWindow, QStatusBar { background: %(background)s; color: %(text)s; }
             QTreeView, QMenu { background: %(surface)s; color: %(text)s; }
             QLineEdit { background: %(surface)s; }
-            QPushButton, QHeaderView::section { background: %(surface)s; color: %(text)s; }
+            QWidget#folderNavigation { background: %(background)s; }
             QFrame#divider { background: %(separator)s; }
-            QWidget#places { background: %(raised)s; border-radius: %(radius)spx; }
+            QWidget#places { background: %(surface)s; border-radius: %(radius)spx; }
             QLabel#crumbSeparator { color: %(muted)s; }
             QLabel#itemCount { color: %(muted)s; padding-right: 4px; }
             QMenu { border: 1px solid %(border)s; padding: 3px; }
@@ -1382,10 +1698,8 @@ class Files(QMainWindow):
             QPushButton#fileActionItem:hover, QPushButton#fileActionItem:focus { background: %(selected_surface)s; }
             QPushButton#fileActionItem:checked { border-left: 2px solid %(focus)s; }
             QPushButton#navigation:hover:enabled, QPushButton#crumb:hover, QPushButton#currentCrumb:hover { background: %(hover)s; }
-            QPushButton#navigation:focus, QPushButton#crumb:focus, QPushButton#currentCrumb:focus, QPushButton#windowControl:focus { border-bottom: 2px solid %(focus)s; }
-            QPushButton#windowControl { background: transparent; border: 0; padding: 2px; }
-            QPushButton#windowControl:hover { background: %(hover)s; }
-            QPushButton#place { text-align: left; border: 0; border-radius: %(radius)spx;
+            QPushButton#navigation:focus, QPushButton#crumb:focus, QPushButton#currentCrumb:focus { border-bottom: 2px solid %(focus)s; }
+            QPushButton#place { text-align: left; padding: 4px 7px; font-size: %(place_font_size)dpx; border: 0; border-radius: %(radius)spx;
                 border-left: 2px solid transparent; background: transparent; color: %(muted)s; }
             QPushButton#place:hover { background: %(hover)s; color: %(text)s; }
             QPushButton#place:checked { background: %(selected_surface)s; color: %(text)s;
@@ -1396,18 +1710,19 @@ class Files(QMainWindow):
             QPushButton { border: 0; border-radius: %(radius)spx; padding: %(padding)spx; }
             QLineEdit { border: 1px solid %(control_border)s; border-radius: %(radius)spx; padding: %(padding)spx; }
             QPushButton:hover { background: %(hover)s; }
-            QPushButton:disabled { color: %(muted)s; }
-            QPushButton:focus, QLineEdit:focus, QTreeView:focus { border: 1px solid %(focus)s; }
+            QPushButton:disabled { color: %(faint)s; }
+            QPushButton:focus { border: 1px solid %(focus)s; }
             QTreeView::item { padding: %(padding)spx 4px; }
             QTreeView::item:selected, QMenu::item:selected { background: %(selected_surface)s; color: %(text)s; }
-        ''' % dict(palette, padding=padding, radius=radius))
+        ''') % dict(palette,place_font_size=place_font_size))
         font = app.font()
         font.setPixelSize(palette['font_size'])
         app.setFont(font)
         self.view.setIconSize(QSize(20, 20))
         for button in self.places_panel.findChildren(QPushButton):
-            button.setIconSize(QSize(20, 20))
-            button.setMinimumHeight(max(28, palette['font_size'] + 8))
+            side = max(14, round(13 * text_scale))
+            button.setIconSize(QSize(side, side))
+            button.setMinimumHeight(max(place_row_min, place_font_size + place_padding))
         if hasattr(self, 'folder'):
             self.breadcrumb_timer.start(0)
         self.places_panel.setFixedWidth(max(sidebar_width + round(44 * max(0, text_scale - 1)), self.sidebar.minimumSize().width()))
@@ -1445,6 +1760,8 @@ class Files(QMainWindow):
             self.history[self.position + 1:] = [folder]
             self.position += 1
         if getattr(self, 'folder', None) != folder:
+            self.tab_restore = None
+            self.reset_nested_search()
             self.search_selection = []
             with QSignalBlocker(self.search):
                 self.search.clear()
@@ -1459,28 +1776,52 @@ class Files(QMainWindow):
         self.setWindowTitle(f'{label} — Mellipi Files')
         for path, button in self.places.items():
             button.setChecked(path == folder)
-        self.back.setEnabled(self.position > 0)
-        self.forward.setEnabled(self.position + 1 < len(self.history))
+        self.update_history_controls()
+        if self.folder_tabs.count():
+            index = self.folder_tabs.currentIndex()
+            self.folder_tabs.setTabText(index, folder.name or '/')
+            self.folder_tabs.setTabToolTip(index, str(folder))
         return True
 
     def step(self, delta):
+        if delta not in (-1, 1):
+            return
         position = self.position + delta
-        if 0 <= position < len(self.history):
+        while 0 <= position < len(self.history):
             previous = self.position
-            self.position = position
-            if not self.navigate(self.history[position], record=False):
+            target = self.history[position]
+            try:
+                if target.is_dir():
+                    self.position = position
+                    if self.navigate(target, record=False):
+                        return
+                    self.position = previous
+            except OSError:
                 self.position = previous
+                position += delta
+                continue
+            del self.history[position]
+            if position < self.position:
+                self.position -= 1
+            if delta < 0:
+                position -= 1
+        self.update_history_controls()
+        self.statusBar().showMessage('No available folder in that direction.', 4000)
+
+    def update_history_controls(self):
+        # Avoid doing filesystem work for every history entry on navigation.
+        self.back.setEnabled(self.position > 0)
+        self.forward.setEnabled(self.position + 1 < len(self.history))
 
     def open_index(self, index):
         if not index.isValid():
             return
         path = Path(self.model.filePath(self.proxy.mapToSource(index)))
-        if path.is_dir():
-            self.navigate(path)
-        elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
-            self.statusBar().showMessage('Could not open this file', 5000)
+        self.open_path(path)
 
     def selected(self):
+        if self.nested_button.isChecked() and self.nested_results.isVisible():
+            return [item.data(0, Qt.ItemDataRole.UserRole) for item in self.nested_results.selectedItems()]
         return [Path(self.model.filePath(self.proxy.mapToSource(index)))
                 for index in self.view.selectionModel().selectedRows()]
 
@@ -1587,10 +1928,19 @@ class Files(QMainWindow):
         paths = self.selected()
         if not paths:
             return
+        folder = self.folder
+        try:
+            expected_folder = folder_identity(folder.stat())
+            expected_sources = {path: archive_identity(path.lstat()) for path in paths}
+        except OSError:
+            self.statusBar().showMessage('A selected item or destination is no longer available.', 5000)
+            return
         name = self.ask_name('Compress to ZIP', (paths[0].name if len(paths) == 1 else 'Archive') + '.zip')
         if name:
-            target = self.folder / (name if name.lower().endswith('.zip') else name + '.zip')
-            self.run_job(lambda: compress(paths, target, rename_no_replace), self.reveal_path)
+            target = folder / (name if name.lower().endswith('.zip') else name + '.zip')
+            self.run_job(lambda: compress(paths, target, rename_no_replace,
+                                          expected_sources=expected_sources, expected_folder=expected_folder),
+                         self.reveal_path)
 
     def toggle_hidden(self):
         self.model.setFilter(self.model.filter() ^ QDir.Filter.Hidden)
@@ -1615,7 +1965,11 @@ class Files(QMainWindow):
             self.transfer_strip.start(self.job, len(paths), move)
             self.job.progress.connect(self.transfer_strip.update_progress)
         self.statusBar().showMessage('Working…')
-        self.job.finished.connect(lambda: self.job_finished(completed))
+        owner_tab = self.active_folder_tab
+        def finish():
+            # A background operation must not move another tab to its result.
+            self.job_finished(completed if self.active_folder_tab == owner_tab else None)
+        self.job.finished.connect(finish)
         self.job.start()
 
     def job_finished(self, completed):
@@ -1712,7 +2066,11 @@ class Files(QMainWindow):
 
     def closeEvent(self, event):
         monitor = self.device_monitor
-        if self.storage_dialog is not None and self.storage_dialog.job is not None:
+        if self.nested_job is not None:
+            self.close_when_idle = True
+            self.reset_nested_search()
+            event.ignore()
+        elif self.storage_dialog is not None and self.storage_dialog.job is not None:
             self.close_when_idle = True
             self.storage_dialog.stop_or_close()
             event.ignore()
@@ -1804,18 +2162,46 @@ class Files(QMainWindow):
         if len(selected) != 1:
             return
         source = selected[0]
+        try:
+            expected = identity(source)
+        except OSError:
+            self.statusBar().showMessage('This item is no longer available.', 5000)
+            return
         name = self.ask_name('Rename', source.name)
         if name and name != source.name:
             target = source.with_name(name)
-            self.run_job(lambda: rename_no_replace(source, target))
+            def operation():
+                self.check_operation_source(source, expected)
+                rename_no_replace(source, target)
+            self.run_job(operation)
+
+    @staticmethod
+    def check_operation_source(path, expected):
+        try:
+            current = identity(path)
+        except OSError:
+            current = None
+        if current != expected:
+            raise ValueError(f'“{path.name}” changed. Select it again before continuing.')
 
     def trash(self):
         selected = self.selected()
-        if not selected or not themed_prompt(self, 'Move to Trash', f'Move {len(selected)} item(s) to Trash?', 'Move to Trash', 'Cancel'):
+        if not selected:
+            return
+        try:
+            targets = [(path, identity(path)) for path in selected]
+        except OSError:
+            self.statusBar().showMessage('A selected item is no longer available.', 5000)
+            return
+        if not themed_prompt(self, 'Move to Trash', f'Move {len(selected)} item(s) to Trash?', 'Move to Trash', 'Cancel'):
             return
 
         def operation():
-            for path in selected:
+            # Reject a stale selection before starting a multi-file operation.
+            for path, expected in targets:
+                self.check_operation_source(path, expected)
+            for path, expected in targets:
+                self.check_operation_source(path, expected)
                 Gio.File.new_for_path(str(path)).trash(None)
         self.run_job(operation)
 

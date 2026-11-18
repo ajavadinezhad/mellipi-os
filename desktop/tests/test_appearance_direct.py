@@ -1,4 +1,4 @@
-"""The native preview uses a local draft, while Apply writes once to the settings owner."""
+"""Appearance controls save directly through the settings owner."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -32,10 +32,15 @@ class AppearanceFixture(OrbitFixture):
     outputs = pyqtProperty('QVariantList', lambda s: [], constant=True)
 
     @pyqtSlot('QVariantMap')
-    def applyAppearance(self, draft):
-        self.saves.append(draft)
+    def applyAppearance(self, changes):
+        self.saves.append(changes)
         self.settingsChanged = self.changed
-        Bridge.applyAppearance(self, draft)
+        Bridge.applyAppearance(self, changes)
+
+    @pyqtSlot(str)
+    def applyTheme(self, theme):
+        self.settingsChanged = self.changed
+        Bridge.applyTheme(self, theme)
 
     def notify(self, message):
         self.notices.append(message)
@@ -44,12 +49,12 @@ class AppearanceFixture(OrbitFixture):
         pass
 
 
-class AppearanceStudioTests(TestCase):
+class AppearanceSettingsTests(TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_preview_scope_apply_and_narrow_reflow(self):
+    def test_direct_save_is_atomic_and_appearance_fits_narrow_windows(self):
         with TemporaryDirectory() as tmp:
             preferences = Preferences(Path(tmp) / 'appearance.json')
             orbit = AppearanceFixture(preferences)
@@ -65,14 +70,12 @@ class AppearanceStudioTests(TestCase):
                 import "."
                 Window {
                     width: 520; height: 520; visible: true
-                    function stageStudio() {
-                        studio.selectTheme("dune");
-                        studio.stage("panelPosition","bottom");
-                        studio.stage("textScale",1.5);
-                    }
-                    function discardStudio() { studio.discard(); }
-                    function commitStudio() { studio.commit(); }
-                    function togglePreview() {studio.compactPreviewOpen=!studio.compactPreviewOpen;}
+                    function chooseDune() { Orbit.applyTheme("dune"); }
+                    function changeTaskbar() { studio.setValue("panelPosition","bottom"); }
+                    function changeMode() { studio.setMode("black"); }
+                    function enableContrast() { studio.setValue("highContrast",true); }
+                    function invalidColor() { studio.setValue("accent","nothex"); }
+                    function returnToDune() { Orbit.applyTheme("dune"); }
                     AppearancePanel { id: studio; anchors.fill: parent }
                 }
             ''', QUrl.fromLocalFile(str(NATIVE / 'appearance-studio-fixture.qml')))
@@ -81,38 +84,40 @@ class AppearanceStudioTests(TestCase):
                 self.assertIsNotNone(window, [e.toString() for e in component.errors()])
                 QTest.qWait(35)
                 studio = window.findChild(QObject, 'appearancePanel')
-                preview = window.findChild(QQuickItem, 'appearancePreview')
-                self.assertTrue(preview.isVisible())
-                QMetaObject.invokeMethod(window, 'stageStudio')
-                self.assertTrue(studio.property('dirty'))
-                self.assertEqual(preview.property('wallpaper'), 'theme-dune')
-                self.assertEqual(preview.property('taskbarPosition'), 'bottom')
-                self.assertEqual(preview.property('textScale'), 1.5)
-                self.assertEqual(orbit.saves, [])
+                for name in ('appearancePreview', 'appearanceApply', 'appearanceDiscard'):
+                    self.assertIsNone(window.findChild(QQuickItem, name))
                 self.assertFalse(preferences.path.exists())
-                QMetaObject.invokeMethod(window, 'discardStudio')
-                self.assertFalse(studio.property('dirty'))
-                self.assertEqual(preview.property('wallpaper'), 'auto')
-                QMetaObject.invokeMethod(window, 'stageStudio')
-                QMetaObject.invokeMethod(window, 'commitStudio')
-                self.assertEqual(len(orbit.saves), 1)
+                QMetaObject.invokeMethod(window, 'chooseDune')
                 self.assertEqual(Preferences(preferences.path).values['themePreset'], 'dune')
-                self.assertEqual(Preferences(preferences.path).values['panelPosition'], 'bottom')
-                self.assertFalse(studio.property('dirty'))
+                QMetaObject.invokeMethod(window, 'enableContrast')
+                QMetaObject.invokeMethod(window, 'changeTaskbar')
+                QMetaObject.invokeMethod(window, 'changeMode')
+                self.assertEqual(orbit.saves[-1], {'mode': 'dark', 'darkLevel': 'black'})
+                values = Preferences(preferences.path).values
+                self.assertEqual((values['themePreset'], values['panelPosition']), ('custom', 'bottom'))
+                self.assertFalse(values['highContrast'])
+                QMetaObject.invokeMethod(window, 'returnToDune')
+                values = Preferences(preferences.path).values
+                self.assertTrue(values['highContrast'])
+                self.assertEqual(values['panelPosition'], 'bottom')
                 saved = preferences.path.read_bytes()
+                QMetaObject.invokeMethod(window, 'invalidColor')
                 orbit.applyAppearance({'themePreset': 'forest', 'pins': ['foo.desktop']})
+                for width in (900, 290):
+                    window.setWidth(width)
+                    QTest.qWait(35)
+                    self.assertLessEqual(studio.property('contentWidth'), width)
+                    self.assertTrue(window.findChild(QQuickItem, 'themeModeSegments').isVisible())
                 self.assertEqual(preferences.path.read_bytes(), saved)
+                orbit.applyAppearance({'textScale': 1.2})
+                QTest.qWait(35)
+                picker = window.findChild(QQuickItem, 'appearanceTextScaleToggle')
+                self.assertEqual(picker.property('text'), '120%')
+                saved = preferences.path.read_bytes()
+                self.assertTrue(QMetaObject.invokeMethod(picker, 'clicked') is None)
+                self.assertEqual(preferences.path.read_bytes(), saved)
+                window.close()
                 self.assertTrue(orbit.notices)
-                window.setWidth(900)
-                QTest.qWait(35)
-                self.assertTrue(studio.property('sidePreview'))
-                self.assertGreater(window.findChild(QQuickItem, 'appearanceStudio').x(), 300)
-                window.setWidth(290)
-                QTest.qWait(35)
-                self.assertFalse(studio.property('showPreview'))
-                QMetaObject.invokeMethod(window, 'togglePreview')
-                QTest.qWait(35)
-                self.assertTrue(window.findChild(QQuickItem, 'appearancePreview').isVisible())
                 self.assertEqual(warnings, [])
             finally:
                 if window:

@@ -17,8 +17,12 @@ def load_theme(path):
     palette=row.get('palette')
     if not isinstance(palette,dict) or set(palette)!=set(PALETTE_KEYS):raise ValueError('Invalid theme palette')
     if not all(isinstance(v,str) and COLOR.fullmatch(v) for v in (row.get('accent'),row.get('background'),*palette.values())):raise ValueError('Invalid theme color')
+    frame=row.get('frame')
+    if (not isinstance(frame,dict) or set(frame)!={'header','trim'}
+            or not all(isinstance(v,str) and COLOR.fullmatch(v) for v in frame.values())):
+        raise ValueError('Invalid theme frame colors')
     if row['background'].lower()!=palette['background'].lower():raise ValueError('Theme backgrounds disagree')
-    return dict(id=row['id'],name=row['name'],description=row['description'],mode=row['mode'],darkLevel=row['darkLevel'],accent=row['accent'].lower(),background=row['background'].lower(),palette={key:palette[key].lower() for key in PALETTE_KEYS},wallpaper='theme-'+row['id'],wallpaperSource='wallpaper-theme-'+row['id']+'.svg')
+    return dict(id=row['id'],name=row['name'],description=row['description'],mode=row['mode'],darkLevel=row['darkLevel'],accent=row['accent'].lower(),background=row['background'].lower(),palette={key:palette[key].lower() for key in PALETTE_KEYS},frame={key:value.lower() for key,value in frame.items()},wallpaper='theme-'+row['id'],wallpaperSource='wallpaper-theme-'+row['id']+'.svg')
 
 def _load():
     rows={}
@@ -33,6 +37,8 @@ def theme(ident):
     if ident not in _CATALOG:raise ValueError('Unknown theme')
     return deepcopy(_CATALOG[ident])
 def palette(ident):return deepcopy(_CATALOG.get(ident,{}).get('palette',{}))
+
+def frame_colors(ident):return deepcopy(_CATALOG.get(ident,{}).get('frame',{}))
 
 def wallpaper_source(style):
     """Return only a bundled basename; arbitrary file/URL input is never accepted."""

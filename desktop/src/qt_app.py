@@ -65,7 +65,8 @@ class ThemeWatch(QObject):
                            outline_width=1 if prefs['highContrast'] else 0,
                            focus_width=2 if prefs['highContrast'] else 1,
                            input_edge=palette['control_border'] if prefs['highContrast'] else palette['border'],
-                           radius={'square': 0, 'soft': 4, 'rounded': 8}[prefs['corners']],
+                           radius={'square': 0, 'soft': 6, 'rounded': 10}[prefs['corners']],
+                           heading_size=round(19*prefs['textScale']),
                            padding={'comfortable': 8, 'compact': 6, 'extra': 4}[prefs['density']])
         self.tokens.update(step_up=_stepper_icon('up', palette['text']),
                            step_down=_stepper_icon('down', palette['text']),
@@ -139,22 +140,22 @@ def symbolic_icon(name, ink):
 BASE_STYLE = '''
     QWidget { font-size: %(font_size)dpx; }
     QMainWindow, QDialog { background: %(background)s; color: %(text)s; }
-    QFrame#titlebar { border-bottom: 1px solid %(separator)s; }
-    QLabel#windowTitle { color: %(text)s; font-weight: 600; }
+    QFrame#titlebar { background: %(chrome)s; border-bottom: 1px solid %(chrome_edge)s; }
+    QLabel#windowTitle { color: %(chrome_text)s; font-weight: 700; }
     QLabel#muted { color: %(muted)s; }
-    QLabel#emptyStageHeading { color: %(text)s; font-weight: 650; }
+    QLabel#emptyStageHeading { color: %(text)s; font-size: %(heading_size)dpx; font-weight: 700; }
     QPushButton#emptyStageAction { background: %(accent)s; color: %(accent_text)s; }
     QPushButton#emptyStageAction:hover, QPushButton#emptyStageAction:focus { border-color: %(text)s; }
     QPushButton, QToolButton {
-        background: %(raised)s; color: %(text)s;
+        background: transparent; color: %(text)s;
         padding: %(padding)dpx 10px; border: 1px solid transparent;
         border-radius: %(radius)dpx;
     }
     QPushButton:hover, QToolButton:hover { background: %(hover)s; }
-    QDialogButtonBox QPushButton[mellipiPrimary="true"]:enabled {
+    QPushButton[mellipiPrimary="true"]:enabled {
         background: %(accent)s; color: %(accent_text)s; font-weight: 600;
     }
-    QDialogButtonBox QPushButton[mellipiPrimary="true"]:focus { border-color: %(accent_text)s; }
+    QPushButton[mellipiPrimary="true"]:focus { border-color: %(accent_text)s; }
     QDialogButtonBox QPushButton:default { font-weight: 600; }
     QDialogButtonBox QPushButton:default:focus { border-color: %(focus)s; }
     QPushButton:pressed, QToolButton:pressed, QPushButton:checked, QToolButton:checked {
@@ -180,7 +181,10 @@ BASE_STYLE = '''
     }
     QComboBox { padding-right: 28px; }
     QComboBox::drop-down {
-        subcontrol-origin: padding; subcontrol-position: top right; width: 24px; }
+        subcontrol-origin: padding; subcontrol-position: top right;
+        width: 24px; background: transparent; border: 0; border-left: 1px solid %(separator)s; }
+    QComboBox::down-arrow { image: url("%(step_down)s"); width: 10px; height: 7px; }
+    QComboBox::down-arrow:disabled { image: url("%(step_down_disabled)s"); }
     QAbstractSpinBox { padding-right: 25px; }
     QAbstractSpinBox::up-button, QAbstractSpinBox::down-button, QDateTimeEdit::drop-down {
         subcontrol-origin: padding; width: 22px; background: transparent;
@@ -216,9 +220,11 @@ BASE_STYLE = '''
         background: transparent; border: 0; border-radius: 0; padding: 0;
     }
     QTabWidget::pane { border: 0; }
-    QTabBar::tab { padding: %(padding)dpx 10px; background: %(raised)s; color: %(muted)s;
-        border-bottom: 2px solid transparent; }
-    QTabBar::tab:selected { background: %(selected_surface)s; color: %(text)s; border-bottom-color: %(focus)s; }
+    QTabBar::tab { padding: %(padding)dpx 10px; background: transparent; color: %(muted)s;
+        border: 1px solid transparent; border-bottom: 2px solid transparent;
+        border-top-left-radius: %(radius)dpx; border-top-right-radius: %(radius)dpx; }
+    QTabBar::tab:!selected:hover { background: %(hover)s; color: %(text)s; }
+    QTabBar::tab:selected { background: %(surface)s; color: %(text)s; border-bottom-color: %(focus)s; }
     QTabBar::tab:focus { border-bottom-color: %(focus)s; }
     QToolButton#mellipiTabClose { background: transparent; border: 1px solid transparent; padding: 1px; }
     QToolButton#mellipiTabClose:hover { background: %(hover)s; }
@@ -227,8 +233,8 @@ BASE_STYLE = '''
     QAbstractItemView { background: %(surface)s; color: %(text)s;
         alternate-background-color: %(raised)s; border: %(outline_width)dpx solid %(control_border)s;
         selection-background-color: %(selected_surface)s; selection-color: %(text)s; }
-    QHeaderView::section { background: %(raised)s; color: %(text)s;
-        border: 0; border-bottom: 1px solid %(separator)s; padding: 5px; }
+    QHeaderView::section { background: %(surface)s; color: %(muted)s;
+        font-weight: 600; border: 0; border-bottom: 1px solid %(separator)s; padding: 5px 8px; }
     QMenu { background: %(raised)s; color: %(text)s; border: 1px solid %(separator)s; }
     QMenu::item { padding: 6px 12px; }
     QMenu::item:selected { background: %(selected_surface)s; color: %(text)s; }
@@ -332,14 +338,15 @@ def themed_prompt(parent, title, message, primary, cancel=None):
     return themed_choice(parent, title, message, primary, cancel) == QDialog.DialogCode.Accepted
 
 
-def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
-    """Return Accepted, Rejected, or 2 when an alternate action was chosen."""
+def themed_choice(parent, title, message, primary, cancel=None, alternate=None, *, secondary=None):
+    """Return Accepted, Rejected, 2 for alternate, or 3 for secondary."""
     dialog = QDialog(parent, Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
     dialog.setWindowTitle(title)
     dialog.setPalette(widget_palette(parent.theme_watch.tokens))
     dialog.setStyleSheet((BASE_STYLE + """
-        QDialog#themedPrompt { border: 1px solid %(separator)s; }
+        QDialog#themedPrompt { border: %(focus_width)dpx solid %(chrome_edge)s; }
         QLabel#promptHeading { color: %(text)s; font-size: %(headingSize)dpx; font-weight: 650; }
+        QFrame#promptMarker { background: %(focus)s; border-radius: 1px; }
         QTextEdit#promptMessage {
             background: transparent; border: 1px solid transparent; padding: 0; color: %(text)s;
         }
@@ -356,9 +363,13 @@ def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
     header = QWidget(dialog)
     heading_layout = QHBoxLayout(header)
     heading_layout.setContentsMargins(0, 0, 0, 0)
+    marker = QFrame(header, objectName='promptMarker')
+    marker.setFixedWidth(3)
+    heading_layout.addWidget(marker)
     heading = QLabel(title, header)
     heading.setTextFormat(Qt.TextFormat.PlainText)
     heading.setObjectName('promptHeading')
+    heading.setWordWrap(True)
     heading_layout.addWidget(heading)
     layout.addWidget(header)
     body = QVBoxLayout()
@@ -366,6 +377,7 @@ def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
     body.setSpacing(14)
     available = parent.screen().availableGeometry()
     width_limit = max(1, available.width() - 56)
+    heading.setMaximumWidth(min(440, width_limit))
     message_view = QTextEdit(dialog)
     message_view.setObjectName('promptMessage')
     message_view.setAccessibleName('Message')
@@ -405,10 +417,16 @@ def themed_choice(parent, title, message, primary, cancel=None, alternate=None):
         alternative.setObjectName('promptAlternate')
         alternative.clicked.connect(lambda: dialog.done(2))
         buttons.addWidget(alternative)
+    if secondary:
+        extra = QPushButton(secondary, dialog)
+        extra.setObjectName('promptAlternate')
+        extra.clicked.connect(lambda: dialog.done(3))
+        buttons.addWidget(extra)
     buttons.addWidget(action)
     dismiss.setDefault(True)
     dismiss.setFocus()
-    button_order = ([dismiss] if cancel else []) + ([alternative] if alternate else []) + [action]
+    button_order = ([dismiss] if cancel else []) + ([alternative] if alternate else []) + (
+        [extra] if secondary else []) + [action]
     if sum(button.sizeHint().width() for button in button_order) + 8 * len(button_order) > width_limit:
         buttons.setDirection(QBoxLayout.Direction.TopToBottom)
         for button in button_order:
@@ -435,8 +453,8 @@ class AppIdentityBadge(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
-    def theme(self, title, tokens):
-        glyph, ink, badge = identity_appearance(title, tokens['background'])
+    def theme(self, title, tokens, *, surface='background'):
+        glyph, ink, badge = identity_appearance(title, tokens[surface], tokens['accent'])
         self.setPixmap(original_icon(glyph, ink).pixmap(15, 15))
         self.setStyleSheet(f'background: {badge}; border-radius: {tokens["radius"]}px;')
 
@@ -469,17 +487,24 @@ class ElidingLabel(QLabel):
                          self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, body.width()))
 
 
+def action_ink(tokens, icon, primary=False):
+    return tokens['accent_text'] if primary else tokens['accent_ink']
+
+
 class AppWindow(QMainWindow):
     themeChanged = pyqtSignal()
     extra_style = ''
 
     def __init__(self, title):
         super().__init__()
-        QApplication.instance().setStyle('Fusion')
+        app = QApplication.instance()
+        if app.style().objectName().casefold() != 'fusion':
+            app.setStyle('Fusion')
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle(title)
         self.setCentralWidget(QWidget())
         layout = self.window_layout = QVBoxLayout(self.centralWidget())
+        layout.setContentsMargins(0, 0, 0, 0)
         self.header = QHBoxLayout()
         self.identity_name = title
         self.identity_badge = AppIdentityBadge(self)
@@ -499,7 +524,7 @@ class AppWindow(QMainWindow):
     def layout_spacing(self):
         """Keep density and available space independent of text/control size."""
         inset, section, control = {
-            'comfortable': (12, 12, 8), 'compact': (8, 8, 6), 'extra': (6, 6, 4),
+            'comfortable': (16, 12, 8), 'compact': (11, 8, 6), 'extra': (7, 6, 4),
         }[self.theme['density']]
         # At large text the same width holds fewer buttons. Keep enough space
         # for the controls themselves before spending it on outer gutters.
@@ -514,9 +539,9 @@ class AppWindow(QMainWindow):
             return
         inset, section, control = self.layout_spacing()
         margins = (inset, 0, inset, inset)
-        current = self.window_layout.contentsMargins()
+        current = self.content.contentsMargins()
         if (current.left(), current.top(), current.right(), current.bottom()) != margins:
-            self.window_layout.setContentsMargins(*margins)
+            self.content.setContentsMargins(*margins)
         groups = ((self.window_layout, section), (self.content, section), (self.header, control))
         for layout, spacing in (*groups, *((layout, control) for layout in self._control_layouts)):
             if layout.spacing() != spacing:
@@ -528,7 +553,7 @@ class AppWindow(QMainWindow):
 
     def viewport_width(self):
         """Use the window's current width, even before child layouts settle."""
-        margins = self.window_layout.contentsMargins()
+        margins = self.content.contentsMargins()
         return max(0, self.contentsRect().width() - margins.left() - margins.right())
 
     def resizeEvent(self, event):
@@ -567,7 +592,7 @@ class AppWindow(QMainWindow):
         self.setPalette(palette)
         QApplication.instance().setPalette(palette)
         apply_titlebar(self.titlebar, self.theme)
-        self.identity_badge.theme(self.identity_name, self.theme)
+        self.identity_badge.theme(self.identity_name, self.theme, surface='chrome')
         self.setStyleSheet((BASE_STYLE + self.extra_style) % self.theme)
         self.refresh_icons()
         self.themeChanged.emit()
@@ -576,7 +601,7 @@ class AppWindow(QMainWindow):
         for button in self.findChildren(QAbstractButton):
             name = button.property('mellipiSymbolicIcon')
             if name:
-                button.setIcon(symbolic_icon(name, self.theme['accent_ink']))
+                button.setIcon(symbolic_icon(name, action_ink(self.theme,name,button.property('mellipiPrimary'))))
             if button.objectName() == 'mellipiTabClose':
                 self.style_tab_close_button(button)
 

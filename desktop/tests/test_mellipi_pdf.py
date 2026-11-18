@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QPlainTextEdit
 
 from mellipi_pdf import PdfWindow, ReadingPositions
 
@@ -76,6 +76,69 @@ class PdfPositionsTests(unittest.TestCase):
                 self.assertNotIn('Resumed', revised.status.text())
             finally:
                 revised.close()
+
+    @unittest.skipUnless(shutil.which('pdfinfo') and shutil.which('pdftoppm'), 'requires Poppler CLI')
+    def test_source_replacement_keeps_original_revision_exportable(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'XDG_STATE_HOME': tmp}):
+            path = Path(tmp) / 'original.pdf'
+            write_pdf(path)
+            original = path.read_bytes()
+            exported = path.with_name('exported.pdf')
+            window = PdfWindow(str(path))
+            try:
+                self.wait(lambda: window.pending_position is not None)
+                window.marks.append(('note', 1, (.1, .2), 'keep this note'))
+                window.annotation_dirty = True
+                replacement = path.with_suffix('.replacement')
+                replacement.write_bytes(original + b'\n% replacement revision\n')
+                replacement.replace(path)
+                window.go(2)
+                self.wait(lambda: window.pending_position is not None and window.pending_position[1] == 2)
+                self.assertIn('Original changed', window.status.text())
+                self.assertEqual(window.reader_path().read_bytes(), original)
+                with patch('mellipi_pdf.FileChooser.getSaveFileName', return_value=(str(exported), '')):
+                    window.save_annotated_copy()
+                    self.wait(lambda: not window.exporting)
+                self.assertFalse(window.annotation_dirty, window.status.text())
+                self.assertTrue(exported.is_file())
+                self.assertTrue(path.read_bytes().endswith(b'% replacement revision\n'))
+            finally:
+                window.annotation_dirty = False
+                window.close()
+
+    @unittest.skipUnless(shutil.which('pdfinfo') and shutil.which('pdftoppm'), 'requires Poppler CLI')
+    def test_adjacent_page_is_prefetched_then_reused(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'XDG_STATE_HOME': tmp}):
+            path = Path(tmp) / 'adjacent.pdf'
+            write_pdf(path)
+            window = PdfWindow(str(path))
+            try:
+                self.wait(lambda: 2 in window.page_cache)
+                with patch.object(window.renderer, 'run') as render:
+                    window.go(2)
+                    render.assert_not_called()
+                self.assertEqual(window.page, 2)
+                self.assertFalse(window.canvas.image.isNull())
+            finally:
+                window.close()
+
+    def test_page_text_dialog_selects_current_search_phrase(self):
+        window = PdfWindow()
+        self.addCleanup(window.close)
+        window.document = Path('/tmp/fixture.pdf')
+        window.query.setText('selected phrase')
+
+        def extract(_command, _arguments, ready, **_options):
+            ready(b'Sample SELECTED PHRASE on this page.', '')
+
+        def inspect(dialog):
+            content = dialog.findChild(QPlainTextEdit)
+            self.assertTrue(content.isReadOnly())
+            self.assertEqual(content.textCursor().selectedText(), 'SELECTED PHRASE')
+
+        with patch.object(window.text_reader, 'run', side_effect=extract), patch(
+                'mellipi_pdf.exec_owned_dialog', side_effect=inspect):
+            window.show_page_text()
 
     def test_private_and_bounded(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'XDG_STATE_HOME': tmp}):

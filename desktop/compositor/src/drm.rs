@@ -776,7 +776,7 @@ impl Backend {
         Ok(())
     }
     fn restore_saved_outputs(&mut self, state: &mut OrbitCompositor) {
-        if !self.active || self.powered_off { return; }
+        if !self.active || self.powered_off || state.arrangement_active() { return; }
         let current=self.surfaces.values().map(|surface|(surface.output.name(),surface.pending)).collect::<HashMap<_,_>>();
         let transaction=state.native_system.pending_output.as_ref().and_then(|(_,settings)|settings["name"].as_str());
         let names=saved_restore_names(&mut self.saved_restores,&current,transaction);

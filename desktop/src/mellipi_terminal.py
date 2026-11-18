@@ -45,6 +45,38 @@ def shell():
     return os.environ.get('SHELL') or pwd.getpwuid(os.getuid()).pw_shell or '/bin/sh'
 
 
+def terminal_process(pid):
+    """Return process identity and foreground group from a same-user proc entry."""
+    if type(pid) is not int or pid <= 0:
+        return None
+    node = Path('/proc') / str(pid)
+    try:
+        if node.stat().st_uid != os.getuid():
+            return None
+        # The command name in stat may itself contain spaces or parentheses.
+        fields = (node / 'stat').read_text().rsplit(')', 1)[1].split()
+        return node, int(fields[19]), fields
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def idle_shell(terminal):
+    state = terminal_process(getattr(terminal, 'child_pid', None))
+    if not state or not getattr(terminal, 'interactive_shell', False):
+        return False
+    node, generation, fields = state
+    try:
+        if generation != terminal.child_generation or fields[0] != 'S':
+            return False
+        group, foreground = int(fields[2]), int(fields[5])
+        if group != terminal.child_pid or foreground != group:
+            return False
+        children = node / 'task' / str(terminal.child_pid) / 'children'
+        return not children.read_text().strip() and terminal_process(terminal.child_pid) == state
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def rgba(value):
     result = Gdk.RGBA()
     result.parse(value)
@@ -54,7 +86,13 @@ def rgba(value):
 class TerminalWindow(Gtk.Window):
     def __init__(self, args):
         super().__init__(title='Mellipi Terminal')
-        self.set_default_size(860, 530)
+        display = self.get_display()
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        if monitor:
+            area = monitor.get_workarea()
+            self.set_default_size(min(860, int(area.width * .88)), min(530, int(area.height * .82)))
+        else:
+            self.set_default_size(760, 480)
         self.connect('destroy', lambda *_: Gtk.main_quit())
         self.connect('key-press-event', self.key_pressed)
         self.connect('delete-event', self.confirm_window_close)
@@ -88,10 +126,16 @@ class TerminalWindow(Gtk.Window):
             self.controls[glyph] = button
             self.header.pack_end(button)
         self.header.pack_end(new_tab)
+        self.split_button = Gtk.Button()
+        self.split_button.set_relief(Gtk.ReliefStyle.NONE)
+        self.split_button.set_tooltip_text('Split pane (Ctrl+Shift+E)')
+        self.split_button.get_accessible().set_name('Split pane')
+        self.split_button.connect('clicked', lambda *_: self.split_pane())
+        self.header.pack_end(self.split_button)
         self.find_button = Gtk.Button()
         self.find_button.set_relief(Gtk.ReliefStyle.NONE)
-        self.find_button.set_tooltip_text('Find in this tab (Ctrl+Shift+F)')
-        self.find_button.get_accessible().set_name('Find in this tab')
+        self.find_button.set_tooltip_text('Find in this pane (Ctrl+Shift+F)')
+        self.find_button.get_accessible().set_name('Find in this pane')
         self.find_button.connect('clicked', lambda *_: self.show_search())
         self.header.pack_end(self.find_button)
         self.connect('window-state-event', self.window_state_changed)
@@ -156,7 +200,7 @@ class TerminalWindow(Gtk.Window):
         self.connect('notify::scale-factor', lambda *_: self.apply_theme())
         self.apply_theme()
         self.update_search()
-        self.add_tab(args.working_directory, args.execute or [shell()])
+        self.add_tab(args.working_directory, args.execute or [shell()], interactive=args.execute is None)
 
     def toggle_maximized(self):
         if self.is_maximized():
@@ -192,7 +236,7 @@ class TerminalWindow(Gtk.Window):
         self.last_appearance = appearance
         Gtk.Settings.get_default().set_property('gtk-application-prefer-dark-theme', prefs['mode'] == 'dark')
         pad = {'comfortable': 8, 'compact': 6, 'extra': 4}[prefs['density']]
-        radius = {'square': 0, 'soft': 4, 'rounded': 8}[prefs['corners']]
+        radius = {'square': 0, 'soft': 6, 'rounded': 10}[prefs['corners']]
         header_height = HEADER_HEIGHTS[prefs['density']] - 1
         self.header.set_property('spacing', max(3, pad - 2))
         self.search_bar.set_column_spacing(max(4, pad))
@@ -200,13 +244,14 @@ class TerminalWindow(Gtk.Window):
         self.search_options.set_spacing(pad + 2)
         self.update_controls(palette['accent_ink'], self.is_maximized())
         from mellipi_icons import svg
-        glyph, ink, identity_bg = identity_appearance('Mellipi Terminal', palette['background'])
+        glyph, ink, identity_bg = identity_appearance('Mellipi Terminal', palette['chrome'], palette['accent'])
         if self.identity_image:
             self.identity_badge.remove(self.identity_image)
         self.identity_image = self.svg_image(svg(glyph, ink, size=16))
         self.identity_badge.pack_start(self.identity_image, True, True, 0)
         self.identity_image.show()
         self.new_tab_button.set_image(self.action_image('tab-new'))
+        self.split_button.set_image(self.action_image('view-dual-symbolic'))
         self.find_button.set_image(self.action_image('search'))
         for icon, button in self.search_buttons.items():
             button.set_image(self.action_image(icon))
@@ -217,11 +262,11 @@ class TerminalWindow(Gtk.Window):
                 close.set_image(self.action_image('close'))
         self.css.load_from_data(('''
             window, notebook, notebook stack { background: %(background)s; color: %(text)s; }
-            headerbar { min-height: %(header_height)dpx; padding: 0 8px; background: %(background)s;
-                        color: %(text)s; border: 0; border-bottom: 1px solid %(separator)s;
+            headerbar { min-height: %(header_height)dpx; padding: 0 10px; background: %(chrome)s;
+                        color: %(chrome_text)s; border: 0; border-bottom: 1px solid %(chrome_edge)s;
                         box-shadow: none; text-shadow: none; }
             headerbar .app-identity { background: %(identity_bg)s; border-radius: %(radius)dpx; }
-            headerbar .title { font-weight: 600; font-size: %(label_size)dpx; }
+            headerbar .title { font-weight: 700; font-size: %(label_size)dpx; }
             headerbar button, notebook tab button { min-width: 20px; min-height: 20px;
                         padding: 2px; background: transparent; color: %(accent_ink)s;
                         border: 0; box-shadow: none; text-shadow: none; }
@@ -247,11 +292,11 @@ class TerminalWindow(Gtk.Window):
                 box-shadow: inset 0 -2px %(focus)s;
             }
             notebook tab:focus { outline-color: %(focus)s; }
-            notebook header { background: %(surface)s; color: %(text)s;
+            notebook header { background: %(background)s; color: %(text)s;
                               border-bottom: 1px solid %(separator)s; }
-            notebook tab { background: %(surface)s; color: %(muted)s; padding: %(padding)dpx;
+            notebook tab { background: transparent; color: %(muted)s; padding: %(padding)dpx;
                            font-size: %(label_size)dpx; }
-            notebook tab:checked { background: %(selected_surface)s; color: %(text)s; box-shadow: inset 0 -2px %(focus)s; }
+            notebook tab:checked { background: %(surface)s; color: %(text)s; box-shadow: inset 0 -2px %(focus)s; }
             notebook tab button, .terminal-action-icon { color: %(accent_ink)s; }
             .terminal-shortcut { opacity: .7; }
             .terminal-panel { border: 0; background: %(surface)s; }
@@ -276,7 +321,8 @@ class TerminalWindow(Gtk.Window):
                    label_size=round(14*prefs['textScale']), search_height=max(28, round(22*prefs['textScale'])),
                    search_border=palette['control_border'])).encode())
         for i in range(self.notebook.get_n_pages()):
-            self.style_terminal(self.notebook.get_nth_page(i).get_child())
+            for terminal in self.page_terminals(self.notebook.get_nth_page(i)):
+                self.style_terminal(terminal)
 
     def style_terminal(self, terminal):
         prefs = self.preferences.values
@@ -309,18 +355,46 @@ class TerminalWindow(Gtk.Window):
 
     def current_terminal(self):
         page = self.notebook.get_nth_page(self.notebook.get_current_page())
-        return page.get_child() if page is not None else None
+        return page.active_terminal if page is not None else None
 
-    def add_tab(self, directory, argv):
+    @staticmethod
+    def page_terminals(page):
+        return [pane.get_child() for pane in (page.get_child1(), page.get_child2()) if pane is not None]
+
+    def focus_pane(self, terminal, page):
+        if page.active_terminal is not terminal:
+            page.active_terminal = terminal
+            page.update_label()
+            if page is self.notebook.get_nth_page(self.notebook.get_current_page()):
+                self.update_search(terminal=terminal)
+        return False
+
+    def make_pane(self, page, directory, argv, interactive):
         terminal = Vte.Terminal()
         terminal.launch_directory = directory
+        terminal.interactive_shell = interactive and Path(argv[0]).name in {'bash', 'dash', 'sh', 'zsh', 'fish', 'ksh'}
         terminal.set_scrollback_lines(5000)
         self.style_terminal(terminal)
-        page = Gtk.ScrolledWindow()
-        page.get_style_context().add_class('terminal-panel')
-        page.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        page.add(terminal)
+        pane = Gtk.ScrolledWindow()
+        pane.get_style_context().add_class('terminal-panel')
+        pane.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        pane.add(terminal)
+        terminal.connect('notify::current-directory-uri', lambda *_: page.update_label())
+        terminal.connect('focus-in-event', lambda *_: self.focus_pane(terminal, page))
+        terminal.connect('contents-changed', self.retry_search_on_output)
         terminal.connect('button-press-event', self.context_menu, page)
+        terminal.connect('child-exited', lambda *_: self.remove_pane(page, terminal))
+        pack = page.pack1 if page.get_child1() is None else page.pack2
+        pack(pane, True, False)
+        return terminal
+
+    def spawn_pane(self, page, terminal, directory, argv):
+        terminal.spawn_async(Vte.PtyFlags.DEFAULT, str(directory), argv, None,
+                             GLib.SpawnFlags.SEARCH_PATH, None, None, -1, None,
+                             self.spawned, page)
+
+    def add_tab(self, directory, argv, *, interactive=False):
+        page = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL, wide_handle=True)
         tab = Gtk.Box(spacing=6)
         label = Gtk.Label(xalign=0)
         label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
@@ -332,19 +406,19 @@ class TerminalWindow(Gtk.Window):
         close.set_relief(Gtk.ReliefStyle.NONE)
         close.set_tooltip_text('Close tab (Ctrl+Shift+W)')
         close.connect('clicked', lambda *_: self.confirm_close(page))
-        def update_tab(*_):
-            current = self.tab_directory(terminal)
+        def update_tab():
+            current = self.tab_directory(page.active_terminal)
             name = current.name or '/'
             label.set_text(name)
             label.set_tooltip_text(str(current))
             close.get_accessible().set_name(f'Close {name} tab')
 
-        terminal.connect('notify::current-directory-uri', update_tab)
-        terminal.connect('contents-changed', self.retry_search_on_output)
+        page.update_label = update_tab
+        terminal = self.make_pane(page, directory, argv, interactive)
+        page.active_terminal = terminal
         update_tab()
         tab.pack_start(label, True, True, 0)
         tab.pack_start(close, False, False, 0)
-        terminal.connect('child-exited', lambda *_: self.remove_tab(page))
         index = self.notebook.append_page(page, tab)
         self.notebook.set_tab_reorderable(page, True)
         tab.show_all()
@@ -353,20 +427,70 @@ class TerminalWindow(Gtk.Window):
         self.notebook.set_current_page(index)
         if not self.search_revealer.get_reveal_child():
             terminal.grab_focus()
-        terminal.spawn_async(Vte.PtyFlags.DEFAULT, str(directory), argv, None,
-                             GLib.SpawnFlags.SEARCH_PATH, None, None, -1, None,
-                             self.spawned, page)
+        self.spawn_pane(page, terminal, directory, argv)
+
+    def split_pane(self):
+        page = self.notebook.get_nth_page(self.notebook.get_current_page())
+        if page is None or len(self.page_terminals(page)) != 1:
+            return
+        directory, argv = self.tab_directory(page.active_terminal), [shell()]
+        terminal = self.make_pane(page, directory, argv, True)
+        page.show_all()
+        page.set_position(max(1, page.get_allocated_width() // 2))
+        self.focus_pane(terminal, page)
+        self.split_button.set_sensitive(False)
+        terminal.grab_focus()
+        self.spawn_pane(page, terminal, directory, argv)
 
     def spawned(self, _terminal, _pid, error, page):
+        if self.notebook.page_num(page) == -1 or _terminal not in self.page_terminals(page):
+            return
         if error:
             self.alert('Could not start terminal', error.message)
+            self.remove_pane(page, _terminal)
+        else:
+            _terminal.child_pid = _pid
+            state = terminal_process(_pid)
+            _terminal.child_generation = state[1] if state else None
+
+    def remove_pane(self, page, terminal):
+        if self.notebook.page_num(page) == -1:
+            return
+        terms = self.page_terminals(page)
+        if terminal not in terms:
+            return
+        if len(terms) == 1:
             self.remove_tab(page)
+            return
+        if terminal is self._search_terminal:
+            terminal.search_set_regex(None, 0)
+            self._search_terminal = None
+        if page.active_terminal is terminal:
+            page.active_terminal = next(candidate for candidate in terms if candidate is not terminal)
+        terminal.get_parent().destroy()
+        page.update_label()
+        if page is self.notebook.get_nth_page(self.notebook.get_current_page()):
+            self.split_button.set_sensitive(True)
+            self.update_search(terminal=page.active_terminal)
+            if not self.search_revealer.get_reveal_child():
+                page.active_terminal.grab_focus()
+
+    def close_active_pane(self):
+        page = self.notebook.get_nth_page(self.notebook.get_current_page())
+        if page is None:
+            return
+        terminal = page.active_terminal
+        if len(self.page_terminals(page)) == 1:
+            self.confirm_close(page)
+        elif idle_shell(terminal) or self.alert('Close terminal pane?', 'The program in this pane will lose its terminal.',
+                Gtk.ButtonsType.OK_CANCEL, confirm_label='Close Pane') == Gtk.ResponseType.OK:
+            self.remove_pane(page, terminal)
 
     def remove_tab(self, page):
         index = self.notebook.page_num(page)
         if index == -1:
             return
-        if page.get_child() is self._search_terminal:
+        if self._search_terminal in self.page_terminals(page):
             self._search_terminal.search_set_regex(None, 0)
             self._search_terminal = None
         self.notebook.remove_page(index)
@@ -402,7 +526,8 @@ class TerminalWindow(Gtk.Window):
 
     def confirm_window_close(self, _window, _event):
         count = self.notebook.get_n_pages()
-        if not count:
+        if not count or all(idle_shell(terminal) for i in range(count)
+                            for terminal in self.page_terminals(self.notebook.get_nth_page(i))):
             return False
         message = ('This will stop the program running in this tab.' if count == 1
                    else 'This will close all tabs and their running programs.')
@@ -410,7 +535,7 @@ class TerminalWindow(Gtk.Window):
                           Gtk.ButtonsType.OK_CANCEL, confirm_label='Close Window') != Gtk.ResponseType.OK
 
     def confirm_close(self, page):
-        if self.alert('Close terminal tab?', 'The program running in this tab will lose its terminal.',
+        if all(idle_shell(terminal) for terminal in self.page_terminals(page)) or self.alert('Close terminal tab?', 'Programs running in this tab will lose their terminals.',
                       Gtk.ButtonsType.OK_CANCEL, confirm_label='Close Tab') == Gtk.ResponseType.OK:
             self.remove_tab(page)
 
@@ -423,12 +548,20 @@ class TerminalWindow(Gtk.Window):
             local = Gio.File.new_for_uri(uri).get_path()
             if local and Path(local).is_dir():
                 return Path(local)
+        state = terminal_process(getattr(terminal, 'child_pid', None))
+        if state and state[1] == getattr(terminal, 'child_generation', None):
+            try:
+                local = Path(os.readlink(state[0] / 'cwd'))
+                if local.is_absolute() and local.is_dir() and terminal_process(terminal.child_pid)[:2] == state[:2]:
+                    return local
+            except (OSError, TypeError):
+                pass
         if terminal.launch_directory.is_dir():
             return terminal.launch_directory
         return Path.home()
 
     def new_tab(self):
-        self.add_tab(self.tab_directory(self.current_terminal()), [shell()])
+        self.add_tab(self.tab_directory(self.current_terminal()), [shell()], interactive=True)
 
     def show_search(self):
         self.search_revealer.set_reveal_child(True)
@@ -445,7 +578,8 @@ class TerminalWindow(Gtk.Window):
 
     def search_switched_tab(self, _notebook, page, _index):
         # Gtk.Notebook may emit before its current index has changed.
-        self.update_search(terminal=page.get_child())
+        self.update_search(terminal=page.active_terminal)
+        self.split_button.set_sensitive(len(self.page_terminals(page)) == 1)
 
     def update_search(self, *_signal, terminal=None):
         if self._search_terminal is not None:
@@ -538,8 +672,10 @@ class TerminalWindow(Gtk.Window):
             self.show_search()
         elif key == Gdk.KEY_t:
             self.new_tab()
+        elif key == Gdk.KEY_e:
+            self.split_pane()
         elif key == Gdk.KEY_w:
-            self.confirm_close(self.notebook.get_nth_page(self.notebook.get_current_page()))
+            self.close_active_pane()
         else:
             return False
         return True
@@ -549,7 +685,8 @@ class TerminalWindow(Gtk.Window):
         if steps != self.zoom_steps:
             self.zoom_steps = steps
             for index in range(self.notebook.get_n_pages()):
-                self.style_terminal(self.notebook.get_nth_page(index).get_child())
+                for terminal in self.page_terminals(self.notebook.get_nth_page(index)):
+                    self.style_terminal(terminal)
 
     def navigate_tabs(self, delta, reorder):
         index = self.notebook.get_current_page()
@@ -587,13 +724,15 @@ class TerminalWindow(Gtk.Window):
     def context_menu(self, terminal, event, page):
         if event.button != 3 or event.state & Gdk.ModifierType.SHIFT_MASK:
             return False
+        self.focus_pane(terminal, page)
         menu = Gtk.Menu()
         actions = (
             ('Copy', 'edit-copy-symbolic', 'Ctrl+Shift+C', lambda: terminal.copy_clipboard_format(Vte.Format.TEXT), terminal.get_has_selection()),
             ('Paste', 'edit-paste-symbolic', 'Ctrl+Shift+V', terminal.paste_clipboard, True),
-            ('Find in tab', 'edit-find-symbolic', 'Ctrl+Shift+F', self.show_search, True),
+            ('Find in pane', 'edit-find-symbolic', 'Ctrl+Shift+F', self.show_search, True),
             ('New tab', 'tab-new-symbolic', 'Ctrl+Shift+T', self.new_tab, True),
-            ('Close tab', 'window-close-symbolic', 'Ctrl+Shift+W', lambda: self.confirm_close(page), True),
+            ('Split pane', 'view-dual-symbolic', 'Ctrl+Shift+E', self.split_pane, len(self.page_terminals(page)) == 1),
+            ('Close pane', 'window-close-symbolic', 'Ctrl+Shift+W', self.close_active_pane, True),
         )
         for label, icon, shortcut, callback, enabled in actions:
             item = Gtk.MenuItem()

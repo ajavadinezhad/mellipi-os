@@ -4,12 +4,12 @@ import sys
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QFont, QFontMetrics, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMenu, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from calculator_core import CalculationError, MAX_EXPRESSION, calculate
-from qt_app import AppWindow, symbolic_icon
+from qt_app import action_ink, AppWindow, exec_owned_dialog, style_dialog, symbolic_icon
 
 
 HISTORY_LIMIT = 30
@@ -52,6 +52,8 @@ class Calculator(AppWindow):
         QPushButton#equals:focus { border-color: %(focus)s; }
         QPushButton#operation { color: %(accent_ink)s; background: %(selected_surface)s; }
         QPushButton#operation:hover, QPushButton#operation:pressed { background: %(hover)s; }
+        QPushButton#keypadKey { background: %(chrome)s; color: %(text)s; font-weight: 600; }
+        QPushButton#keypadKey:hover, QPushButton#keypadKey:pressed { background: %(hover)s; }
     """
 
     def __init__(self, expression=''):
@@ -107,9 +109,13 @@ class Calculator(AppWindow):
         )):
             for column, key in enumerate(keys):
                 button = self.button(key, self.evaluate if key == '=' else lambda k=key:self.insert(k))
+                button.setObjectName('keypadKey')
                 if key == '=':
                     button.setObjectName('equals')
                     button.setAccessibleName('Equals')
+                elif key == '%':
+                    button.setToolTip('Percent divides by 100. For 10% of 200, enter 200 × 10%.')
+                    button.setAccessibleName('Percent (divide by 100)')
                 elif key in ('÷', '×', '−', '+', '^'):
                     button.setObjectName('operation')
                     button.setAccessibleName({'÷':'Divide', '×':'Multiply', '−':'Subtract', '+':'Add', '^':'Power'}[key])
@@ -126,6 +132,9 @@ class Calculator(AppWindow):
             ('sqrt', 'Square root'), ('abs', 'Absolute value'), ('ln', 'Natural logarithm'), ('log10', 'Base-10 logarithm'),
         ):
             menu.addAction(f'{description} · {function}(…)', lambda _checked=False, name=function: self.insert_function(name))
+        menu.addSeparator()
+        menu.addAction('Percent of…', lambda: self.percentage(False))
+        menu.addAction('Percentage Change…', lambda: self.percentage(True))
         functions.setMenu(menu)
         actions.addWidget(functions)
         actions.addWidget(self.history_button)
@@ -285,7 +294,7 @@ class Calculator(AppWindow):
             name = button.property('calculatorActionIcon')
             if not name:
                 continue
-            icon = symbolic_icon(name, self.theme['accent_ink'])
+            icon = symbolic_icon(name, action_ink(self.theme, name))
             button.setIcon(icon)
             button.setIconSize(QSize(side, side))
             button.setText(button.accessibleName() if icon.isNull() else '')
@@ -334,6 +343,68 @@ class Calculator(AppWindow):
         self.refresh_display()
         self.feedback.setText((expression if len(expression) <= 64 else expression[:61] + '…') + ' =')
         self.record_history(expression, result)
+        self.field.setFocus()
+
+    def percentage(self, change):
+        title = 'Percentage Change' if change else 'Percent Of'
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        style_dialog(dialog, self)
+        layout = QVBoxLayout(dialog)
+        fields = []
+        for caption in (('Original value', 'New value') if change else ('Percent', 'Value')):
+            label = QLabel(caption)
+            field = QLineEdit()
+            field.setMaxLength(80)
+            field.setAccessibleName(caption)
+            label.setBuddy(field)
+            layout.addWidget(label)
+            layout.addWidget(field)
+            fields.append(field)
+        error = FeedbackLabel()
+        error.setTextFormat(Qt.TextFormat.PlainText)
+        error.setWordWrap(True)
+        layout.addWidget(error)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        cancel = QPushButton('Cancel')
+        submit = QPushButton('Calculate')
+        submit.setProperty('mellipiPrimary', True)
+        submit.setDefault(True)
+        cancel.clicked.connect(dialog.reject)
+        actions.addWidget(cancel)
+        actions.addWidget(submit)
+        layout.addLayout(actions)
+        operation = result = ''
+
+        def apply():
+            nonlocal operation, result
+            try:
+                left, right = (calculate(field.text()) for field in fields)
+                if change and left == '0':
+                    raise CalculationError('Percentage change from zero is undefined.')
+                operation = (f'({right} - ({left})) / abs({left}) * 100' if change
+                             else f'{left}% * {right}')
+                result = calculate(operation)
+            except CalculationError as reason:
+                error.setText(str(reason))
+                return
+            dialog.accept()
+
+        submit.clicked.connect(apply)
+        fields[0].setFocus()
+        dialog.resize(360, 245)
+        try:
+            if exec_owned_dialog(dialog) != QDialog.DialogCode.Accepted:
+                return
+        finally:
+            dialog.deleteLater()
+        self.last_expression = operation
+        self.field.setText(result)
+        self.showing_result = True
+        self.refresh_display()
+        self.feedback.setText(title + (' (%)' if change else '') + ' =')
+        self.record_history(operation, result)
         self.field.setFocus()
 
     def recall(self):

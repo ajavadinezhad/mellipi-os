@@ -3,6 +3,13 @@
 from functools import lru_cache
 
 
+def blend_color(base, overlay, weight):
+    return '#' + ''.join(
+        f'{round(int(base[i:i+2], 16) * (1 - weight) + int(overlay[i:i+2],16) * weight):02x}'
+        for i in (1, 3, 5)
+    )
+
+
 def colors(preferences):
     appearance = preferences.appearance()
     palette = colors_from_appearance(appearance)
@@ -11,6 +18,14 @@ def colors(preferences):
     )]
     endpoint = '#000000' if appearance['mode'] == 'light' else '#ffffff'
     accent = palette['accent']
+    frame = appearance.get('themeFrame', {})
+    palette['chrome'] = frame.get('header', blend_color(palette['background'], palette['raised'], .68))
+    palette['frame_trim'] = frame.get('trim', palette['border'])
+    palette['chrome_edge'] = (adjust_contrast(palette['frame_trim'], [palette['chrome'], palette['background']], 3, endpoint)
+                              if appearance['highContrast'] else
+                              blend_color(palette['chrome'], palette['frame_trim'], .58) if frame else palette['chrome'])
+    palette['chrome_text'] = adjust_contrast(palette['text'], [palette['chrome']], 4.5, endpoint)
+    backgrounds.append(palette['chrome'])
     palette['accent_ink'] = adjust_contrast(accent, backgrounds, 4.5, endpoint)
     palette['focus'] = adjust_contrast(palette.get('focus', accent), backgrounds, 3, endpoint)
     palette['focus_text'] = foreground_on(palette['focus'])
@@ -78,6 +93,13 @@ def adjust_contrast(color, backgrounds, target, endpoint):
 
     if meets(color):
         return color
+    # An imported preset may specify a light surface with a dark-mode flag,
+    # or vice versa. Derive the fallback from the rendered backgrounds.
+    if not meets(endpoint):
+        opposite = '#ffffff' if endpoint == '#000000' else '#000000'
+        if min(contrast_ratio(opposite, surface) for surface in backgrounds) > min(
+                contrast_ratio(endpoint, surface) for surface in backgrounds):
+            endpoint = opposite
     channels = [int(color[i:i+2], 16) for i in (1, 3, 5)]
     extreme = int(endpoint[1:3], 16)
 
@@ -121,28 +143,28 @@ def _contrast_palette(mode, dark_level, accent, entries):
 HEADER_HEIGHTS = {'extra': 30, 'compact': 36, 'comfortable': 42}
 
 
-# App color gives the title glyph an identity; selection keeps the desktop accent.
+# Keep each app recognizable by its glyph; the active theme supplies the ink.
 APP_IDENTITIES = {
-    'Mellipi Files': ('folder', '#c37a27'),
-    'Mellipi Terminal': ('terminal', '#27866c'),
-    'Mellipi Browser': ('browser', '#477add'),
-    'Private Browser': ('browser', '#9864cf'),
-    'Calendar': ('calendar', '#9864cf'),
-    'Calculator': ('calculator', '#5e75cb'),
-    'Text Editor': ('editor', '#477add'),
-    'Photos': ('photos', '#c1648c'),
-    'PDF Viewer': ('pdf', '#c76057'),
-    'Media': ('media', '#9864cf'),
-    'Disks': ('disks', '#278a94'),
-    'Mellipi Software': ('software', '#27866c'),
-    'System Monitor': ('usage', '#278a94'),
-    'Sound Recorder': ('microphone', '#c76057'),
+    'Mellipi Files': 'folder',
+    'Mellipi Terminal': 'terminal',
+    'Mellipi Browser': 'browser',
+    'Private Browser': 'browser',
+    'Calendar': 'calendar',
+    'Calculator': 'calculator',
+    'Text Editor': 'editor',
+    'Photos': 'photos',
+    'PDF Viewer': 'pdf',
+    'Media': 'media',
+    'Disks': 'disks',
+    'Mellipi Software': 'software',
+    'System Monitor': 'usage',
+    'Sound Recorder': 'microphone',
 }
 
 
 @lru_cache(maxsize=96)
-def identity_appearance(title, surface):
-    glyph, color = APP_IDENTITIES.get(title, ('fold', '#6e80bb'))
+def identity_appearance(title, surface, color):
+    glyph = APP_IDENTITIES.get(title, 'fold')
     mix = lambda weight: '#' + ''.join(
         f'{round((1-weight)*int(surface[i:i+2],16)+weight*int(color[i:i+2],16)):02x}'
         for i in (1, 3, 5))

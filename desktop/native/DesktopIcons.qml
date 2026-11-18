@@ -24,35 +24,78 @@ Item {
     signal editFocusRequested(string outputId,bool active)
     onSelectedPathsChanged:if(controller && typeof controller.setSelection==="function")controller.setSelection(selectedPaths)
     onEditorActiveChanged:editFocusRequested(outputId,editorActive)
-    function clearSelection(){selectedPaths=[];selectedPath="";grid.currentIndex=-1;}
+    function clearSelection(){selectedPaths=[];selectedPath="";grid.focusedPath="";grid.currentIndex=-1;}
     function selectOne(path){selectedPaths=[path];selectedPath=path;}
     function selectItem(path,index,modifiers,rightClick){
-        grid.changingSelection=true;grid.currentIndex=index;grid.changingSelection=false;
+        grid.changingSelection=true;grid.focusedPath=path;grid.currentIndex=index;grid.changingSelection=false;
         if(rightClick && selectedPaths.indexOf(path)>=0)return;
         if(modifiers & Qt.ControlModifier){var paths=selectedPaths.slice();var at=paths.indexOf(path);if(at>=0)paths.splice(at,1);else paths.push(path);selectedPaths=paths;selectedPath=paths.length ? paths[0] : "";}
         else selectOne(path);
     }
     function dragPaths(path){return selectedPaths.indexOf(path)>=0 ? selectedPaths.filter(p=>p.indexOf("orbit-place:")!==0) : [path];}
     function dragUris(path){return dragPaths(path).map(p=>grid.model.find(row=>row.path===p)).filter(row=>row && row.url && row.url.indexOf("file:")===0).map(row=>row.url).join("\r\n");}
-    function dropPositions(paths,x,y){
-        if(!controller || typeof controller.setPosition!=="function" || !paths.length)return;
-        var origin=positions[paths[0]] || [0,0];var column=Math.max(0,Math.min(grid.columns-1,Math.floor(x/grid.cellWidth))),row=Math.max(0,Math.min(grid.rows-1,Math.floor(y/grid.cellHeight)));
-        var dx=column-origin[0],dy=row-origin[1];
-        var old=Object.assign({},positions);
-        paths.forEach(path=>{var point=old[path] || origin;controller.setPosition(path,outputId,Math.max(0,Math.min(grid.columns-1,point[0]+dx)),Math.max(0,Math.min(grid.rows-1,point[1]+dy)));});
+    function focusedTile(){
+        if(!grid.focusedPath)return null;
+        const index=grid.model.findIndex(row=>row.path===grid.focusedPath);
+        const t=index<0 ? null : repeater.itemAt(index);
+        return t && t.visible ? t : null;
+    }
+    function reconcileSelection(){
+        const paths=new Set(grid.model.map(row=>row.path));
+        const retained=selectedPaths.filter(path=>paths.has(path));
+        if(retained.length!==selectedPaths.length){selectedPaths=retained;selectedPath=retained[0] || "";}
+        grid.changingSelection=true;
+        grid.currentIndex=grid.model.findIndex(row=>row.path===grid.focusedPath);
+        if(grid.currentIndex<0)grid.focusedPath="";
+        grid.changingSelection=false;
+    }
+    function navigate(dx,dy){
+        const from=focusedTile();
+        let best=-1,score=Infinity;
+        for(let i=0;i<repeater.count;i++){
+            const t=repeater.itemAt(i);
+            if(!t || !t.visible)continue;
+            const x=t.cell[0],y=t.cell[1];
+            const forward=from ? (x-from.cell[0])*dx+(y-from.cell[1])*dy : 1;
+            if(forward<=0)continue;
+            const cross=from ? Math.abs((x-from.cell[0])*dy+(y-from.cell[1])*dx) : 0;
+            const rank=from ? forward*forward+cross*cross*2 : y*grid.columns+x;
+            if(rank<score){score=rank;best=i;}
+        }
+        if(best>=0 && best!==grid.currentIndex)grid.currentIndex=best;
+    }
+    property var dropPreview: ({})
+    function previewPositions(paths,anchor,x,y) {
+        if(!positions[anchor] || !paths.length || paths.some(path=>!positions[path])){dropPreview=({});return;}
+        const origin=positions[anchor];
+        const cells=paths.map(path=>positions[path]);
+        const dx=Math.max(-Math.min(...cells.map(p=>p[0])),Math.min(Math.floor(x/grid.cellWidth)-origin[0],grid.columns-1-Math.max(...cells.map(p=>p[0]))));
+        const dy=Math.max(-Math.min(...cells.map(p=>p[1])),Math.min(Math.floor(y/grid.cellHeight)-origin[1],grid.rows-1-Math.max(...cells.map(p=>p[1]))));
+        const next={};
+        if(dx || dy)paths.forEach(path=>{next[path]=[positions[path][0]+dx,positions[path][1]+dy];});
+        dropPreview=next;
+    }
+    function dropPositions(paths,anchor,x,y){
+        if(!controller || !paths.length)return false;
+        return controller.movePositions(paths,anchor,outputId,grid.columns,grid.rows,
+            Math.floor(x/grid.cellWidth),Math.floor(y/grid.cellHeight));
     }
     function fileKey(event){
         if(!controller)return;
         var ctrl=!!(event.modifiers & Qt.ControlModifier);
-        if(ctrl && event.key===Qt.Key_A){selectedPaths=grid.model.map(row=>row.path);selectedPath=selectedPaths.length ? selectedPaths[0] : "";event.accepted=true;}
+        if(ctrl && event.key===Qt.Key_A){selectedPaths=Object.keys(positions);selectedPath=selectedPaths.length ? selectedPaths[0] : "";event.accepted=true;}
         else if(ctrl && event.key===Qt.Key_C && typeof controller.copyFiles==="function"){controller.copyFiles(selectedPaths);event.accepted=true;}
         else if(ctrl && event.key===Qt.Key_X && typeof controller.cutFiles==="function"){controller.cutFiles(selectedPaths);event.accepted=true;}
         else if(ctrl && event.key===Qt.Key_V && typeof controller.pasteFiles==="function"){controller.pasteFiles();event.accepted=true;}
         else if(event.key===Qt.Key_Delete && typeof controller.trashFiles==="function"){controller.trashFiles(selectedPaths);event.accepted=true;}
-        else if(event.key===Qt.Key_F2 && selectedPath && typeof controller.requestRename==="function"){controller.requestRename(selectedPath);event.accepted=true;}
+        else if(event.key===Qt.Key_F2 && typeof controller.requestRename==="function"){
+            const item=focusedTile();
+            if(item && selectedPaths.length===1 && selectedPaths[0]===item.modelData.path)controller.requestRename(item.modelData.path);
+            event.accepted=true;
+        }
         else if(event.key===Qt.Key_Menu || (event.key===Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))){
-            var item=grid.currentIndex>=0 ? repeater.itemAt(grid.currentIndex) : null;
-            if(item)requestContext(selectedPath,item,item.width/2,item.height/2);
+            const item=focusedTile();
+            if(item)requestContext(item.modelData.path,item,item.width/2,item.height/2);
             else requestContext("",icons,16,16);
             event.accepted=true;
         }
@@ -66,7 +109,7 @@ Item {
         selectedPaths=paths;selectedPath=paths.length ? paths[0] : "";
     }
     function requestContext(path,item,px,py){var point=item.mapToItem(null,px,py);contextRequested(path,Math.round(originX+point.x),Math.round(originY+point.y));}
-    function activateCurrent(){if(controller && grid.currentIndex>=0 && grid.currentIndex<grid.count){interacted();controller.open(grid.model[grid.currentIndex].path);}}
+    function activateCurrent(){const item=focusedTile();if(controller && item){interacted();controller.open(item.modelData.path);}}
     function updateLayout(){if(controller && typeof controller.layout==="function")positions=controller.layout(outputId,grid.columns,grid.rows);else positions=({});}
     function beginRename(path,name){editingPath=path;creatingFolder=false;editor.text=name;editBox.visible=true;editor.forceActiveFocus();editor.selectAll();}
     function beginNewFolder(){editingPath="";creatingFolder=true;editor.text="New folder";editBox.visible=true;editor.forceActiveFocus();editor.selectAll();}
@@ -105,7 +148,9 @@ Item {
     DropArea {
         anchors.fill:parent
         onEntered: drag => {if(!drag.hasUrls && !(drag.source && drag.source.desktopPath))drag.accepted=false;}
-        onDropped: drop => {if(drop.source && drop.source.desktopPath){drop.source.dragHandled=true;icons.dropPositions(drop.source.dragSelection,drop.x,drop.y);drop.accept(Qt.MoveAction);return;}if(drop.hasUrls && icons.controller && typeof icons.controller.dropUrls==="function"){icons.controller.dropUrls(drop.urls.map(String));drop.accept(Qt.CopyAction);}}
+        onPositionChanged: drag => {if(drag.source && drag.source.desktopPath)icons.previewPositions(drag.source.dragSelection,drag.source.desktopPath,drag.x,drag.y);}
+        onExited:icons.dropPreview=({})
+        onDropped: drop => {icons.dropPreview=({});if(drop.source && drop.source.desktopPath){drop.source.dragHandled=true;if(icons.dropPositions(drop.source.dragSelection,drop.source.desktopPath,drop.x,drop.y))drop.accept(Qt.MoveAction);else drop.accepted=false;return;}if(drop.hasUrls && icons.controller && typeof icons.controller.dropUrls==="function"){icons.controller.dropUrls(drop.urls.map(String));drop.accept(Qt.CopyAction);}}
     }
     Item {
         id:grid;objectName:"desktopIconsGrid";anchors.fill:parent
@@ -116,20 +161,21 @@ Item {
         readonly property real cellWidth:width/columns
         readonly property real cellHeight:icons.iconCell
         property int currentIndex:-1
+        property string focusedPath:""
         property bool changingSelection:false
         activeFocusOnTab:count>0
         onColumnsChanged:icons.updateLayout()
         onRowsChanged:icons.updateLayout()
-        onModelChanged:icons.updateLayout()
+        onModelChanged:{icons.updateLayout();icons.reconcileSelection();}
         Keys.onReturnPressed:icons.activateCurrent()
         Keys.onEnterPressed:icons.activateCurrent()
         Keys.onEscapePressed:icons.clearSelection()
-        Keys.onLeftPressed:currentIndex=Math.max(0,currentIndex-1)
-        Keys.onRightPressed:currentIndex=Math.min(count-1,currentIndex+1)
-        Keys.onUpPressed:currentIndex=Math.max(0,currentIndex-columns)
-        Keys.onDownPressed:currentIndex=Math.min(count-1,currentIndex+columns)
+        Keys.onLeftPressed:icons.navigate(-1,0)
+        Keys.onRightPressed:icons.navigate(1,0)
+        Keys.onUpPressed:icons.navigate(0,-1)
+        Keys.onDownPressed:icons.navigate(0,1)
         Keys.onPressed:event=>icons.fileKey(event)
-        onCurrentIndexChanged:if(!changingSelection && currentIndex>=0 && currentIndex<count)icons.selectOne(model[currentIndex].path)
+        onCurrentIndexChanged:if(!changingSelection && currentIndex>=0 && currentIndex<count){focusedPath=model[currentIndex].path;icons.selectOne(focusedPath);}
         Repeater {
             id:repeater;model:grid.model
             delegate:Item {
@@ -154,10 +200,17 @@ Item {
                     Drag.hotSpot.x:width/2
                     Drag.hotSpot.y:icons.iconSize/2
                     Drag.onDragStarted:{tile.dragSelection=icons.dragPaths(modelData.path);tile.dragHandled=false;hit.wasDragged=true;}
-                    Drag.onDragFinished: action=>{if(action!==Qt.IgnoreAction)tile.dragHandled=true;visual.x=4;visual.y=2;}
+                    Drag.onDragFinished: action=>{icons.dropPreview=({});if(action!==Qt.IgnoreAction)tile.dragHandled=true;visual.x=4;visual.y=2;}
                     x:4;y:2;width:parent.width-8;height:icons.iconCell-6;radius:Theme.corner(7)
-                    color:icons.selectedPaths.indexOf(modelData.path)>=0?Qt.rgba(0.208,0.518,0.894,0.22):hit.containsMouse?Theme.hover:"transparent"
-                    border.color:icons.selectedPaths.indexOf(modelData.path)>=0?icons.selectionBlue:"transparent"
+                    readonly property bool selected: icons.selectedPaths.indexOf(modelData.path)>=0
+                    color: !selected && hit.containsMouse ? Theme.hover : "transparent"
+                    MotionValue {id:selectionFade;target:visual.selected ? 1 : 0;duration:Theme.desktopMotion}
+                    Rectangle {
+                        objectName: "desktopSelectionHighlight"
+                        anchors.fill:parent;radius:parent.radius
+                        visible:opacity>0;opacity:selectionFade.value
+                        color:Qt.rgba(.208,.518,.894,.22);border.color:icons.selectionBlue
+                    }
                     Item {
                         id: artwork
                         objectName: "desktopArtwork"
@@ -165,9 +218,9 @@ Item {
                         y: 8
                         width: icons.iconSize
                         height: width
-                        // Only the shell's own places and ordinary folders are controls.
-                        // Preserve authored launcher art and file-type illustrations.
-                        readonly property bool owned: modelData.kind === "place" || modelData.kind === "folder"
+                        readonly property bool nativeApp: modelData.kind === "launcher" &&
+                            /^mellipi-(files|terminal|browser|editor|calculator|calendar|photos|pdf|software|media|disks|settings|monitor|recorder|desktop)$/.test(modelData.icon)
+                        readonly property bool owned: modelData.kind === "place" || modelData.kind === "folder" || nativeApp
                         Rectangle {
                             anchors.fill: parent
                             visible: artwork.owned
@@ -180,7 +233,9 @@ Item {
                             anchors.centerIn: parent
                             width: artwork.owned ? Math.round(artwork.width*.68) : artwork.width
                             height: width
-                            source: artwork.owned ? Theme.symbolicIconSource(modelData.icon, Theme.accentInk) : Theme.iconSource(modelData.icon)
+                            source: artwork.nativeApp ? Theme.taskbarIconSource(modelData.icon, false)
+                                : artwork.owned ? Theme.symbolicIconSource(modelData.icon, Theme.accentInk)
+                                : Theme.iconSource(modelData.icon)
                             sourceSize: Qt.size(Math.max(40, width),Math.max(40, height))
                             fillMode: Image.PreserveAspectFit
                         }
@@ -189,17 +244,19 @@ Item {
                     MouseArea {
                         id:hit;anchors.fill:parent;hoverEnabled:true;acceptedButtons:Qt.LeftButton|Qt.RightButton
                         property bool wasDragged:false
+                        property bool pendingSelection:false
                         drag.target:pressedButtons===Qt.LeftButton?visual:null
                         drag.threshold:8
                         drag.minimumX:-tile.x+4;drag.maximumX:Math.max(4,grid.width-tile.x-visual.width-4)
                         drag.minimumY:-tile.y+2;drag.maximumY:Math.max(2,grid.height-tile.y-visual.height-2)
-                        onPressed:mouse=>{wasDragged=false;tile.dragHandled=false;icons.interacted();icons.selectItem(modelData.path,index,mouse.modifiers,mouse.button===Qt.RightButton);tile.dragSelection=icons.dragPaths(modelData.path);grid.forceActiveFocus();}
+                        onPressed:mouse=>{wasDragged=false;tile.dragHandled=false;icons.interacted();pendingSelection=mouse.button===Qt.LeftButton && mouse.modifiers===Qt.NoModifier && icons.selectedPaths.length>1 && visual.selected;icons.selectItem(modelData.path,index,mouse.modifiers,pendingSelection || mouse.button===Qt.RightButton);tile.dragSelection=modelData.kind==="place" ? [modelData.path] : icons.dragPaths(modelData.path);grid.forceActiveFocus();}
                         onPositionChanged:if(drag.active)wasDragged=true
                         onReleased:mouse=>{
-                            if(mouse.button===Qt.LeftButton && wasDragged && !tile.dragHandled && icons.controller && typeof icons.controller.setPosition==="function"){
+                            if(mouse.button===Qt.LeftButton && pendingSelection && !wasDragged)icons.selectOne(modelData.path);
+                            if(mouse.button===Qt.LeftButton && wasDragged && !tile.dragHandled && icons.controller){
                                 var column=Math.max(0,Math.min(grid.columns-1,Math.round((tile.x+visual.x-4)/grid.cellWidth)));
                                 var row=Math.max(0,Math.min(grid.rows-1,Math.round((tile.y+visual.y-2)/grid.cellHeight)));
-                                icons.controller.setPosition(modelData.path,icons.outputId,column,row);
+                                icons.dropPositions(tile.dragSelection,modelData.path,(column+.5)*grid.cellWidth,(row+.5)*grid.cellHeight);
                             }
                             visual.x=4;visual.y=2;
                         }
@@ -211,6 +268,16 @@ Item {
                     Accessible.onPressAction:{icons.interacted();icons.controller.open(modelData.path);}
                 }
             }
+        }
+    }
+    Repeater {
+        model:Object.values(icons.dropPreview)
+        Rectangle {
+            required property var modelData
+            x:modelData[0]*grid.cellWidth+4;y:modelData[1]*grid.cellHeight+2
+            width:grid.cellWidth-8;height:grid.cellHeight-6
+            z:3;radius:Theme.corner(7);border.color:Theme.accentInk
+            color:Qt.rgba(Theme.accent.r,Theme.accent.g,Theme.accent.b,.18)
         }
     }
     Rectangle {

@@ -9,7 +9,7 @@ import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('Polkit', '1.0')
 gi.require_version('PolkitAgent', '1.0')
-from gi.repository import Gio, GLib, Gtk, Polkit, PolkitAgent
+from gi.repository import Gio, GLib, Gtk, Pango, Polkit, PolkitAgent
 
 from app_palette import colors
 from installed_launcher import user_environment
@@ -54,8 +54,19 @@ class AuthorizationDialog(Gtk.Dialog):
         body = self.get_content_area()
         body.set_border_width(16)
         body.set_spacing(10)
-        body.pack_start(Gtk.Label(label=request.message or 'This action requires administrator permission.',
-                                  xalign=0, wrap=True, max_width_chars=50), False, False, 0)
+        description = Gtk.Label(label=request.message or 'This action requires administrator permission.',
+                                xalign=0, yalign=0, wrap=True, wrap_mode=Pango.WrapMode.WORD_CHAR,
+                                max_width_chars=50, selectable=True)
+        description.get_accessible().set_name('Requested administrator action')
+        detail = Gtk.ScrolledWindow()
+        detail.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        detail.set_propagate_natural_height(True)
+        display = self.get_display()
+        monitor = display.get_primary_monitor() or display.get_monitor(0)
+        available = monitor.get_workarea().height if monitor else 480
+        detail.set_max_content_height(min(168, max(54, available // 4)))
+        detail.add(description)
+        body.pack_start(detail, False, False, 0)
         accounts = Gtk.ComboBoxText()
         for identity in request.identities:
             accounts.append_text(account_name(identity))
@@ -89,8 +100,9 @@ class AuthorizationDialog(Gtk.Dialog):
         provider.load_from_data((
             '#mellipi-authorization { background-color: %(background)s; color: %(text)s; }'
             '#mellipi-authorization headerbar { background-image: none;'
-            ' background-color: %(raised)s; color: %(text)s; border: none; box-shadow: none; }'
+            ' background-color: %(chrome)s; color: %(chrome_text)s; border: none; box-shadow: none; }'
             '#mellipi-authorization label { color: %(text)s; }'
+            '#mellipi-authorization headerbar label { color: %(chrome_text)s; }'
             '#mellipi-authorization entry, #mellipi-authorization button {'
             ' background-image: none; background-color: %(surface)s; color: %(text)s;'
             ' border: 1px solid %(control_border)s; border-radius: 7px; }'
@@ -112,7 +124,7 @@ class AuthorizationDialog(Gtk.Dialog):
         self.show_all()
 
     def set_feedback(self, message):
-        self.feedback.set_text(message)
+        self.feedback.set_text(message[:240])
         self.feedback.set_visible(bool(message))
 
     def ask(self, message, echo):

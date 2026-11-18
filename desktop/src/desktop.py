@@ -185,15 +185,19 @@ def notification_target(note,apps,windows):
     return None
 
 
-def dock_groups(apps,windows,pins=None):
-    pinned=[]
-    for alternatives in [('firefox.desktop','com.google.Chrome.desktop'),('mellipi-files.desktop','thunar.desktop','org.gnome.Nautilus.desktop'),('mellipi-terminal.desktop','xfce4-terminal.desktop','org.gnome.Terminal.desktop'),('org.xfce.mousepad.desktop','xed.desktop')]:
-        app=next((a for a in apps if a['id'] in alternatives),None)
-        if app:pinned.append(app)
-    if pins is not None:pinned=[a for ident in pins for a in apps if a['id']==ident]
+def dock_groups(apps,windows,pins=None,match=None):
+    if pins is None:
+        pinned=[]
+        for alternatives in [('firefox.desktop','com.google.Chrome.desktop'),('mellipi-files.desktop','thunar.desktop','org.gnome.Nautilus.desktop'),('mellipi-terminal.desktop','xfce4-terminal.desktop','org.gnome.Terminal.desktop'),('org.xfce.mousepad.desktop','xed.desktop')]:
+            app=next((a for a in apps if a['id'] in alternatives),None)
+            if app:pinned.append(app)
+    else:
+        by_id={a['id']:a for a in apps}
+        pinned=[by_id[ident] for ident in pins if ident in by_id]
+    if match is None:match=lambda row:match_application(row,apps)
     groups={a['id']:dict(id=a['id'],name=a['name'],icon=a['icon'],windows=[],pinned=True) for a in pinned}
     for window in windows:
-        app=match_application(window,apps);key=app['id'] if app else window['klass']
+        app=match(window);key=app['id'] if app else window['klass']
         if key not in groups:groups[key]=dict(id=key,name=app['name'] if app else window['klass'].rsplit('.',1)[-1] or window['title'],icon=app['icon'] if app else window.get('icon','application-x-executable'),windows=[],pinned=False)
         groups[key]['windows'].append(window)
     return list(groups.values())

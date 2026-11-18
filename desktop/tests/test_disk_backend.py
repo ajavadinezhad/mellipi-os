@@ -1,8 +1,10 @@
 import tempfile
 import unittest
+import os
+import stat
 from pathlib import Path
 
-from disk_backend import ATA, BLOCK, DRIVE, FS, NVME, PART, SWAP, TABLE, _image_size, allowed_target, catalog
+from disk_backend import ATA, BLOCK, DRIVE, FS, NVME, PART, SWAP, TABLE, _image_size, allowed_target, catalog, removal_target, UDisks
 
 USB = '/usb'
 DISK = '/disk'
@@ -56,6 +58,110 @@ class UsbTargetTests(unittest.TestCase):
         self.assertFalse(disk.writable_usb)
         with self.assertRaises(ValueError):
             allowed_target(self.objects, disk, 'image', self.no_holders)
+
+    def test_verify_opens_read_only_and_refuses_device_replacement(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        client = object.__new__(UDisks)
+        client.dbus = SimpleNamespace(Dictionary=lambda value, **kw: value, Int32=int)
+        client.objects = lambda: self.objects
+        block = Mock()
+        client.interface = lambda path, iface: block
+        with tempfile.TemporaryDirectory() as folder:
+            image, media = Path(folder) / 'disk.img', Path(folder) / 'usb'
+            image.write_bytes(b'i' * 512)
+            media.write_bytes(b'i' * 512 + b'data after the image')
+            real_fstat = os.fstat
+            fd = os.open(media, os.O_RDONLY)
+            block.OpenDevice.return_value.take.return_value = fd
+            fake_stat = SimpleNamespace(st_mode=stat.S_IFBLK, st_rdev=self.disk.number)
+            with patch('disk_backend.has_holders', self.no_holders), patch(
+                    'disk_backend.os.fstat', side_effect=lambda value: fake_stat if value == fd else real_fstat(value)):
+                self.assertEqual(client.verify_image(self.disk, image, lambda _: None, lambda: False), 'match')
+            self.assertEqual(block.OpenDevice.call_args.args[0], 'r')
+            self.assertTrue(block.OpenDevice.call_args.args[1]['flags'] & os.O_EXCL)
+            with self.assertRaises(OSError):
+                real_fstat(fd)
+            self.objects[USB][DRIVE]['Serial'] = 'replacement'
+            with patch('disk_backend.has_holders', self.no_holders):
+                with self.assertRaisesRegex(ValueError, 'removable'):
+                    client.verify_image(self.disk, image, lambda _: None, lambda: False)
+            self.assertEqual(block.OpenDevice.call_count, 1)
+
+    def test_safe_remove_fails_closed_for_system_or_sibling_devices(self):
+        self.objects[USB][DRIVE].update(CanPowerOff=True, SiblingId='physical-usb')
+        self.objects[VOLUME][FS]['MountPoints'] = [b'/media/user/disk\0']
+        target, mounted = removal_target(self.objects, self.disk, self.no_holders)
+        self.assertEqual(target.identity, self.disk.identity)
+        self.assertEqual(mounted, [VOLUME])
+        self.objects[VOLUME][FS]['MountPoints'] = [b'/\0']
+        with self.assertRaisesRegex(ValueError, 'system volume'):
+            removal_target(self.objects, self.disk, self.no_holders)
+        self.objects[VOLUME][FS]['MountPoints'] = []
+        self.objects['/sibling'] = {DRIVE: {'SiblingId': 'physical-usb'}}
+        with self.assertRaisesRegex(ValueError, 'shares a physical'):
+            removal_target(self.objects, self.disk, self.no_holders)
+
+    def test_safe_remove_never_powers_off_a_volume_reopened_during_unmount(self):
+        from unittest.mock import Mock, patch
+        self.objects[USB][DRIVE]['CanPowerOff'] = True
+        self.objects[VOLUME][FS]['MountPoints'] = [b'/media/user/disk\0']
+        client = object.__new__(UDisks)
+        client.dbus = Mock()
+        client.objects = lambda: self.objects
+        fs, drive = Mock(), Mock()
+        client.interface = lambda path, iface: fs if iface == FS else drive
+        with patch('disk_backend.has_holders', self.no_holders):
+            with self.assertRaisesRegex(ValueError, 'still mounted'):
+                client.safe_remove(self.disk)
+            drive.PowerOff.assert_not_called()
+            fs.Unmount.side_effect = lambda *_args, **_kwargs: self.objects[VOLUME][FS].update(MountPoints=[])
+            client.safe_remove(self.disk)
+            drive.PowerOff.assert_called_once()
+
+    def test_safe_remove_reports_partial_result_and_refreshes_even_without_hotplug(self):
+        from unittest.mock import Mock, patch
+        from mellipi_disks import Job
+        self.objects[USB][DRIVE]['CanPowerOff'] = True
+        self.objects[VOLUME][FS]['MountPoints'] = [b'/media/first\0']
+        extra = self.objects['/second'] = {
+            BLOCK: dict(self.objects[VOLUME][BLOCK], Device=b'/dev/sdz2\0', DeviceNumber=1236),
+            FS: {'MountPoints': [b'/media/second\0']},
+            PART: {'Number': 2},
+        }
+        client = object.__new__(UDisks)
+        client.dbus, client.bus = Mock(), Mock()
+        client.objects = lambda: self.objects
+        first, second, drive = Mock(), Mock(), Mock()
+        first.Unmount.side_effect = lambda *_args, **_kwargs: self.objects[VOLUME][FS].update(MountPoints=[])
+        second.Unmount.side_effect = RuntimeError('Second volume is busy')
+        client.interface = lambda path, iface: {VOLUME: first, '/second': second, USB: drive}[path]
+        job = Job(None, 'remove', self.disk)
+        with (patch('disk_backend.has_holders', self.no_holders),
+              patch('mellipi_disks.UDisks', return_value=client)):
+            job.run()
+        self.assertIn('Unmounted 1 volume', job.error)
+        self.assertIn('Second volume is busy', job.error)
+        self.assertFalse(next(row for row in job.rows if row.path == VOLUME).mounts)
+        self.assertTrue(extra[FS]['MountPoints'])
+        drive.PowerOff.assert_not_called()
+
+    def test_close_during_refresh_does_not_wait_on_application_thread(self):
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QApplication
+        from unittest.mock import Mock, patch
+        from mellipi_disks import Disks
+        app = QApplication.instance() or QApplication([])
+        with patch.object(Disks, 'refresh'):
+            window = Disks()
+        window.show()
+        job = window.job = Mock(kind='list')
+        self.assertFalse(window.close())
+        self.assertFalse(window.isVisible())
+        job.wait.assert_not_called()
+        window.done()
+        QTest.qWait(1)
+        self.assertIsNone(window.job)
 
     def test_image_size_requires_nonempty_regular_file(self):
         with tempfile.TemporaryDirectory() as directory:

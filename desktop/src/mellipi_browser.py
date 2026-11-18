@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import stat
 import sys
 import weakref
@@ -13,17 +14,17 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlencode
 
-from PyQt6.QtCore import QLocale, QMimeDatabase, QProcess, QSize, QTimer, QUrl, Qt
+from PyQt6.QtCore import QDateTime, QLocale, QMimeDatabase, QProcess, QSize, QTimer, QUrl, Qt
 from PyQt6.QtGui import QColor, QDesktopServices, QKeySequence, QShortcut
 from PyQt6.sip import isdeleted
 from PyQt6.QtWidgets import (
-    QApplication, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QProgressBar,
+    QApplication, QDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QProgressBar,
     QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from file_chooser import FileChooser
 from installed_launcher import user_environment
-from qt_app import AppWindow, symbolic_icon, themed_prompt
+from qt_app import action_ink, AppWindow, exec_owned_dialog, style_dialog, symbolic_icon, themed_prompt
 
 
 def web_url(url):
@@ -32,6 +33,15 @@ def web_url(url):
         url.isValid() and url.scheme().lower() in ('http', 'https')
         and bool(url.host()) and not url.userInfo()
     )
+
+def capture_origin(url):
+    """Display and compare a canonical, credential-free HTTPS origin."""
+    if not web_url(url) or url.scheme() != 'https':
+        return None
+    host = url.host(QUrl.ComponentFormattingOption.EncodeUnicode).lower()
+    host = f'[{host}]' if ':' in host else host
+    port = url.port(443)
+    return f'https://{host}' + (f':{port}' if port != 443 else '')
 
 
 def address_url(value):
@@ -126,6 +136,56 @@ class Bookmarks:
         return added
 
 
+class VisitHistory:
+    LIMIT = 300
+
+    def __init__(self, path):
+        self.path = path
+
+    def access(self, command, args=(), *, prune=False):
+        fd = os.open(self.path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        try:
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077
+                    or info.st_size > 8 * 1024 * 1024):
+                raise ValueError('Untrusted browsing history')
+        finally:
+            os.close(fd)
+        db = sqlite3.connect(self.path, timeout=.05)
+        try:
+            with db:
+                db.execute('PRAGMA secure_delete=ON')
+                db.execute('CREATE TABLE IF NOT EXISTS visits (url TEXT PRIMARY KEY, title TEXT, stamp INTEGER)')
+                result = db.execute(command, args).fetchall()
+                if prune:
+                    db.execute('DELETE FROM visits WHERE url IN '
+                               '(SELECT url FROM visits ORDER BY stamp DESC, rowid DESC LIMIT -1 OFFSET ?)',
+                               (self.LIMIT,))
+                return result
+        finally:
+            db.close()
+
+    def remember(self, url, title):
+        key = Bookmarks.clean_url(url)
+        if key:
+            title = ''.join(c for c in title if c.isprintable())[:180] or url.host()
+            self.access('INSERT OR REPLACE INTO visits(url,title,stamp) VALUES (?,?,?)',
+                        (key, title, QDateTime.currentMSecsSinceEpoch()), prune=True)
+
+    def rows(self):
+        rows = self.access('SELECT url,substr(title,1,180),stamp FROM visits WHERE length(url)<=4096 '
+                           'ORDER BY stamp DESC, rowid DESC LIMIT ?', (self.LIMIT,))
+        return [(url, title, stamp) for url, title, stamp in rows
+                if isinstance(url, str) and isinstance(title, str) and type(stamp) is int
+                and web_url(QUrl(url))]
+
+    def forget(self, url):
+        self.access('DELETE FROM visits WHERE url=?', (url,))
+
+    def clear(self):
+        self.access('DELETE FROM visits')
+
+
 class DownloadRow(QWidget):
     def __init__(self, browser, request, target):
         super().__init__(browser)
@@ -218,6 +278,7 @@ class Browser(AppWindow):
     DOWNLOAD_NOTICE = 'Download started · Ctrl+J for progress'
     extra_style = """
         QTabWidget::pane { border: 0; background: %(surface)s; }
+        QTabWidget::right-corner { border: 0; background: %(background)s; }
         QPushButton#browserAction { padding: 4px; }
         QLineEdit#browserAddress { padding: 4px 8px; }
     """
@@ -227,10 +288,13 @@ class Browser(AppWindow):
         self.setMinimumSize(470, 300)
         self.resize(990, 690)
         self.private = private
+        self.capture_prompt = None
         # Keep only page addresses, scoped to this window and never written to
         # disk. In particular, private tabs cannot leak into ordinary windows.
         self.closed_tabs = deque(maxlen=self.MAX_CLOSED_TABS)
         self.bookmarks = None
+        self.saved_tabs_path = None
+        self.history_store = None
         self.profile_class, self.Page, self.Request, self.View = engine
         self.profile = self.profile_class(QApplication.instance()) if private else self.profile_class(
             'Mellipi', QApplication.instance())
@@ -241,10 +305,14 @@ class Browser(AppWindow):
             storage.mkdir(parents=True, mode=0o700, exist_ok=True)
             cache.mkdir(parents=True, mode=0o700, exist_ok=True)
             self.bookmarks = Bookmarks(storage / 'bookmarks.json')
+            self.saved_tabs_path = storage / 'saved-tabs.json'
+            self.history_store = VisitHistory(storage / 'history.sqlite')
             self.profile.setPersistentStoragePath(str(storage))
             self.profile.setCachePath(str(cache))
             self.profile.setHttpCacheMaximumSize(96 * 1024 * 1024)
         self.profile.downloadRequested.connect(self.download)
+        if hasattr(self.profile, 'setPersistentPermissionsPolicy'):
+            self.profile.setPersistentPermissionsPolicy(self.profile.PersistentPermissionsPolicy.AskEveryTime)
         attrs = self.profile.settings().WebAttribute
         for attr in ('LocalContentCanAccessRemoteUrls', 'LocalContentCanAccessFileUrls',
                      'AllowRunningInsecureContent', 'AllowGeolocationOnInsecureOrigins',
@@ -279,6 +347,12 @@ class Browser(AppWindow):
         self.browser_actions.addAction('Find in page', self.show_find)
         if not private:
             self.browser_actions.addAction('New private window', self.open_private)
+            self.browser_actions.addAction('Browsing History (Ctrl+H)', self.show_history)
+            history_shortcut = QShortcut(QKeySequence('Ctrl+H'), self)
+            history_shortcut.activated.connect(self.show_history)
+            self.browser_actions.addAction('Save open tabs for later', self.save_tabs)
+            self.browser_actions.addAction('Open saved tabs', self.restore_tabs)
+            self.browser_actions.addAction('Forget saved tabs', self.forget_tabs)
         self.browser_menu.setMenu(self.browser_actions)
 
         self.content.addLayout(self.toolbar)
@@ -316,6 +390,7 @@ class Browser(AppWindow):
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.tab_switched)
         bar = self.tabs.tabBar()
+        bar.setDrawBase(False)
         bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         bar.customContextMenuRequested.connect(self.show_tab_menu)
         self.pages = QStackedWidget()
@@ -463,7 +538,7 @@ class Browser(AppWindow):
         current = self.bookmarks.clean_url(page.url()) if page is not None else None
         marked = current in rows
         toggle = menu.addAction(
-            symbolic_icon('edit-delete' if marked else 'bookmark-new', self.theme['accent_ink']),
+            symbolic_icon('edit-delete' if marked else 'bookmark-new', action_ink(self.theme, 'edit-delete' if marked else 'bookmark-new')),
             'Remove this bookmark' if marked else 'Bookmark this page')
 
         toggle.setEnabled(bool(current))
@@ -473,7 +548,7 @@ class Browser(AppWindow):
             menu.addAction('No bookmarks yet').setEnabled(False)
         for url, title in reversed(list(rows.items())):
             label = ''.join(c for c in title if c.isprintable())[:64] or QUrl(url).host()
-            action = menu.addAction(symbolic_icon('bookmark-new', self.theme['accent_ink']), label.replace('&', '&&'))
+            action = menu.addAction(symbolic_icon('bookmark-new', action_ink(self.theme, 'bookmark-new')), label.replace('&', '&&'))
             action.setToolTip(url)
             action.triggered.connect(lambda _checked=False, saved=url: self.open_url(self.tabs.currentWidget(), QUrl(saved)))
         menu.setToolTipsVisible(True)
@@ -499,6 +574,10 @@ class Browser(AppWindow):
         self.status.setVisible(bool(text))
 
     def tab_switched(self, _index):
+        tab = self.tabs.currentWidget()
+        if tab is not None and (address := getattr(tab, 'deferred_url', None)) is not None:
+            tab.deferred_url = None
+            self.open_url(tab, address)
         self.update_toolbar(update_address=True)
         if not self.find_bar.isHidden():
             self.reset_find()
@@ -557,22 +636,23 @@ class Browser(AppWindow):
 
         view.findText(term, flags, completed)
 
-    def add_tab(self, url=None, foreground=True):
+    def add_tab(self, url=None, foreground=True, *, deferred=False):
         # Allocate the renderer only once the tab actually loads an address.
         tab = QWidget()
         tab.layout_ = QVBoxLayout(tab)
         tab.layout_.setContentsMargins(0, 0, 0, 0)
         tab.view = None
-        caption = QLabel('Private tab' if self.private else 'New tab')
+        tab.deferred_url = url if deferred else None
+        caption = QLabel(url.host() if deferred and url is not None else 'Private tab' if self.private else 'New tab')
         caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
         caption.setObjectName('muted')
         tab.layout_.addWidget(caption, 1)
-        index = self.tabs.addTab(tab, caption.text())
+        index = self.tabs.addTab(tab, caption.text().replace('&', '&&'))
         self.add_tab_close_button(self.tabs, index)
         if foreground:
             self.show_tabs()
             self.tabs.setCurrentIndex(index)
-        if url is not None:
+        if url is not None and not deferred:
             self.open_url(tab, url)
         elif foreground:
             self.focus_address()
@@ -635,8 +715,10 @@ class Browser(AppWindow):
         page.settings().setUnknownUrlSchemePolicy(
             page.settings().UnknownUrlSchemePolicy.DisallowUnknownUrlSchemes)
         page.certificateError.connect(lambda error: error.rejectCertificate())
-        page.featurePermissionRequested.connect(lambda origin, feature: page.setFeaturePermission(
-            origin, feature, page.PermissionPolicy.PermissionDeniedByUser))
+        page.featurePermissionRequested.connect(
+            lambda origin, feature: self.request_capture(tab, page, origin, feature))
+        page.featurePermissionRequestCanceled.connect(
+            lambda origin, feature: self.cancel_capture(page, origin, feature))
         # Only open validated links from a user gesture, never unsolicited popups.
         page.newWindowRequested.connect(self.open_new_window)
         view.titleChanged.connect(lambda title: self.tab_title(tab, title))
@@ -649,6 +731,105 @@ class Browser(AppWindow):
         tab.layout_.addWidget(view, 1)
         page.setBackgroundColor(QColor(self.theme['surface']))
         return view
+
+    def cancel_capture(self, page, origin, feature):
+        pending = self.capture_prompt
+        if pending is not None and (page, origin, feature) == pending[:3]:
+            pending[3] = False
+
+    def save_tabs(self):
+        if self.saved_tabs_path is None:
+            return
+        rows = []
+        for index in range(min(self.tabs.count(), 24)):
+            tab = self.tabs.widget(index)
+            address = self.tab_address(tab)
+            if value := Bookmarks.clean_url(address):
+                rows.append(value)
+        if not rows:
+            self.message('No web tabs to save.')
+            return
+        try:
+            fd, temporary = tempfile.mkstemp(prefix='.saved-tabs-', dir=self.saved_tabs_path.parent)
+            try:
+                with os.fdopen(fd, 'w', encoding='utf-8') as output:
+                    json.dump(rows, output)
+                os.replace(temporary, self.saved_tabs_path)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+        except OSError:
+            self.message('Could not save these tabs.')
+            return
+        self.message(f'Saved {len(rows)} tabs on this device.')
+
+    @staticmethod
+    def tab_address(tab):
+        if tab.view is not None and (address := tab.view.url()).isValid():
+            return address
+        return getattr(tab, 'deferred_url', None) or QUrl()
+
+    def restore_tabs(self):
+        if self.saved_tabs_path is None:
+            return
+        try:
+            descriptor = os.open(self.saved_tabs_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(descriptor, 'rb') as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size > 128_000:
+                    raise ValueError('Unsupported saved tab file')
+                rows = json.loads(stream.read(128_001))
+            if not isinstance(rows, list) or len(rows) > 24:
+                raise ValueError('Invalid saved tabs')
+        except FileNotFoundError:
+            self.message('No tabs have been saved.')
+            return
+        except (OSError, ValueError):
+            self.message('Could not read saved tabs.')
+            return
+        available = max(0, 24 - self.tabs.count())
+        urls = [QUrl(value) for value in rows if isinstance(value, str) and len(value) <= 4096
+                and web_url(QUrl(value))]
+        for url in urls[:available]:
+            self.add_tab(url, foreground=False, deferred=True)
+        self.message(f'Opened {min(available, len(urls))} saved tabs.' if available
+                     else 'Close a tab before opening saved tabs.')
+
+    def forget_tabs(self):
+        if self.saved_tabs_path is None:
+            return
+        try:
+            self.saved_tabs_path.unlink(missing_ok=True)
+        except OSError:
+            self.message('Could not forget saved tabs.')
+        else:
+            self.message('Saved tabs cleared.')
+
+    def request_capture(self, tab, page, origin, feature):
+        names = {'MediaAudioCapture': 'microphone', 'MediaVideoCapture': 'camera',
+                 'MediaAudioVideoCapture': 'microphone and camera'}
+        requested = names.get(feature.name)
+        site = capture_origin(origin)
+        address = QUrl(page.url())
+        decision = page.PermissionPolicy.PermissionDeniedByUser
+        if (not requested or not site or site != capture_origin(address) or
+                self.tabs.currentWidget() is not tab or self.pages.currentWidget() is not self.tabs or not self.isVisible() or
+                self.capture_prompt is not None):
+            page.setFeaturePermission(origin, feature, decision)
+            return
+        pending = [page, QUrl(origin), feature, True]
+        self.capture_prompt = pending
+        try:
+            granted = themed_prompt(self, 'Allow device access?',
+                                   f'{site} wants to use your {requested}.',
+                                   'Allow once', 'Deny')
+        finally:
+            self.capture_prompt = None
+        if isdeleted(page) or not pending[3]:
+            return
+        if (granted and self.tabs.currentWidget() is tab and self.pages.currentWidget() is self.tabs
+                and self.isVisible() and page.url() == address):
+            decision = page.PermissionPolicy.PermissionGrantedByUser
+        page.setFeaturePermission(origin, feature, decision)
 
     def open_new_window(self, request):
         url = request.requestedUrl()
@@ -697,12 +878,17 @@ class Browser(AppWindow):
         loading = bool(view and view.page().isLoading())
         icon = 'window-close' if loading else 'view-refresh'
         self.reload.setProperty('mellipiSymbolicIcon', icon)
-        self.reload.setIcon(symbolic_icon(icon, self.theme['accent_ink']))
+        self.reload.setIcon(symbolic_icon(icon, action_ink(self.theme, icon)))
         label = 'Stop loading (Esc)' if loading else 'Reload (Ctrl+R)'
         self.reload.setToolTip(label)
         self.reload.setAccessibleName(label)
 
     def loaded(self, tab, ok):
+        if ok and self.history_store is not None and self.tabs.indexOf(tab) >= 0 and tab.view is not None:
+            try:
+                self.history_store.remember(tab.view.url(), tab.view.title())
+            except (OSError, ValueError, sqlite3.Error):
+                pass  # An unavailable history store must not prevent browsing.
         if tab is self.tabs.currentWidget():
             self.update_toolbar(update_address=not self.address.hasFocus())
             self.message('' if ok else 'This page did not load. Check the address or try again.')
@@ -727,10 +913,9 @@ class Browser(AppWindow):
         tab = self.tabs.widget(index)
         if tab is None:
             return
-        if tab.view is not None:
-            address = Bookmarks.clean_url(tab.view.url())
-            if address:
-                self.closed_tabs.append((address, index))
+        address = Bookmarks.clean_url(self.tab_address(tab))
+        if address:
+            self.closed_tabs.append((address, index))
         if self.tabs.count() == 1:
             self.add_tab()
         self.tabs.removeTab(index)
@@ -745,17 +930,113 @@ class Browser(AppWindow):
         self.message('')
         tab = self.tabs.currentWidget()
         # Reuse the idle placeholder created when the last page was closed.
-        if self.tabs.count() == 1 and tab.view is None and not self.address.text():
+        if self.tabs.count() == 1 and tab.view is None and not tab.deferred_url and not self.address.text():
             self.open_url(tab, QUrl(address))
         else:
             tab = self.add_tab(QUrl(address))
             index = self.tabs.indexOf(tab)
             self.tabs.tabBar().moveTab(index, min(previous_index, index))
 
+    def show_history(self):
+        if self.history_store is None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Browsing History')
+        style_dialog(dialog, self)
+        layout = QVBoxLayout(dialog)
+        query = QLineEdit(placeholderText='Search titles or addresses')
+        query.setAccessibleName('Search browsing history')
+        query.setMaxLength(512)
+        results = QListWidget()
+        results.setAccessibleName('Visited pages, most recent first')
+        note = QLabel()
+        note.setWordWrap(True)
+        layout.addWidget(query)
+        layout.addWidget(results, 1)
+        layout.addWidget(note)
+        actions = QHBoxLayout()
+        open_button = QPushButton('Open')
+        forget = QPushButton('Remove Entry')
+        clear = QPushButton('Clear History…')
+        close = QPushButton('Close')
+        for button in (open_button, forget, clear):
+            actions.addWidget(button)
+        actions.addStretch(1)
+        actions.addWidget(close)
+        layout.addLayout(actions)
+        selected = None
+        rows = []
+
+        def populate():
+            term = query.text().casefold().strip()
+            results.clear()
+            for url, title, stamp in rows:
+                if term in url.casefold() or term in title.casefold():
+                    date = QLocale().toString(QDateTime.fromMSecsSinceEpoch(stamp), QLocale.FormatType.ShortFormat)
+                    row = QListWidgetItem(f'{title}  ·  {date}\n{url}')
+                    row.setData(Qt.ItemDataRole.UserRole, url)
+                    results.addItem(row)
+            if results.count():
+                results.setCurrentRow(0)
+            clear.setEnabled(bool(rows))
+            note.setText('' if results.count() else ('No matching pages.' if rows else 'No browsing history.'))
+
+        def refresh():
+            try:
+                rows[:] = self.history_store.rows()
+                populate()
+            except (OSError, ValueError, sqlite3.Error):
+                note.setText('Could not read browsing history.')
+
+        def open_selected():
+            nonlocal selected
+            item = results.currentItem()
+            if item:
+                selected = QUrl(item.data(Qt.ItemDataRole.UserRole))
+                dialog.accept()
+
+        def remove(all_rows=False):
+            item = results.currentItem()
+            try:
+                if all_rows:
+                    if not themed_prompt(self, 'Clear browsing history?', 'Remove all saved visits on this device?',
+                                         'Clear History', 'Cancel'):
+                        return
+                    self.history_store.clear()
+                elif item:
+                    self.history_store.forget(item.data(Qt.ItemDataRole.UserRole))
+                refresh()
+            except (OSError, ValueError, sqlite3.Error):
+                note.setText('Could not remove browsing history.')
+
+        def buttons():
+            enabled = results.currentItem() is not None
+            open_button.setEnabled(enabled)
+            forget.setEnabled(enabled)
+
+        query.textChanged.connect(populate)
+        results.currentItemChanged.connect(buttons)
+        results.itemActivated.connect(open_selected)
+        open_button.clicked.connect(open_selected)
+        forget.clicked.connect(lambda: remove())
+        clear.clicked.connect(lambda: remove(True))
+        close.clicked.connect(dialog.reject)
+        buttons()
+        clear.setEnabled(False)
+        refresh()
+        query.setFocus()
+        dialog.resize(680, 450)
+        try:
+            exec_owned_dialog(dialog)
+        finally:
+            dialog.deleteLater()
+        if selected is not None and web_url(selected):
+            self.add_tab(selected)
+
     def show_tab_menu(self, position):
         bar = self.tabs.tabBar()
         menu = QMenu(self)
-        reopen = menu.addAction(symbolic_icon('edit-undo', self.theme['accent_ink']), 'Reopen closed tab')
+        reopen = menu.addAction(symbolic_icon('edit-undo', action_ink(self.theme, 'edit-undo')), 'Reopen closed tab')
         reopen.setShortcut(QKeySequence('Ctrl+Shift+T'))
         reopen.setEnabled(bool(self.closed_tabs))
         reopen.triggered.connect(self.reopen_tab)

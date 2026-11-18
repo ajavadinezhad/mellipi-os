@@ -12,15 +12,16 @@ import re
 import stat
 import sys
 import tempfile
+import time as wall_clock
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from PyQt6.QtCore import QDate, QSize, QTime, Qt, QUrl
-from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QShortcut, QTextCharFormat
-from PyQt6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QCalendarWidget, QCheckBox, QDateEdit,
+from PyQt6.QtCore import QDate, QDateTime, QLocale, QRectF, QSize, QTime, Qt, QUrl
+from PyQt6.QtGui import QBrush, QColor, QIcon, QKeySequence, QPainter, QShortcut, QTextCharFormat
+from PyQt6.QtWidgets import (QApplication, QBoxLayout, QButtonGroup, QCalendarWidget, QCheckBox, QComboBox, QDateEdit,
                               QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout,
                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-                              QStackedWidget, QSizePolicy, QScrollArea, QTableView, QTimeEdit, QToolButton, QVBoxLayout, QWidget)
+                              QStackedWidget, QSizePolicy, QScrollArea, QTableView, QTimeEdit, QVBoxLayout, QWidget)
 
 from file_chooser import FileChooser
 from installed_launcher import user_environment
@@ -37,6 +38,7 @@ class UnsupportedRecurrence(ValueError):
 
 
 _REPEATING = {'RRULE', 'RDATE', 'EXRULE', 'EXDATE', 'RECURRENCE-ID'}
+PERSONAL_CALENDAR_STEPS = {'FREQ=MONTHLY': 1, 'FREQ=YEARLY': 12}
 _EVENT_FIELDS = {'UID', 'DTSTART', 'DTEND', 'DURATION', 'SUMMARY', 'LOCATION', 'STATUS', 'SEQUENCE', 'DTSTAMP', *_REPEATING}
 _DURATION = re.compile(r'P(?:(?P<weeks>\d{1,4})W|(?:(?P<days>\d{1,4})D)?(?:T(?:(?P<hours>\d{1,5})H)?(?:(?P<minutes>\d{1,5})M)?(?:(?P<seconds>\d{1,5})S)?)?)')
 
@@ -74,6 +76,11 @@ class Event:
             return start, end - timedelta(days=1)
         last = end.date() - timedelta(days=1) if end > start and end.time() == time.min else end.date()
         return start.date(), max(start.date(), last)
+
+    def reminder_stamp(self):
+        if self.all_day:
+            return int(datetime.combine(date.fromisoformat(self.start), time(9)).timestamp())
+        return int(datetime.fromisoformat(self.start).timestamp()) - 300
 
 
 def _text(value, limit):
@@ -139,6 +146,24 @@ def occurrences(event, first, last):
         return
     parse = date.fromisoformat if event.all_day else datetime.fromisoformat
     start, end = parse(event.start), parse(event.end)
+    if event.personal and event.rule in PERSONAL_CALENDAR_STEPS:
+        step = PERSONAL_CALENDAR_STEPS[event.rule]
+        anchor = start.year * 12 + start.month - 1
+        first_month = first.year * 12 + first.month - 1
+        last_month = last.year * 12 + last.month - 1
+        for index in range(max(0, (first_month - anchor - 1) // step),
+                           (last_month - anchor + 1) // step + 1):
+            year, month = divmod(anchor + index * step, 12)
+            try:
+                when = start.replace(year=year, month=month + 1)
+            except ValueError:
+                continue  # Skip months without the anchor day, including non-leap years.
+            instance = replace(event, start=when.isoformat(),
+                               end=(when + (end - start)).isoformat(), rule='')
+            a, b = instance.span()
+            if MIN_DAY <= a <= last and b >= first and a <= MAX_DAY:
+                yield instance
+        return
     step, count, until = _rule(event.rule, start)
     # A UTC occurrence's local day can shift by one across DST.
     begin = max(0, ((first - last_day).days - 1) // step.days)
@@ -301,6 +326,10 @@ def read_local(path, maximum):
         return data
 
 
+class EventConflict(ValueError):
+    """A local event was replaced or removed since the user opened it."""
+
+
 class EventStore:
     def __init__(self, path):
         self.path = path
@@ -328,7 +357,8 @@ class EventStore:
                     if event.rule:
                         parse = date.fromisoformat if event.all_day else datetime.fromisoformat
                         start, end = parse(event.start), parse(event.end)
-                        step, _, _ = _rule(event.rule, start)
+                        step = (timedelta(days=31) if event.personal and event.rule in PERSONAL_CALENDAR_STEPS
+                                else _rule(event.rule, start)[0])
                         if end - start > min(step, timedelta(days=31)):
                             raise ValueError('Invalid recurring event duration')
                 self.records[event.key] = event
@@ -348,12 +378,14 @@ class EventStore:
             {key: event for key, event in changes.items() if not (key in self.records and self.records[key].personal)}))
         return imported, recurring, skipped
 
-    def save_personal(self, title, location, day, start=None, end=None, *, key=None):
+    def save_personal(self, title, location, day, start=None, end=None, *, key=None, repeat='', expected=None):
         def clean(value, size):
             return ' '.join(''.join(char for char in value if char.isprintable() or char.isspace()).split())[:size]
         title, location = clean(title, 240), clean(location, 220)
         if not title or not MIN_DAY <= day <= MAX_DAY:
             raise ValueError('Enter an event title and a valid date')
+        if repeat not in ('', 'FREQ=DAILY', 'FREQ=WEEKLY', *PERSONAL_CALENDAR_STEPS):
+            raise ValueError('Choose a supported repeat interval')
         all_day = start is None and end is None
         if all_day:
             start, end = day, day + timedelta(days=1)
@@ -361,19 +393,27 @@ class EventStore:
             raise ValueError('The end time must be after the start time')
         else:
             start, end = datetime.combine(day, start), datetime.combine(day, end)
+        expected = self.records.get(key) if expected is None and key is not None else expected
         def save():
-            if key is not None and (key not in self.records or not self.records[key].personal):
-                raise ValueError('This local event no longer exists')
+            if key is not None:
+                self.check_personal_revision(key, expected)
             event = Event(key or hashlib.sha256(uuid.uuid4().bytes).hexdigest(), title, location,
-                          start.isoformat(), end.isoformat(), all_day, personal=True)
+                          start.isoformat(), end.isoformat(), all_day, personal=True, rule=repeat)
             self._write({**self.records, event.key: event})
             return event
         return self._locked_update(save)
 
-    def remove_personal(self, key):
+    def check_personal_revision(self, key, expected):
+        current = self.records.get(key)
+        if current is None or not current.personal:
+            raise EventConflict('This local event no longer exists.')
+        if current != expected:
+            raise EventConflict('This event changed in another Calendar window. Your changes were not saved.')
+
+    def remove_personal(self, key, *, expected=None):
+        expected = self.records.get(key) if expected is None else expected
         def remove():
-            if key not in self.records or not self.records[key].personal:
-                raise ValueError('This local event no longer exists')
+            self.check_personal_revision(key, expected)
             self._write({ident: event for ident, event in self.records.items() if ident != key})
         self._locked_update(remove)
 
@@ -443,24 +483,58 @@ def _qdate(day):
     return QDate(day.year, day.month, day.day)
 
 
+class MonthGrid(QCalendarWidget):
+    """Keep Qt's keyboard and accessible calendar model with Mellipi day markers."""
+    ink = None
+
+    def paintCell(self, painter, rect, day):
+        if self.ink is None:
+            super().paintCell(painter, rect, day)
+            return
+        ink = self.ink
+        selected = day == self.selectedDate()
+        today = day == QDate.currentDate()
+        marked = day.toJulianDay() in self.event_days
+        in_month = day.month() == self.monthShown()
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(rect, QColor(ink['surface']))
+        diameter = max(16, min(rect.width() - 3, rect.height() - 3, ink['font_size'] + 16))
+        badge = QRectF(rect.center().x() - diameter / 2, rect.center().y() - diameter / 2, diameter, diameter)
+        if selected or today:
+            painter.setPen(Qt.PenStyle.NoPen if selected else QColor(ink['focus']))
+            painter.setBrush(QColor(ink['accent']) if selected else Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(badge)
+        color = ink['accent_text'] if selected else ink['accent_ink'] if today else ink['text'] if in_month else ink['muted']
+        painter.setPen(QColor(color))
+        font = painter.font()
+        font.setBold(selected or today)
+        painter.setFont(font)
+        day_rect = rect.adjusted(0, -2 if marked and rect.height() >= 24 else 0, 0, -2 if marked and rect.height() >= 24 else 0)
+        painter.drawText(day_rect, Qt.AlignmentFlag.AlignCenter, str(day.day()))
+        if marked:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(ink['accent_text'] if selected else ink['accent_ink']))
+            painter.drawEllipse(QRectF(rect.center().x() - 2, min(rect.bottom() - 4, badge.bottom() - 4), 4, 4))
+        painter.restore()
+
+
 class Calendar(AppWindow):
     extra_style = """
         QFrame#agendaPanel { background: %(raised)s; border-radius: %(radius)dpx; }
         QListWidget#dayEvents { padding: 4px; background: %(raised)s; }
         QLabel#agendaDate { color: %(accent_ink)s; font-weight: 700; }
+        QPushButton#calendarMonth {
+            font-weight: 700; text-align: left; background: transparent;
+        }
+        QPushButton#calendarMonth:hover { background: %(hover)s; }
         QLabel#calendarSection { color: %(text)s; font-weight: 700; }
         QPushButton#newEvent { background: %(selected_surface)s; color: %(accent_ink)s; font-weight: 600; }
         QPushButton#newEvent:hover { border-color: %(focus)s; }
         QListWidget#dayEvents::item { padding: 4px 8px; }
         QListWidget#dayEvents::item:hover { background: %(selected_surface)s; }
         QLabel#clockValue { color: %(accent_ink)s; font-weight: 600; }
-        QCalendarWidget QToolButton { color: %(text)s; }
-        QCalendarWidget QWidget#qt_calendar_navigationbar { background: %(surface)s; }
-        QCalendarWidget QToolButton:focus { border: 1px solid %(focus)s; }
-        QCalendarWidget QAbstractItemView::item:selected {
-            background: %(accent)s;
-            color: %(accent_text)s;
-        }
+        QCalendarWidget QTableView:focus { border-color: %(focus)s; }
     """
 
     def __init__(self):
@@ -468,24 +542,18 @@ class Calendar(AppWindow):
         self.resize(760, 485)
         self.setMinimumSize(450, 300)
         self.store = EventStore(Path(user_environment()['ORBIT_DATA'])/'calendar-events.json')
-        self.marked = []
-        self.month = QCalendarWidget()
+        self.month_cache = None
+        self.month = MonthGrid()
+        self.month.event_days = set()
+        self.month.setNavigationBarVisible(False)
+        self.month.setGridVisible(False)
         self.month.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.month.setAccessibleName('Choose a day')
         # Qt's hidden header otherwise imposes a 64px minimum per day in
         # comfortable 150% layouts, clipping Sunday despite a stretchy grid.
-        month_view = self.month.findChild(QTableView, 'qt_calendar_calendarview')
+        month_view = self.month_table = self.month.findChild(QTableView, 'qt_calendar_calendarview')
         if month_view is not None:
             month_view.horizontalHeader().setMinimumSectionSize(28)
-        for control_name, icon, description in (
-            ('qt_calendar_prevmonth', 'go-previous', 'Previous month'),
-            ('qt_calendar_nextmonth', 'go-next', 'Next month'),
-        ):
-            control = self.month.findChild(QToolButton, control_name)
-            if control is not None:
-                control.setAccessibleName(description)
-                control.setToolTip(description)
-                control.setProperty('mellipiSymbolicIcon', icon)
         self.month.setMinimumDate(_qdate(MIN_DAY))
         self.month.setMaximumDate(_qdate(MAX_DAY))
         self.month.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
@@ -496,7 +564,8 @@ class Calendar(AppWindow):
         self.event_list.setAccessibleName('Events on the selected day')
         self.agenda_date = QLabel()
         self.agenda_date.setObjectName('agendaDate')
-        self.agenda_date.setWordWrap(True)
+        self.agenda_day = QLabel(objectName='calendarSection')
+        self.agenda_day.setWordWrap(True)
         self.agenda_caption = QLabel(objectName='muted')
         self.agenda_caption.setWordWrap(True)
         self.status = QLabel(self.store.error or '')
@@ -521,8 +590,9 @@ class Calendar(AppWindow):
         add_button = self.event_button('New event', 'plus', self.edit_event)
         add_button.setText('New event')
         add_button.setObjectName('newEvent')
-        self.edit_button = self.event_button('Edit selected event', 'edit', lambda: self.edit_event(self.selected_personal()))
+        self.edit_button = self.event_button('Open selected event', 'document-open', self.open_selected)
         self.delete_button = self.event_button('Delete selected event', 'trash', self.delete_event)
+        self.remind_button = self.event_button('Remind me about this occurrence', 'notifications', self.remind_selected)
         self.event_list.itemSelectionChanged.connect(self.event_actions)
         self.event_list.itemActivated.connect(lambda _item: self.open_selected())
         self.clock_button = QPushButton('Clocks')
@@ -538,19 +608,26 @@ class Calendar(AppWindow):
             modes.addButton(button)
         self.calendar_button.setChecked(True)
         actions = QHBoxLayout()
-        self.action_buttons = (today, import_button, add_button, self.edit_button,
-                               self.delete_button, self.calendar_button, self.clock_button)
+        previous = self.event_button('Previous month', 'go-previous', self.month.showPreviousMonth)
+        following = self.event_button('Next month', 'go-next', self.month.showNextMonth)
+        self.month_label = QPushButton(objectName='calendarMonth')
+        self.month_label.setToolTip('Jump to a date')
+        self.month_label.clicked.connect(self.jump_to_date)
+        self.action_buttons = (today, previous, following, import_button, add_button, self.edit_button,
+                               self.delete_button, self.remind_button, self.calendar_button, self.clock_button)
         actions.addWidget(self.calendar_button)
         actions.addWidget(self.clock_button)
         actions.addStretch(1)
+        self.search_button = self.event_button('Find an event', 'edit-find', self.find_events)
         actions.addWidget(import_button)
         self.mode_row = actions
         self.content.addLayout(actions)
 
         month_panel = QVBoxLayout()
         month_row = QHBoxLayout()
-        month_title = QLabel('Month', objectName='calendarSection')
-        month_row.addWidget(month_title, 1)
+        month_row.addWidget(self.month_label, 1)
+        month_row.addWidget(previous)
+        month_row.addWidget(following)
         month_row.addWidget(today)
         month_panel.addLayout(month_row)
         month_panel.addWidget(self.month, 1)
@@ -558,11 +635,14 @@ class Calendar(AppWindow):
         agenda = QVBoxLayout(self.agenda_panel)
         self.agenda_layout = agenda
         self.space_controls(actions, month_row, agenda)
-        agenda.addWidget(QLabel('Day planner', objectName='calendarSection'))
-        agenda.addWidget(self.agenda_date)
+        date_heading = QHBoxLayout()
+        date_heading.addWidget(self.agenda_date)
+        date_heading.addWidget(self.agenda_day, 1)
+        agenda.addLayout(date_heading)
         agenda.addWidget(self.agenda_caption)
         date_row = QHBoxLayout()
         date_row.addWidget(add_button)
+        date_row.addWidget(self.search_button)
         date_row.addStretch(1)
         self.agenda_row = date_row
         self.add_button = add_button
@@ -574,6 +654,7 @@ class Calendar(AppWindow):
         event_row = QHBoxLayout(self.event_toolbar)
         event_row.setContentsMargins(0, 0, 0, 0)
         event_row.addStretch(1)
+        event_row.addWidget(self.remind_button)
         event_row.addWidget(self.edit_button)
         event_row.addWidget(self.delete_button)
         agenda.addWidget(self.event_toolbar)
@@ -596,6 +677,8 @@ class Calendar(AppWindow):
         self.import_button = import_button
         self.compact_actions = False
         QShortcut(QKeySequence.StandardKey.Open, self).activated.connect(self.choose_import)
+        QShortcut(QKeySequence.StandardKey.Find, self).activated.connect(
+            lambda: self.find_events() if self.pages.currentIndex() == 0 else None)
         QShortcut(QKeySequence.StandardKey.New, self).activated.connect(
             lambda: self.edit_event() if self.pages.currentIndex() == 0 else None)
         QShortcut(QKeySequence('Ctrl+Shift+T'), self).activated.connect(
@@ -622,6 +705,74 @@ class Calendar(AppWindow):
         scroll.setWidget(page)
         return scroll
 
+    def jump_to_date(self):
+        dialog = style_dialog(QDialog(self), self)
+        dialog.setWindowTitle('Jump to date')
+        layout = QFormLayout(dialog)
+        date_input = QDateEdit(self.month.selectedDate(), calendarPopup=True)
+        date_input.setDateRange(self.month.minimumDate(), self.month.maximumDate())
+        date_input.setAccessibleName('Date to jump to')
+        layout.addRow('Date', date_input)
+        controls = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
+        controls.accepted.connect(dialog.accept)
+        controls.rejected.connect(dialog.reject)
+        layout.addRow(controls)
+        if exec_owned_dialog(dialog) == QDialog.DialogCode.Accepted:
+            self.month.setSelectedDate(date_input.date())
+
+    def find_events(self):
+        dialog = style_dialog(QDialog(self), self)
+        dialog.setWindowTitle('Find an event')
+        dialog.resize(460, 340)
+        layout = QVBoxLayout(dialog)
+        query = QLineEdit(placeholderText='Search event names and locations')
+        query.setAccessibleName('Search event names and locations')
+        query.setMaxLength(240)
+        results = QListWidget()
+        results.setAccessibleName('Events found')
+        layout.addWidget(query)
+        layout.addWidget(results, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        visit = buttons.addButton('Show in calendar', QDialogButtonBox.ButtonRole.AcceptRole)
+        layout.addWidget(buttons)
+        now = date.today()
+        searchable = [(event, (event.title + ' ' + event.location).casefold())
+                      for event in self.store.events.values()]
+
+        def populate():
+            results.clear()
+            needle = query.text().strip().casefold()
+            if needle:
+                for event, searchable_text in searchable:
+                    if needle not in searchable_text:
+                        continue
+                    horizon = 366 * 8 if event.personal and event.rule == 'FREQ=YEARLY' else 366
+                    upcoming = next(occurrences(event, now, min(MAX_DAY, now + timedelta(days=horizon))), None)
+                    day = (upcoming or event).span()[0]
+                    item = QListWidgetItem(f'{event.title} · {QLocale().toString(_qdate(day))}')
+                    item.setData(Qt.ItemDataRole.UserRole, day.isoformat())
+                    results.addItem(item)
+                    if results.count() >= 150:
+                        break
+            results.setCurrentRow(0)
+            visit.setEnabled(results.count() > 0)
+
+        def select(*_):
+            item = results.currentItem()
+            if item is not None:
+                self.month.setSelectedDate(_qdate(date.fromisoformat(item.data(Qt.ItemDataRole.UserRole))))
+                dialog.accept()
+
+        query.textChanged.connect(populate)
+        query.returnPressed.connect(select)
+        results.itemActivated.connect(select)
+        visit.clicked.connect(select)
+        visit.setEnabled(False)
+        query.setFocus()
+        exec_owned_dialog(dialog)
+        dialog.deleteLater()
+
     def show_clocks(self, enabled=True):
         self.pages.setCurrentIndex(int(enabled))
         (self.clock_button if enabled else self.calendar_button).setChecked(True)
@@ -629,8 +780,16 @@ class Calendar(AppWindow):
         self.add_button.setVisible(not enabled)
 
     def closeEvent(self, event):
+        if self.clock_page.alarm_job is not None:
+            self.status.setText('Wait for the alarm change to finish before closing Calendar.')
+            self.status.show()
+            if self.pages.currentIndex() == 1:
+                self.clock_page.feedback.setText(self.status.text())
+            event.ignore()
+            return
         if self.clock_page.active_alerts() and not themed_prompt(
-            self, 'Close Calendar?', 'Closing Calendar cancels your timer and alarm.', 'Close Calendar', 'Keep open'
+            self, 'Close Calendar?', 'Closing cancels local-only timers and alarms. Saved timers and alarms stay scheduled.',
+            'Close Calendar', 'Keep open'
         ):
             event.ignore()
             return
@@ -660,20 +819,33 @@ class Calendar(AppWindow):
             self.add_button.setVisible(self.pages.currentIndex() == 0)
             self.import_button.setText('' if narrow else 'Import…')
         font_size = self.theme['font_size']
-        inset = max(10, font_size // 2 + 5)
+        short = narrow and self.height() < 480
+        inset = 6 if short else max(10, font_size // 2 + 5)
+        self.update_agenda_heading(self.month.selectedDate(),short)
         self.agenda_layout.setContentsMargins(inset, inset, inset, inset)
-        self.agenda_date.setStyleSheet(f'font-size: {round(font_size * (1.22 if narrow else 1.58))}px')
+        date_style = f'font-size: {round(font_size * (1.8 if narrow else 2.7))}px'
+        if self.agenda_date.styleSheet() != date_style:
+            self.agenda_date.setStyleSheet(date_style)
+        self.month_label.setMinimumHeight(max(34, font_size + 18))
+        label_style = f'font-size: {round(font_size * 1.2)}px'
+        if self.month_label.styleSheet() != label_style:
+            self.month_label.setStyleSheet(label_style)
         glyph = max(16, min(24, font_size + 2))
         self.clock_page.fit_display(font_size, self.height() < 380)
         for button in self.action_buttons:
             button.setIconSize(QSize(glyph, glyph))
             button.setMinimumSize(glyph + 18, glyph + 14)
-        self.month.setMinimumHeight(7 * (font_size + 4) + font_size + 18)
+        day_height = font_size + (5 if short else 12)
+        if self.month_table is not None:
+            day_height = max(day_height,self.month_table.fontMetrics().height()+2)
+            self.month_table.verticalHeader().setMinimumSectionSize(day_height)
+        self.month.setMinimumHeight(7 * day_height + 6)
         # Give the agenda usable space inside the scrollable page, rather than
         # forcing a window taller than small or scaled displays.
         self.event_list.setMinimumHeight(font_size * 3 + 18)
 
     def refresh_all(self):
+        self.month.ink = self.theme
         weekend = QTextCharFormat()
         weekend.setForeground(QBrush(QColor(self.theme['muted'])))
         for day in (Qt.DayOfWeek.Saturday, Qt.DayOfWeek.Sunday):
@@ -683,43 +855,44 @@ class Calendar(AppWindow):
         self.refresh_day()
 
     def refresh_month(self, year, month):
-        for day in self.marked:
-            self.month.setDateTextFormat(day, QTextCharFormat())
-        self.marked = []
-        ink = QTextCharFormat()
-        ink.setForeground(QBrush(QColor(self.theme['accent_ink'])))
-        ink.setFontWeight(QFont.Weight.Bold)
+        heading = QLocale().toString(QDate(year, month, 1), 'MMMM yyyy')
+        self.month_label.setText(heading)
+        self.month_label.setAccessibleName(heading + ' · Jump to a date')
+        days = self.events_by_day(year, month)
+        self.month.event_days = {_qdate(day).toJulianDay() for day in days}
+        self.month.updateCells()
+
+    def events_by_day(self, year, month):
+        cached = self.month_cache
+        if cached and cached[0] is self.store.records and cached[1:3] == (year, month):
+            return cached[3]
         first, last = date(year, month, 1), date(year, month, monthrange(year, month)[1])
-        days = set()
+        days = {}
         for event in self.store.events.values():
-            if len(days) == last.day:
-                break
             for instance in occurrences(event, first, last):
                 start, end = instance.span()
                 current, stop = max(start, first), min(end, last)
                 while current <= stop:
-                    days.add(current)
+                    days.setdefault(current, []).append(instance)
                     current += timedelta(days=1)
-        now = QDate.currentDate()
-        if now.year() == year and now.month() == month:
-            days.add(date(year, month, now.day()))
-        for day in days:
-            qt_day = _qdate(day)
-            style = QTextCharFormat(ink)
-            if qt_day == now:
-                # The underline distinguishes Today from imported event days.
-                style.setFontUnderline(True)
-            self.month.setDateTextFormat(qt_day, style)
-            self.marked.append(qt_day)
+        self.month_cache = self.store.records, year, month, days
+        return days
+
+    def update_agenda_heading(self, selected, compact):
+        self.compact_agenda_heading = compact
+        self.agenda_date.setVisible(not compact)
+        self.agenda_date.setText(str(selected.day()))
+        pattern = 'ddd, MMM d' if compact else 'dddd\nMMMM yyyy'
+        self.agenda_day.setText(QLocale().toString(selected, pattern))
 
     def refresh_day(self):
         selected = self.month.selectedDate()
         if not hasattr(self, 'agenda_date'):
             return
-        self.agenda_date.setText(selected.toString('dddd, MMMM d'))
+        self.update_agenda_heading(selected, getattr(self,'compact_agenda_heading',False))
         day = date(selected.year(), selected.month(), selected.day())
-        rows = [instance for event in self.store.events.values() for instance in occurrences(event, day, day)]
-        rows.sort(key=lambda event: (not event.all_day, event.local()[0], event.title.casefold()))
+        rows = sorted(self.events_by_day(day.year, day.month).get(day, ()),
+                      key=lambda event: (not event.all_day, event.local()[0], event.title.casefold()))
         self.event_list.clear()
         def clock(value):
             if self.theme_watch.preferences.values['clock24']:
@@ -740,13 +913,15 @@ class Calendar(AppWindow):
             item.setData(Qt.ItemDataRole.AccessibleTextRole, f'{event.title}, {detail}')
             if event.personal:
                 item.setData(Qt.ItemDataRole.UserRole, event.key)
+            item.setData(Qt.ItemDataRole.UserRole + 1, (event.title, detail))
+            item.setData(Qt.ItemDataRole.UserRole + 2, event.reminder_stamp())
             item.setToolTip(f'<b>{escape(event.title)}</b><br>{escape(detail)}')
             self.event_list.addItem(item)
         self.agenda_caption.setText(('1 event' if len(rows) == 1 else f'{len(rows)} events') if rows
                                     else 'Your schedule is clear.')
         self.empty_space.setVisible(not rows)
         self.event_list.setVisible(bool(rows))
-        self.event_toolbar.setVisible(any(event.personal for event in rows))
+        self.event_toolbar.setVisible(bool(rows))
         self.event_actions()
 
     def selected_personal(self):
@@ -758,13 +933,38 @@ class Calendar(AppWindow):
 
     def event_actions(self):
         editable = self.selected_personal() is not None
-        self.edit_button.setEnabled(editable)
+        selected = self.event_list.currentItem()
+        self.edit_button.setEnabled(selected is not None and selected.isSelected())
         self.delete_button.setEnabled(editable)
+        item = self.event_list.currentItem()
+        stamp = item.data(Qt.ItemDataRole.UserRole + 2) if item is not None and item.isSelected() else None
+        self.remind_button.setEnabled(stamp is not None and stamp > wall_clock.time())
+
+    def remind_selected(self):
+        item = self.event_list.currentItem()
+        if item is None or not item.isSelected():
+            return
+        stamp = item.data(Qt.ItemDataRole.UserRole + 2)
+        if stamp is None or stamp <= wall_clock.time():
+            return
+        title, _detail = item.data(Qt.ItemDataRole.UserRole + 1)
+        when = QLocale().toString(QDateTime.fromSecsSinceEpoch(stamp))
+        if not themed_prompt(self, 'Schedule event reminder?', f'{title}\n{when}', 'Set reminder', 'Cancel'):
+            return
+
+        def finished(message):
+            self.status.setText(message)
+            self.status.show()
+
+        self.clock_page.remind_for_event(stamp, title, finished)
 
     def open_selected(self):
         event = self.selected_personal()
         if event:
             self.edit_event(event)
+        elif (item := self.event_list.currentItem()) is not None and item.isSelected():
+            title, detail = item.data(Qt.ItemDataRole.UserRole + 1)
+            themed_prompt(self, 'Imported event', f'{title}\n{detail}\n\nImported events are read-only.', 'Close')
 
     def edit_event(self, event=None):
         dialog = style_dialog(QDialog(self), self)
@@ -776,6 +976,13 @@ class Calendar(AppWindow):
         day = QDateEdit(self.month.selectedDate(), calendarPopup=True)
         day.setDateRange(_qdate(MIN_DAY), _qdate(MAX_DAY))
         all_day = QCheckBox('All day', checked=True)
+        repeat = QComboBox()
+        repeat.addItem('Does not repeat', '')
+        repeat.addItem('Daily', 'FREQ=DAILY')
+        repeat.addItem('Weekly', 'FREQ=WEEKLY')
+        repeat.addItem('Monthly', 'FREQ=MONTHLY')
+        repeat.addItem('Yearly', 'FREQ=YEARLY')
+        repeat.setToolTip('Monthly and yearly repeats skip dates that do not exist.')
         start, end = QTimeEdit(QTime(9, 0)), QTimeEdit(QTime(10, 0))
         time_format = 'HH:mm' if self.theme_watch.preferences.values['clock24'] else 'h:mm AP'
         start.setDisplayFormat(time_format)
@@ -785,12 +992,14 @@ class Calendar(AppWindow):
         layout.addRow(all_day)
         layout.addRow('&Starts', start)
         layout.addRow('&Ends', end)
+        layout.addRow('&Repeat', repeat)
         if event:
             begins, ends = event.local()
             title.setText(event.title)
             location.setText(event.location)
             day.setDate(_qdate(begins if event.all_day else begins.date()))
             all_day.setChecked(event.all_day)
+            repeat.setCurrentIndex(max(0, repeat.findData(event.rule)))
             if not event.all_day:
                 start.setTime(QTime(begins.hour, begins.minute))
                 end.setTime(QTime(ends.hour, ends.minute))
@@ -805,30 +1014,41 @@ class Calendar(AppWindow):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         layout.addRow(buttons)
         buttons.rejected.connect(dialog.reject)
-        def save():
+        copy_button = buttons.addButton('Save as new event', QDialogButtonBox.ButtonRole.ActionRole)
+        copy_button.hide()
+        def save(as_copy=False):
             try:
                 self.store.save_personal(title.text(), location.text(), day.date().toPyDate(),
                                          start.time().toPyTime() if not all_day.isChecked() else None,
                                          end.time().toPyTime() if not all_day.isChecked() else None,
-                                         key=event.key if event else None)
+                                         key=event.key if event and not as_copy else None,
+                                         expected=event if not as_copy else None, repeat=repeat.currentData())
+            except EventConflict as error:
+                error_label.setText(str(error) + ' Save as a new event to keep this draft, or Cancel to return to the updated calendar.')
+                copy_button.show()
+                return
             except (ValueError, OSError) as error:
                 error_label.setText(str(error))
                 return
             dialog.accept()
             self.status.hide()
             self.month.setSelectedDate(day.date())
-            self.refresh_all()
         buttons.accepted.connect(save)
+        copy_button.clicked.connect(lambda: save(True))
         title.setFocus()
         exec_owned_dialog(dialog)
         dialog.deleteLater()
+        self.refresh_all()
 
     def delete_event(self):
         event = self.selected_personal()
-        if not event or not themed_prompt(self, 'Delete event?', 'Remove this event from your calendar?', 'Delete event', 'Cancel'):
+        if not event:
+            return
+        message = 'Remove all occurrences of this repeating event?' if event.rule else 'Remove this event from your calendar?'
+        if not themed_prompt(self, 'Delete event?', message, 'Delete event', 'Cancel'):
             return
         try:
-            self.store.remove_personal(event.key)
+            self.store.remove_personal(event.key, expected=event)
             self.status.hide()
         except (OSError, ValueError) as error:
             self.status.setText(str(error))

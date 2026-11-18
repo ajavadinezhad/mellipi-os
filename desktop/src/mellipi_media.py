@@ -1,7 +1,10 @@
 """Mellipi Media: local audio and video with native MPRIS integration."""
 import os
 from pathlib import Path
+import re
+import stat
 import sys
+import tempfile
 
 os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
@@ -10,7 +13,7 @@ os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 import dbus
 import dbus.service
 from dbus.mainloop.glib import DBusGMainLoop
-from PyQt6.QtCore import Qt, QUrl, QSize
+from PyQt6.QtCore import QPersistentModelIndex, Qt, QUrl, QSize
 from PyQt6.QtGui import QActionGroup, QShortcut, QIcon, QKeySequence
 from PyQt6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -20,17 +23,73 @@ from PyQt6.QtWidgets import (QSizePolicy, QApplication, QBoxLayout, QHBoxLayout,
 
 import icon_theme
 from app_palette import adjust_contrast
+from desktop_icons import rename_no_replace
 from file_chooser import FileChooser
-from qt_app import AppWindow, ElidingLabel, symbolic_icon
+from qt_app import action_ink, AppWindow, ElidingLabel, symbolic_icon, themed_prompt
 
 MPRIS = 'org.mpris.MediaPlayer2'
 PLAYER = MPRIS + '.Player'
 PROPS = 'org.freedesktop.DBus.Properties'
 TRACK = dbus.ObjectPath('/org/mpris/MediaPlayer2/Track/current')
 MAX_QUEUE_ITEMS = 500
+MAX_PLAYLIST_BYTES = 512 * 1024
 NO_TRACK = dbus.ObjectPath('/org/mpris/MediaPlayer2/TrackList/NoTrack')
 EXTS = '*.mp3 *.wav *.flac *.ogg *.opus *.aac *.m4a *.mp4 *.mkv *.webm *.mov *.avi *.mpeg *.mpg'
 REPEAT_MODES = {'None': 'Repeat off', 'Track': 'Repeat track', 'Playlist': 'Repeat queue'}
+
+
+def read_playlist(path):
+    path = Path(path).absolute()
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError('Choose a regular local playlist file.')
+        content = stream.read(MAX_PLAYLIST_BYTES + 1)
+    if len(content) > MAX_PLAYLIST_BYTES:
+        raise ValueError('The playlist exceeds 512 KiB.')
+    tracks, missing, entries = [], 0, 0
+    # Playlist records use LF or CRLF (also accept legacy bare CR). Python's
+    # splitlines also splits valid POSIX filenames on Unicode separators.
+    for value in re.split(r'\r\n?|\n', content.decode('utf-8-sig')):
+        if not value or value.startswith('#'):
+            continue
+        entries += 1
+        if entries > MAX_QUEUE_ITEMS:
+            raise ValueError(f'Choose a playlist with at most {MAX_QUEUE_ITEMS} tracks.')
+        if '\0' in value or value.startswith('//') or re.match(r'^[A-Za-z][A-Za-z0-9+.-]*:', value):
+            missing += 1
+            continue
+        try:
+            candidate = (path.parent / value).absolute()
+            if candidate.is_file():
+                tracks.append(candidate)
+            else:
+                missing += 1
+        except (OSError, ValueError):
+            missing += 1
+    return tracks, missing
+
+
+def write_playlist(path, tracks):
+    path = Path(path).absolute()
+    if not 1 <= len(tracks) <= MAX_QUEUE_ITEMS:
+        raise ValueError('The playlist has no tracks or exceeds the queue limit.')
+    lines = ['#EXTM3U']
+    for track in tracks:
+        relative = os.path.relpath(track, path.parent)
+        if any(ch in relative for ch in '\0\r\n'):
+            raise ValueError('A filename cannot be stored in a portable playlist.')
+        lines.append('./' + relative if relative.startswith('#') or ':' in relative.split(os.sep)[0] else relative)
+    content = ('\n'.join(lines) + '\n').encode('utf-8')
+    if len(content) > MAX_PLAYLIST_BYTES:
+        raise ValueError('The playlist exceeds 512 KiB.')
+    with tempfile.TemporaryDirectory(prefix='.mellipi-playlist-', dir=path.parent) as temporary:
+        draft = Path(temporary) / 'playlist.m3u8'
+        with draft.open('wb') as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        rename_no_replace(draft, path)
 
 
 class PlayerBus(dbus.service.Object):
@@ -162,6 +221,68 @@ def elapsed(ms):
     return f'{hours}:{minutes:02}:{seconds:02}' if hours else f'{minutes}:{seconds:02}'
 
 
+class QueueList(QListWidget):
+    def __init__(self, owner):
+        super().__init__(owner)
+        self.owner = owner
+        self.setDragDropMode(QListWidget.DragDropMode.DragDrop)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setDropIndicatorShown(True)
+
+    def keyPressEvent(self,event):
+        if event.modifiers()==Qt.KeyboardModifier.AltModifier and event.key() in (Qt.Key.Key_Up,Qt.Key.Key_Down):
+            row=self.currentRow()
+            self.owner.reorder_queue(row,row+(-1 if event.key()==Qt.Key.Key_Up else 1))
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def startDrag(self, actions):
+        self.drag_origin = QPersistentModelIndex(self.currentIndex())
+        try:
+            super().startDrag(actions)
+        finally:
+            self.drag_origin = QPersistentModelIndex()
+
+    @staticmethod
+    def local_copy(event):
+        return bool(event.possibleActions() & Qt.DropAction.CopyAction) and any(
+            url.isLocalFile() and not url.host() for url in event.mimeData().urls())
+
+    def dragEnterEvent(self,event):
+        if event.source() is not self and self.local_copy(event):
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self,event):
+        if event.source() is not self and self.local_copy(event):
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self,event):
+        if event.source() is self:
+            origin=getattr(self,'drag_origin',None)
+            if origin is None or not origin.isValid():
+                event.ignore()
+                return
+            start=origin.row()
+            point=event.position().toPoint()
+            item=self.itemAt(point)
+            insertion=self.count() if item is None else self.row(item)+(point.y()>=self.visualItemRect(item).center().y())
+            self.owner.reorder_queue(start,insertion-(insertion>start))
+            event.ignore()  # The owner already moved the row.
+        elif self.local_copy(event):
+            self.owner.append_queue([url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile() and not url.host()])
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+
 class Media(AppWindow):
     extra_style = """
         QLabel#mediaQueueHeading { color: %(text)s; font-weight: 600; }
@@ -226,6 +347,17 @@ class Media(AppWindow):
         self.stage_open.setObjectName('emptyStageAction')
         self.stage_open.clicked.connect(self.choose)
         status.addWidget(self.stage_open, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.recovery = QWidget()
+        recovery = QHBoxLayout(self.recovery)
+        recovery.setContentsMargins(0, 0, 0, 0)
+        self.retry_button = QPushButton('Retry')
+        self.skip_button = QPushButton('Skip')
+        self.retry_button.clicked.connect(lambda: self.load(self.index))
+        self.skip_button.clicked.connect(lambda: self.advance(1))
+        recovery.addWidget(self.retry_button)
+        recovery.addWidget(self.skip_button)
+        status.addWidget(self.recovery, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.recovery.hide()
         status.addStretch()
         stage.addWidget(self.summary)
         self.video = QVideoWidget()
@@ -241,18 +373,31 @@ class Media(AppWindow):
         self.queue_title.setObjectName('mediaQueueHeading')
         queue_actions.addWidget(self.queue_title, 1)
         self.queue_add = self.tool('tab-new', 'Add files to queue', self.choose_append)
-        self.queue_play = self.tool('media-playback-start', 'Play selected track', self.play_selected)
         self.queue_remove = self.tool('edit-delete', 'Remove selected track', self.remove_selected)
-        for button in (self.queue_add, self.queue_play, self.queue_remove):
+        self.queue_menu = self.tool('open-menu', 'Playlist actions', lambda: None)
+        playlists = QMenu(self.queue_menu)
+        playlists.addAction('Open playlist…', self.open_playlist)
+        self.save_playlist_action = playlists.addAction('Save queue as playlist…', self.save_playlist)
+        self.queue_menu.setMenu(playlists)
+        self.queue_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        for button in (self.queue_add, self.queue_remove, self.queue_menu):
             queue_actions.addWidget(button)
         queue_layout.addLayout(queue_actions)
-        self.queue_view = QListWidget()
+        self.queue_view = QueueList(self)
         self.queue_view.setAccessibleName('Playback queue')
+        empty_layout = QVBoxLayout(self.queue_view.viewport())
+        self.queue_empty = QLabel('Drop audio or video here')
+        self.queue_empty.setObjectName('muted')
+        self.queue_empty.setWordWrap(True)
+        self.queue_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.queue_empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        empty_layout.addWidget(self.queue_empty)
+        self.queue_view.setAccessibleDescription('Drag tracks or use Alt+Up and Alt+Down to reorder.')
         self.queue_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.queue_view.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.queue_view.setUniformItemSizes(True)
         self.queue_view.currentRowChanged.connect(self.update_queue_actions)
-        self.queue_view.itemActivated.connect(lambda item: self.load(self.queue_view.row(item)))
+        self.queue_view.itemActivated.connect(lambda _item: self.play_selected())
         queue_layout.addWidget(self.queue_view, 1)
         self.stage_layout.addWidget(self.queue_panel, 2)
         self.queue_panel.hide()
@@ -313,7 +458,14 @@ class Media(AppWindow):
         self.volume.setValue(round(self.audio_output.volume() * 100))
         self.volume.valueChanged.connect(lambda value: self.audio_output.setVolume(value / 100))
         playback_options.addWidget(self.volume)
+        self.track_menu = QMenu(self)
+        self.tracks_button = self.tool('audio-card', 'Audio and subtitles', lambda: None)
+        self.tracks_button.setMenu(self.track_menu)
+        self.tracks_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.track_menu.aboutToShow.connect(self.populate_tracks)
+        playback_options.addWidget(self.tracks_button)
         controls.addLayout(playback_options)
+        self.player.tracksChanged.connect(self.update_controls)
         self.audio_output.volumeChanged.connect(lambda value: self.volume.setValue(round(value * 100)))
         self.audio_output.volumeChanged.connect(self.publish)
         self.audio_output.mutedChanged.connect(self.update_controls)
@@ -377,11 +529,8 @@ class Media(AppWindow):
 
     def refresh_stage_icon(self):
         surface = self.theme['selected_surface']
-        base = self.theme['text']
         endpoint = '#000000' if self.theme_watch.preferences.values['mode'] == 'light' else '#ffffff'
-        ink = adjust_contrast('#648ddc', [surface], 4.5, endpoint)
-        if self.theme_watch.preferences.appearance()['highContrast']:
-            ink = base
+        ink = adjust_contrast(self.theme['accent_ink'], [surface], 4.5, endpoint)
         size = round(self.stage_icon.width() * .56)
         art = symbolic_icon('audio-x-generic', ink)
         if art.isNull():
@@ -397,7 +546,7 @@ class Media(AppWindow):
 
     def configure_tool(self, button, name, label):
         button.setProperty('mellipiSymbolicIcon', name)
-        icon = symbolic_icon(name, self.theme['accent_ink'])
+        icon = symbolic_icon(name, action_ink(self.theme, name))
         button.setIcon(icon)
         button.setText(label)
         button.setAccessibleName(label)
@@ -405,14 +554,49 @@ class Media(AppWindow):
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly if icon.isNull() else Qt.ToolButtonStyle.ToolButtonIconOnly)
 
     def choose(self):
-        files = FileChooser.getOpenFileNames(self, 'Open media', '', f'Media files ({EXTS});;All files (*)')[0]
+        files = FileChooser.getOpenFileNames(self, 'Open media', '', f'Media files ({EXTS} *.m3u8 *.m3u);;All files (*)')[0]
         if files:
-            self.set_queue(files)
+            if len(files) == 1 and Path(files[0]).suffix.lower() in ('.m3u8', '.m3u'):
+                self.load_playlist(files[0])
+            else:
+                self.set_queue(files)
 
     def choose_append(self):
         files = FileChooser.getOpenFileNames(self, 'Add to queue', '', f'Media files ({EXTS});;All files (*)')[0]
         if files:
             self.append_queue(files)
+
+    def open_playlist(self):
+        path, _ = FileChooser.getOpenFileName(self, 'Open playlist', '', 'Playlists (*.m3u8 *.m3u)')
+        if path:
+            self.load_playlist(path)
+
+    def load_playlist(self, path):
+        try:
+            tracks, rejected = read_playlist(path)
+            if not tracks:
+                raise ValueError('No readable local tracks were found. The current queue was kept.')
+        except (OSError, ValueError) as error:
+            themed_prompt(self, 'Could not open playlist', str(error), 'OK')
+            return
+        self.set_queue(list(map(str, tracks)))
+        if rejected:
+            themed_prompt(self, 'Playlist loaded', f'{rejected} unavailable or nonlocal entries were skipped.', 'OK')
+
+    def save_playlist(self):
+        if not self.queue:
+            return
+        path, _ = FileChooser.getSaveFileName(self, 'Save playlist', str(Path.home() / 'Playlist.m3u8'),
+                                             'Playlists (*.m3u8)', options=FileChooser.Option.DontConfirmOverwrite)
+        if not path:
+            return
+        path = Path(path)
+        if path.suffix.lower() != '.m3u8':
+            path = path.with_name(path.name + '.m3u8')
+        try:
+            write_playlist(path, self.queue)
+        except (OSError, ValueError) as error:
+            themed_prompt(self, 'Could not save playlist', str(error), 'OK')
 
     @staticmethod
     def local_tracks(files, limit):
@@ -468,6 +652,20 @@ class Media(AppWindow):
         else:
             self.stage.setFocus()
 
+    def reorder_queue(self,start,end):
+        if start==end or not (0<=start<len(self.queue) and 0<=end<len(self.queue)):
+            return
+        self.queue.insert(end,self.queue.pop(start))
+        if self.index==start:
+            self.index=end
+        elif start<self.index<=end:
+            self.index-=1
+        elif end<=self.index<start:
+            self.index+=1
+        self.sync_loops()
+        self.refresh_queue(end)
+        self.update_controls()
+
     def refresh_queue(self, selected):
         self.queue_view.clear()
         for index, path in enumerate(self.queue):
@@ -477,6 +675,7 @@ class Media(AppWindow):
             self.queue_view.addItem(item)
         if self.queue:
             self.queue_view.setCurrentRow(max(0, min(selected, len(self.queue) - 1)))
+        self.queue_empty.setVisible(not self.queue)
         self.queue_title.setText(f'Queue · {len(self.queue)}')
         self.queue_title.setToolTip(f'{len(self.queue)} of {MAX_QUEUE_ITEMS} track slots used')
         self.update_queue_actions()
@@ -484,8 +683,8 @@ class Media(AppWindow):
     def update_queue_actions(self, *_):
         row = self.queue_view.currentRow()
         valid = 0 <= row < len(self.queue)
-        self.queue_play.setEnabled(valid)
         self.queue_remove.setEnabled(valid and row != self.index)
+        self.save_playlist_action.setEnabled(bool(self.queue))
 
     def play_selected(self):
         row = self.queue_view.currentRow()
@@ -505,6 +704,35 @@ class Media(AppWindow):
         self.refresh_queue(row)
         self.update_controls()
 
+    def populate_tracks(self):
+        self.track_menu.clear()
+        for caption, tracks, active, choose, allow_off in (
+            ('Audio', self.player.audioTracks(), self.player.activeAudioTrack(),
+             self.player.setActiveAudioTrack, False),
+            ('Subtitles', self.player.subtitleTracks(), self.player.activeSubtitleTrack(),
+             self.player.setActiveSubtitleTrack, True),
+        ):
+            if not tracks:
+                continue
+            group_menu = self.track_menu.addMenu(caption)
+            group = QActionGroup(group_menu)
+            if allow_off:
+                off = group_menu.addAction('Off')
+                off.setCheckable(True)
+                off.setChecked(active < 0)
+                off.triggered.connect(lambda _checked, fn=choose: fn(-1))
+                group.addAction(off)
+            for index, track in enumerate(tracks):
+                title = track.stringValue(QMediaMetaData.Key.Title)
+                language = track.stringValue(QMediaMetaData.Key.Language)
+                details = ' · '.join(filter(None, (title, language)))
+                label = f'Track {index + 1}' + (f' · {details}' if details else '')
+                action = group_menu.addAction(label)
+                action.setCheckable(True)
+                action.setChecked(active == index)
+                action.triggered.connect(lambda _checked, item=index, fn=choose: fn(item))
+                group.addAction(action)
+
     def load(self, index):
         if not 0 <= index < len(self.queue):
             return
@@ -513,6 +741,8 @@ class Media(AppWindow):
         self.path = self.queue[index]
         self.path_url = QUrl.fromLocalFile(str(self.path))
         self.sync_loops()
+        if self.player.source() == self.path_url and self.player.error() != QMediaPlayer.Error.NoError:
+            self.player.setSource(QUrl())
         self.player.setSource(self.path_url)
         self.player.play()
         self.refresh_queue(index)
@@ -599,6 +829,8 @@ class Media(AppWindow):
             self.open_button.hide()
             self.playback_panel.hide()
             self.stage_open.show()
+            self.recovery.setVisible(bool(self.path))
+            self.skip_button.setVisible(self.can_next())
 
     def publish(self, *_):
         if self.bus:
@@ -621,6 +853,9 @@ class Media(AppWindow):
         self.timeline.setEnabled(self.player.isSeekable())
         self.repeat_button.setEnabled(bool(self.path))
         playable = self.player.error() == QMediaPlayer.Error.NoError
+        self.tracks_button.setVisible(bool(self.player.audioTracks() or self.player.subtitleTracks()))
+        self.recovery.setVisible(bool(self.path) and not playable)
+        self.skip_button.setVisible(self.can_next())
         self.open_button.setVisible(bool(self.path) and playable)
         self.playback_panel.setVisible(bool(self.path) and playable)
         self.stage.setCurrentWidget(self.video if playable and self.player.hasVideo() else self.summary)

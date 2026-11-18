@@ -11,6 +11,7 @@ Apply these principles in Mellipi:
 - Give the most common next action a stable location and a clear label. Icon-only actions need an accessible name and a tooltip. Keep rare, destructive commands in contextual menus with explicit confirmation.
 - At narrow widths or 150% text, let a group stack or collapse into a named control. Keep primary actions reachable without scrolling past an unrelated pane. Preserve keyboard focus and shortcuts when controls move.
 - Check the shell along with apps: launcher search and result actions, Quick Settings controls, Settings navigation, taskbar and tray at each supported edge, desktop menus, and the shared chooser.
+- Give each setting one place to edit it. Search and related pages can link to that control. Put frequently used actions in Quick Settings; keep reordering and other setup in Settings. Hide advanced options until requested, and omit controls that have no target on the current device.
 
 Calendar is the example for a responsive primary action: **New event** sits with the selected day in a wide window and moves to the toolbar in a narrow one. Disks is the example for scope and safety: the heading names the selected device beside **Open**, **Mount**, and **Details**; **More** exposes maintenance commands only for eligible targets.
 

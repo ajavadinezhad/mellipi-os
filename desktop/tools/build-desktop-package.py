@@ -208,7 +208,7 @@ def stage_package(stage,version,architecture,root=ROOT):
 
 def stage_transition(stage,version,kind):
     old='abstract-'+kind;new='mellipi-'+kind
-    write(Path(stage)/'DEBIAN/control',f'Package: {old}\nVersion: {version}\nSection: oldlibs\nPriority: optional\nArchitecture: all\nMaintainer: Mellipi OS project\nDepends: {new} (>= {version})\nDescription: Transitional package for {new}\n Abstract is now Mellipi. This package keeps existing installations on the\n signed update path without changing user settings or restarting sessions.\n')
+    write(Path(stage)/'DEBIAN/control',f'Package: {old}\nVersion: {version}\nSection: oldlibs\nPriority: optional\nArchitecture: all\nMaintainer: Mellipi OS project\nDepends: {new} (>= {version})\nDescription: Transitional package for {new}\n Preserves signed upgrades for existing Mellipi installations.\n Does not change user settings or restart sessions.\n')
     write(Path(stage)/'usr/share/doc'/old/'README',f'Mellipi replaces {old}. The current desktop package is {new}.\n')
 
 def stage_browser(stage,version):

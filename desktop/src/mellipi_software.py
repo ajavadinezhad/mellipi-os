@@ -10,16 +10,16 @@ os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 from PyQt6.QtCore import QSize, QSignalBlocker, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QShortcut, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
-    QApplication, QBoxLayout, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QProgressBar, QPushButton, QSizePolicy, QTreeWidget,
+    QAbstractItemView, QApplication, QBoxLayout, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from qt_app import AppWindow, themed_prompt
+from qt_app import AppWindow, exec_owned_dialog, style_dialog, themed_prompt
 from files_icons import icon
 from software_sources import (APPSTREAM_CLI, APT_GET, BROWSE_CATEGORIES, PKEXEC, SOURCES, AuthorizationDeclined,
-                              available_updates, browse_system_apps, can_manage, executable, friendly_error, install,
-                              installed_software, manage, rank, refresh_apt, search)
+                              apt_preview, available_updates, browse_system_apps, can_manage, executable, friendly_error, install,
+                              installed_software, manage, manage_updates, rank, refresh_apt, search)
 
 
 class Job(QThread):
@@ -57,13 +57,13 @@ class SoftwareWindow(AppWindow):
         QPushButton#installedFilter:focus { border-color: %(focus)s; }
         QTreeWidget::item { padding: 5px 4px; }
     """
-    def __init__(self):
+    def __init__(self, *, show_updates=False):
         super().__init__('Mellipi Software')
         self.setWindowIcon(QIcon.fromTheme('mellipi-software', QIcon.fromTheme('system-software-install')))
         self.resize(790, 560)
         self.setMinimumSize(480, 420)
         self.job = None
-        self.installing = False
+        self.retired_search = None
         self.refreshing = False
         self.checking_updates = False
         self.updates_only = False
@@ -145,17 +145,27 @@ class SoftwareWindow(AppWindow):
         self.list.setUniformRowHeights(True)
         self.list.setIconSize(QSize(16, 16))
         self.themeChanged.connect(self.refresh_source_glyphs)
-        self.list.setAlternatingRowColors(True)
+        self.list.setAlternatingRowColors(False)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.header().setStretchLastSection(False)
         self.list.currentItemChanged.connect(self.show_selection)
+        self.list.itemSelectionChanged.connect(self.show_selection)
         layout.addWidget(self.list, 1)
 
         self.detail = QFrame()
         self.detail.setObjectName('detail')
         panel = self.detail_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, self.detail)
         panel.setContentsMargins(14, 12, 14, 12)
-        description = QVBoxLayout()
+        details_text = QWidget()
+        description = QVBoxLayout(details_text)
+        description.setContentsMargins(0,0,8,0)
+        self.details_text = QScrollArea()
+        self.details_text.setObjectName('packageDetailsText')
+        self.details_text.setAccessibleName('Selected package details')
+        self.details_text.setFrameShape(QFrame.Shape.NoFrame)
+        self.details_text.setWidgetResizable(True)
+        self.details_text.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.details_text.setWidget(details_text)
         self.name = label(wrap=True)
         self.name.setObjectName('selectionTitle')
         self.info = label(wrap=True)
@@ -164,7 +174,7 @@ class SoftwareWindow(AppWindow):
         for row in (self.name, self.info, self.description):
             row.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             description.addWidget(row)
-        panel.addLayout(description, 1)
+        panel.addWidget(self.details_text, 1)
         self.install_button = QPushButton('Install')
         self.install_button.setObjectName('install')
         self.install_button.setProperty('mellipiSymbolicIcon', 'system-software-install')
@@ -237,7 +247,7 @@ class SoftwareWindow(AppWindow):
         self.fit_layout()
         self.query.setFocus()
         self.show_selection()
-        QTimer.singleShot(0, self.start_search)
+        QTimer.singleShot(0, self.start_check_updates if show_updates else self.start_search)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -276,8 +286,10 @@ class SoftwareWindow(AppWindow):
         self.source.setVisible(not self.updates_only)
         self.installed_button.setVisible(not self.updates_only)
         self.category.setVisible(self.category_available and not self.updates_only)
-        direction = QBoxLayout.Direction.LeftToRight if wide else QBoxLayout.Direction.TopToBottom
-        self.detail_layout.setDirection(QBoxLayout.Direction.LeftToRight if self.updates_only else direction)
+        roomy = wide and self.height() >= 530
+        line = self.fontMetrics().height()
+        self.details_text.setFixedHeight(line * (5 if roomy else 2) + 8)
+        self.list.setMinimumHeight(self.list.header().sizeHint().height() + 2 * (line + 6))
         glyph = max(16, min(24, self.theme['font_size'] + 2))
         control_height = max(glyph + 14, self.query.sizeHint().height(),
                              self.source.sizeHint().height(), self.installed_button.sizeHint().height(),
@@ -321,12 +333,20 @@ class SoftwareWindow(AppWindow):
                 self.list.setColumnWidth(column, size)
 
     def selected(self):
-        item = self.list.currentItem()
+        items = self.list.selectedItems() if self.updates_only else []
+        item = items[0] if items else self.list.currentItem()
         return item.data(0, Qt.ItemDataRole.UserRole) if item else None
+
+    @staticmethod
+    def package_identity(package):
+        if package is None:
+            return None
+        return (package.source, package.identifier, package.scope, package.remote, package.branch)
 
     def show_selection(self, *_):
         package = self.selected()
         self.detail.setVisible(package is not None)
+        self.details_text.verticalScrollBar().setValue(0)
         if not package:
             return
         self.name.setText(package.name)
@@ -345,12 +365,15 @@ class SoftwareWindow(AppWindow):
             description = f'{description}\nClassic confinement is required for this package.'.lstrip()
         self.description.setText(description)
         self.description.setVisible(bool(description) and not self.updates_only)
+        self.detail.setToolTip('\n'.join(part for part in (package.name, self.info.text(), description) if part))
         self.install_button.setVisible(not package.installed and not (self.installed_only or self.updates_only))
         for action, button in (('update', self.update_button), ('remove', self.remove_button)):
             allowed = self.installed_only or (self.updates_only and action == 'update')
             button.setVisible(package.installed and allowed and
                               (not self.updates_only or can_manage(package, action)))
             button.setEnabled(not self.job and can_manage(package, action))
+        count = len(self.list.selectedItems()) if self.updates_only else 0
+        self.update_button.setText(f'Update {count} selected' if count > 1 else 'Update')
         self.remove_button.setToolTip('Remove the selected app' if can_manage(package, 'remove')
                                       else 'This app is protected or cannot be removed from Software')
         self.install_button.setEnabled(not package.installed and not package.classic and not self.job)
@@ -403,9 +426,17 @@ class SoftwareWindow(AppWindow):
 
     def start_search(self, *_):
         if self.job:
-            if self.searching:self.pending_search = True
-            return
+            if not self.searching:
+                return
+            if self.retired_search is not None:
+                self.pending_search = True
+                return
+            self.retired_search, self.job = self.job, None
+        self.pending_search = False
         self.updates_only = False
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.list.setAccessibleDescription('')
+        self.list.setToolTip('')
         self.list.setHeaderLabels(['Software', 'Source', 'Status'])
         self.term = self.query.text().strip()
         self.active_category = category = self.category.currentData() if not self.installed_only else ''
@@ -427,9 +458,9 @@ class SoftwareWindow(AppWindow):
                 return browse_system_apps(category, term)
             return operation(term, sources, job.sourceReady.emit)
         job = Job(load, self)
-        job.sourceReady.connect(self.source_finished)
+        job.sourceReady.connect(lambda source, result: self.source_finished(source, result, job))
         self.job = job
-        job.finished.connect(lambda: self.finish_job(self.search_finished))
+        job.finished.connect(lambda: self.finish_search_job(job))
         self.install_button.setEnabled(False)
         self.update_button.setEnabled(False)
         self.remove_button.setEnabled(False)
@@ -438,15 +469,27 @@ class SoftwareWindow(AppWindow):
         self.progress.show()
         job.start()
 
-    def source_finished(self, source, result):
-        if self.closing or self.pending_search or self.query.text().strip() != self.term:
+    def finish_search_job(self, job):
+        if job is self.retired_search:
+            self.retired_search = None
+            job.deleteLater()
+            if self.closing:
+                if self.job is None:
+                    self.close()
+            elif self.pending_search:
+                self.start_search()
+        elif job is self.job:
+            self.finish_job(self.search_finished)
+
+    def source_finished(self, source, result, job):
+        if job is not self.job or self.closing or self.pending_search or self.query.text().strip() != self.term:
             return
         self.search_results[source] = result
         self.search_finished(self.search_results, '')
         if self.searching and not self.operation_notice:
             self.set_status('Searching remaining sources…')
 
-    def start_job(self, operation, finished, transaction_title=''):
+    def start_job(self, operation, finished, transaction_title='', *, source_callback=None):
         if transaction_title:
             job = Job(lambda: operation(job.phaseChanged.emit), self)
             self.job = job
@@ -463,6 +506,10 @@ class SoftwareWindow(AppWindow):
                 self.finish_transaction(transaction_title, error, job.authorization_declined)
                 finished(value, error)
             callback = report
+        elif source_callback:
+            job = self.job = Job(lambda: operation(on_result=job.sourceReady.emit), self)
+            job.sourceReady.connect(lambda source, result: source_callback(job, source, result))
+            callback = finished
         else:
             self.job = Job(operation, self)
             callback = finished
@@ -475,7 +522,7 @@ class SoftwareWindow(AppWindow):
         self.suggestions.setEnabled(False)
         self.refresh_button.setEnabled(False)
         self.check_button.setEnabled(False)
-        self.list.setEnabled(False)
+        self.list.setEnabled(bool(source_callback))
         self.install_button.setEnabled(False)
         self.update_button.setEnabled(False)
         self.remove_button.setEnabled(False)
@@ -527,7 +574,8 @@ class SoftwareWindow(AppWindow):
         if self.closing:
             self.checking_updates = False
             job.deleteLater()
-            self.close()
+            if self.retired_search is None:
+                self.close()
             return
         if was_searching and self.pending_search:
             self.pending_search = False
@@ -564,9 +612,11 @@ class SoftwareWindow(AppWindow):
         self.refresh_button.setVisible(refresh_available and
                                        (needs_refresh or bool(self.active_category) or (self.installed_only and
                                         self.source.currentData() in ('', 'apt'))))
+        selection = self.package_identity(self.selected())
         self.list.clear()
         packages = (package for result in results.values() for package in result.packages)
         ranked = list(packages) if self.active_category else rank(packages, self.term, limit=None)
+        selected_item = None
         for package in ranked[:300] if self.installed_only or self.active_category else ranked:
             item = QTreeWidgetItem([package.name, package.origin,
                                     'Installed' if package.installed else 'Available'])
@@ -575,22 +625,24 @@ class SoftwareWindow(AppWindow):
             item.setData(0, Qt.ItemDataRole.UserRole, package)
             self.decorate_source(item, package.source)
             self.list.addTopLevelItem(item)
+            if self.package_identity(package) == selection:
+                selected_item = item
         count = self.list.topLevelItemCount()
         if self.installed_only:
             suffix = ' · Refine the filter to see more' if len(ranked) > count else ''
             self.set_status(f'{count} of {len(ranked)} matching installed packages{suffix}'
                                 if count else 'No matching installed software.')
             if count:
-                self.list.setCurrentItem(self.list.topLevelItem(0))
+                self.list.setCurrentItem(selected_item or self.list.topLevelItem(0))
         elif self.active_category and not needs_refresh:
             suffix = ' · Filter to see more' if len(ranked) > count else ''
             self.set_status(f'{count} of {len(ranked)} system apps{suffix}'
                             if count else 'No matching apps in this category.')
             if count:
-                self.list.setCurrentItem(self.list.topLevelItem(0))
+                self.list.setCurrentItem(selected_item or self.list.topLevelItem(0))
         elif count:
             self.set_status(f'{count} result' + ('s' if count != 1 else ''))
-            self.list.setCurrentItem(self.list.topLevelItem(0))
+            self.list.setCurrentItem(selected_item or self.list.topLevelItem(0))
         elif needs_refresh:
             self.set_status('Connect to the internet and refresh to find system packages.')
         elif self.term:
@@ -609,6 +661,10 @@ class SoftwareWindow(AppWindow):
             self.installed_button.setChecked(False)
         self.installed_only = False
         self.updates_only = True
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        multi = 'Use Ctrl or Shift to select multiple updates.'
+        self.list.setAccessibleDescription(multi)
+        self.list.setToolTip(multi)
         self.list.setHeaderLabels(['Software', 'Source', 'Version'])
         self.checking_updates = True
         self.reset_category()
@@ -619,19 +675,29 @@ class SoftwareWindow(AppWindow):
         self.refresh_button.hide()
         self.set_status('Checking for updates…')
         self.fit_layout()
-        self.start_job(available_updates, self.updates_finished)
+        self.update_results = {}
+        self.start_job(available_updates, self.updates_finished, source_callback=self.update_source_finished)
+
+    def update_source_finished(self, job, source, result):
+        if self.job is job and not self.closing:
+            self.update_results[source] = result
+            self.show_update_results(self.update_results, pending=True)
 
     def updates_finished(self, results, error):
         self.checking_updates = False
         if error:
             self.set_status(f'Could not check for updates. {error}')
             return
+        self.show_update_results(results)
+
+    def show_update_results(self, results, *, pending=False):
         self.source_status.setText(' • '.join(results[source].status for source in SOURCES
                                             if source in results))
         self.source_status.setVisible(bool(self.source_status.text()))
         self.refresh_button.setVisible('apt' in results and bool(results['apt'].checked or
                                        results['apt'].check_failed) and
                                        executable(APT_GET) and executable(PKEXEC))
+        selected = {item.data(0, Qt.ItemDataRole.UserRole) for item in self.list.selectedItems()}
         self.list.clear()
         packages = sorted((p for result in results.values() for p in result.packages),
                           key=lambda p: (p.name.casefold(), p.origin, p.branch))
@@ -647,8 +713,11 @@ class SoftwareWindow(AppWindow):
             item.setData(0, Qt.ItemDataRole.UserRole, package)
             self.decorate_source(item, package.source)
             self.list.addTopLevelItem(item)
-        if packages:
+            if package in selected:
+                item.setSelected(True)
+        if packages and not self.list.selectedItems():
             self.list.setCurrentItem(self.list.topLevelItem(0))
+        self.show_selection()
         incomplete = any(result.check_failed for result in results.values())
         checked = any(result.checked for result in results.values())
         if packages:
@@ -659,6 +728,8 @@ class SoftwareWindow(AppWindow):
             status = 'No source could be checked.' if incomplete else 'No selected sources are available.'
         if checked and incomplete:
             status += ' Check incomplete.'
+        if pending:
+            status = 'Checking remaining sources…' if not packages else status + ' Checking remaining sources…'
         if self.operation_notice:
             status = f'{self.operation_notice} {status}'
             self.operation_notice = ''
@@ -680,7 +751,68 @@ class SoftwareWindow(AppWindow):
         else:
             self.start_search()
 
+    def review_change(self, packages, action, title, message, operate, finished):
+        def start(expected=None):
+            def operation(observe):
+                if expected is not None and apt_preview(packages, action) != expected:
+                    raise RuntimeError('The APT plan changed. Review it again before continuing.')
+                return operate(observe)
+            self.set_status('')
+            self.start_job(operation, finished, title)
+
+        if not any(package.source == 'apt' for package in packages):
+            if themed_prompt(self, title, message, action.title(), 'Cancel'):
+                start()
+            return
+
+        def fingerprint():
+            rows = self.list.selectedItems() if len(packages) > 1 else ()
+            values = [row.data(0, Qt.ItemDataRole.UserRole) for row in rows] if rows else [self.selected()]
+            return {self.package_identity(value) for value in values}
+
+        selected = (self.installed_only, self.updates_only, fingerprint())
+        def prepared(plan, error):
+            if error:
+                self.set_status(error)
+                return
+            if selected != (self.installed_only, self.updates_only, fingerprint()):
+                self.set_status('Selection changed. Review the new package before continuing.')
+                return
+            dialog = style_dialog(QDialog(self), self)
+            dialog.setWindowTitle(title)
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(label(message, True))
+            content = QPlainTextEdit(readOnly=True)
+            content.setAccessibleName('APT dependency changes')
+            content.setPlainText('\n'.join('  '.join(row).strip() for row in plan)
+                                 or 'APT has no changes for these packages.')
+            layout.addWidget(content)
+            row = QHBoxLayout()
+            row.addStretch()
+            cancel, accept = QPushButton('Cancel'), QPushButton(action.title())
+            cancel.setDefault(True)
+            cancel.clicked.connect(dialog.reject)
+            accept.clicked.connect(dialog.accept)
+            row.addWidget(cancel)
+            row.addWidget(accept)
+            layout.addLayout(row)
+            dialog.resize(520, 360)
+            try:
+                approved = exec_owned_dialog(dialog) == QDialog.DialogCode.Accepted
+            finally:
+                dialog.deleteLater()
+            if approved:
+                if selected == (self.installed_only, self.updates_only, fingerprint()):
+                    start(plan)
+                else:
+                    self.set_status('Selection changed. Review the new package before continuing.')
+        self.set_status('Checking APT dependencies…')
+        self.start_job(lambda: apt_preview(packages, action), prepared)
+
     def confirm_manage(self, action):
+        if self.updates_only and action == 'update' and len(self.list.selectedItems()) > 1:
+            return self.confirm_updates(tuple(item.data(0, Qt.ItemDataRole.UserRole)
+                                              for item in self.list.selectedItems()))
         package = self.selected()
         if (self.job or not (self.installed_only or (self.updates_only and action == 'update'))
                 or not package or not can_manage(package, action)):
@@ -691,12 +823,23 @@ class SoftwareWindow(AppWindow):
             message += '\n\nClose the app before removing it. Personal files are not selected for removal.'
         elif package.source == 'apt':
             message += '\n\nSoftware uses your current package index. Refresh system packages first if needed.'
-        if not themed_prompt(self, f'{title} software', message, title, 'Cancel'):
+        self.review_change((package,), action, f'{title} {package.name}', message,
+                           lambda observe: manage(package, action, observe),
+                           lambda changed, error: self.manage_finished(package, action, changed, error))
+
+    def confirm_updates(self, packages):
+        if self.job or not 1 <= len(packages) <= 100 or not all(can_manage(p, 'update') for p in packages):
+            self.set_status('Select up to 100 supported updates.')
             return
-        self.set_status('')
-        self.start_job(lambda observe: manage(package, action, observe),
-                       lambda changed, error: self.manage_finished(package, action, changed, error),
-                       f'{title} {package.name}')
+        names = '\n'.join(package.name for package in packages[:8])
+        if len(packages) > 8:
+            names += f'\n…and {len(packages) - 8} more'
+        def finished(count, error):
+            if not error:
+                self.operation_notice = f'{count} selected updates finished.'
+            self.start_check_updates()
+        self.review_change(packages, 'update', f'Update {len(packages)} packages', names,
+                           lambda observe: manage_updates(packages, observe), finished)
 
     def manage_finished(self, package, action, changed, error):
         if error:
@@ -719,17 +862,12 @@ class SoftwareWindow(AppWindow):
         if self.job or not package or package.installed or package.classic:
             return
         scope = package.origin if package.source == 'flatpak' else f'{package.origin} · System-wide'
-        if not themed_prompt(self, 'Install software',
-                             f'Install {package.name}?\n\n{package.identifier}\n{scope}',
-                             'Install', 'Cancel'):
-            return
-        self.installing = True
-        self.set_status('')
-        self.start_job(lambda observe: install(package, observe), lambda _, error: self.install_finished(package, error),
-                       f'Install {package.name}')
+        self.review_change((package,), 'install', f'Install {package.name}',
+                           f'Install {package.name}?\n\n{package.identifier}\n{scope}',
+                           lambda observe: install(package, observe),
+                           lambda _, error: self.install_finished(package, error))
 
     def install_finished(self, package, error):
-        self.installing = False
         if error:
             return
         item = self.list.currentItem()
@@ -740,7 +878,7 @@ class SoftwareWindow(AppWindow):
         self.set_status(f'{package.name} is installed.')
 
     def closeEvent(self, event):
-        if self.searching or self.checking_updates:
+        if self.searching or self.checking_updates or (self.retired_search is not None and not self.job):
             self.closing = True
             self.hide()
             event.ignore()
@@ -757,7 +895,7 @@ def main():
     app.setStyle('Fusion')
     app.setApplicationName('Mellipi Software')
     app.setDesktopFileName('mellipi-software')
-    window = SoftwareWindow()
+    window = SoftwareWindow(show_updates='--updates' in sys.argv[1:])
     window.show()
     return app.exec()
 

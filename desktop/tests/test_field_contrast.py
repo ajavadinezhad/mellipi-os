@@ -9,7 +9,7 @@ elif QT6_WAYLAND:
 else:
     from PySide6.QtQml import QQmlComponent
 from app_palette import colors, contrast_palette, contrast_ratio
-from theme_catalog import presets
+from theme_catalog import THEME_IDS, presets
 
 NATIVE = Path(__file__).resolve().parents[1] / 'native'
 class Stub(QObject):
@@ -23,7 +23,7 @@ class Stub(QObject):
     compact = Property(bool, lambda self: True, constant=True)
     economy = Property(bool, lambda self: True, constant=True)
 
-VARIANTS = [(r['name'], dict(mode=r['mode'], darkLevel=r['darkLevel'], accent=r['accent'], themePalette=r['palette'])) for r in presets()]
+VARIANTS = [(r['name'], dict(mode=r['mode'], darkLevel=r['darkLevel'], accent=r['accent'], themePalette=r['palette'], themeFrame=r['frame'])) for r in presets()]
 VARIANTS += [(f'Custom {mode} {level} {accent}', dict(mode=mode, darkLevel=level, accent=accent, themePalette={}))
              for mode,level in [('light','normal'),('dark','normal'),('dark','black')]
              for accent in ('#a9d9c3','#000000','#ffffff','#ff0000','#00ff00','#0000ff')]
@@ -43,6 +43,9 @@ Window {
     property color panel: Theme.surface
     property color raised: Theme.raised
     property color hover: Theme.hover
+    property color headerSurface: Theme.headerSurface
+    property color headerInk: Theme.headerInk
+    property color headerText: Theme.headerText
     Item { id: other; focus: true }
     OrbitField { id: field; x: 10; y: 10 }
 }
@@ -78,6 +81,24 @@ class FieldContrastTests(unittest.TestCase):
                 for key in ('background', 'surface', 'raised', 'hover'):
                     self.assertGreaterEqual(contrast_ratio(high['border'], high[key]), 3)
 
+    def test_app_chrome_keeps_title_and_window_controls_legible(self):
+        for name, preset in VARIANTS:
+            for high in (False, True):
+                with self.subTest(theme=name, high=high):
+                    appearance = dict(preset, highContrast=high)
+                    if high:
+                        appearance['themePalette'] = contrast_palette(appearance, appearance['themePalette'])
+                    value = colors(type('Preferences', (), {'appearance': lambda self: appearance})())
+                    for ink in ('chrome_text', 'accent_ink'):
+                        self.assertGreaterEqual(contrast_ratio(value[ink], value['chrome']), 4.5)
+
+    def test_every_preset_has_distinct_header_and_frame(self):
+        self.assertEqual({row['id'] for row in presets()}, set(THEME_IDS))
+        for row in presets():
+            with self.subTest(theme=row['id']):
+                self.assertNotEqual(row['frame']['header'],row['palette']['surface'])
+                self.assertNotIn(row['frame']['trim'],(row['frame']['header'],row['accent']))
+
     def check_field(self, appearance):
         orbit = Stub(appearance)
         engine = QQmlApplicationEngine()
@@ -95,6 +116,9 @@ class FieldContrastTests(unittest.TestCase):
             self.assertLessEqual(distance(border, app_palette['control_border']), 3)
             for background in ('base', 'panel', 'raised', 'hover'):
                 self.assertGreaterEqual(contrast_ratio(border, window.property(background).name()), 3)
+            for ink in ('headerInk','headerText'):
+                self.assertGreaterEqual(contrast_ratio(window.property(ink).name(),
+                                                       window.property('headerSurface').name()),4.5)
             field.setProperty('focus', True)
             self.app.processEvents()
             self.assertTrue(field.property('activeFocus'))

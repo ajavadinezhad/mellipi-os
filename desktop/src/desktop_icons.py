@@ -217,12 +217,13 @@ class DesktopIcons(QObject):
             self.writable_root()
             with tempfile.TemporaryDirectory(prefix='abstract-file-links-') as temp:
                 sources=[]
-                for url in urls:
+                for index,url in enumerate(urls):
                     if url.isLocalFile():
                         source=Path(url.toLocalFile())
                         if not source.is_absolute() or not os.path.lexists(source):raise ValueError('The source file is unavailable')
                     else:
-                        source=Path(temp)/safe_name('Link-'+re.sub(r'[^A-Za-z0-9._-]','_',url.host())[:80]+'.desktop')
+                        stage=Path(temp)/str(index);stage.mkdir(mode=0o700)
+                        source=stage/safe_name('Link-'+re.sub(r'[^A-Za-z0-9._-]','_',url.host())[:80]+'.desktop')
                         source.write_text('[Desktop Entry]\nType=Link\nName='+url.host()+'\nIcon=text-html\nURL='+url.toString()+'\n')
                     sources.append(source)
                 try:return Transfer(self.root,rename_no_replace,trash_item,token,publish).run(sources,move)
@@ -327,6 +328,34 @@ class DesktopIcons(QObject):
             if cell is None:break
             positions[item['path']]=list(cell);occupied.add(cell)
         return positions
+    @Slot('QVariantList',str,str,int,int,int,int,result=bool)
+    def movePositions(self, paths, anchor, output, columns, rows, column, row):
+        if not output or len(output)>160 or (output not in self._layout and len(self._layout)>=8):
+            return False
+        if not 1<=columns<=128 or not 1<=rows<=128 or any(not isinstance(path,str) for path in paths):
+            return False
+        live = self.layout(output,columns,rows)
+        group = list(dict.fromkeys(paths))
+        if anchor not in group or any(key not in live for key in group):
+            return False
+        cells = [live[key] for key in group]
+        x,y = live[anchor]
+        dx = max(-min(p[0] for p in cells),min(column-x,columns-1-max(p[0] for p in cells)))
+        dy = max(-min(p[1] for p in cells),min(row-y,rows-1-max(p[1] for p in cells)))
+        if not (dx or dy):
+            return False
+        targets = {key:(live[key][0]+dx,live[key][1]+dy) for key in group}
+        target_cells = set(targets.values())
+        displaced = [key for key,point in live.items() if key not in targets and tuple(point) in target_cells]
+        vacated = sorted({tuple(point) for point in cells}-target_cells)
+        next_layout = dict(live)
+        next_layout.update({key:list(point) for key,point in targets.items()})
+        next_layout.update({key:list(point) for key,point in zip(displaced,vacated)})
+        self._layout[output]=next_layout
+        self.layout_timer.start()
+        self.changed.emit()
+        return True
+
     @Slot(str,str,int,int)
     def setPosition(self,path,output,column,row):
         if not self.place(path) and path not in self._known:return

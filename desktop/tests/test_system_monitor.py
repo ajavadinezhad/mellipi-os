@@ -43,6 +43,44 @@ class SystemMonitorTests(unittest.TestCase):
             process = read_process(directory, 4096)
             self.assertEqual(process, Process(123, 'one) two', 99, 12, 16384, os.geteuid()))
 
+    def test_refresh_reuses_live_item_but_not_reused_pid(self):
+        from PyQt6.QtWidgets import QApplication
+        from mellipi_monitor import Monitor
+        self.app = QApplication.instance() or QApplication([])
+        monitor = Monitor()
+        self.addCleanup(monitor.close)
+        self.addCleanup(monitor.deleteLater)
+        first = Process(999999, 'worker', 1, 10, 4096, os.geteuid())
+        updated = Process(999999, 'worker', 1, 20, 8192, os.geteuid())
+        reused = Process(999999, 'other', 2, 1, 4096, os.geteuid())
+        monitor.display((1, 20, 10, 100, 50, {first.key: first}))
+        row = monitor.rows_by_process[first.key]
+        monitor.tree.setCurrentItem(row)
+        monitor.display((3, 30, 13, 100, 50, {updated.key: updated}))
+        self.assertIs(monitor.tree.currentItem(), row)
+        self.assertEqual(monitor.selected_process(), updated)
+        monitor.display((5, 40, 17, 100, 50, {reused.key: reused}))
+        self.assertNotIn(first.key, monitor.rows_by_process)
+        self.assertIsNot(monitor.rows_by_process[reused.key], row)
+        self.assertIsNone(monitor.selected_process())
+
+    def test_close_during_refresh_defers_without_waiting(self):
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QApplication
+        from unittest.mock import Mock, patch
+        from mellipi_monitor import Monitor
+        app = QApplication.instance() or QApplication([])
+        with patch.object(Monitor, 'sample'):
+            monitor = Monitor()
+            monitor.show()
+        job = monitor.job = Mock(result=None, error='')
+        self.assertFalse(monitor.close())
+        self.assertFalse(monitor.isVisible())
+        job.wait.assert_not_called()
+        monitor.receive()
+        QTest.qWait(1)
+        self.assertIsNone(monitor.job)
+
     @unittest.skipUnless(hasattr(os, 'pidfd_open') and hasattr(signal, 'pidfd_send_signal'), 'needs pidfd')
     def test_stale_identity_cannot_signal_disposable_process(self):
         with subprocess.Popen(['/bin/sleep', '10']) as child:

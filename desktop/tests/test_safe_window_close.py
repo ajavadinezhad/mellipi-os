@@ -50,6 +50,43 @@ class SafeWindowCloseTests(unittest.TestCase):
         review.closeAndWait()
         self.wait_for(lambda: calls == ['1', '1'])
 
+    def test_locked_snapshot_cancels_logout_consent_instead_of_completing_it(self):
+        pending, exits = [], []
+        review = SessionExit(pending.append)
+        self.addCleanup(review.close)
+        review.readyToExit.connect(lambda: exits.append(True))
+        windows = [{'id': '42', 'klass': 'mellipi-editor', 'title': 'Unsaved changes'}]
+        review.setSnapshot(windows)
+        review.openReview()
+        review.closeAndWait()
+        self.assertEqual(pending, ['42'])
+        self.assertTrue(review.state['armed'])
+        # Exercise the actual bridge path with the compositor's redacted
+        # packet while the Editor is still waiting on its Save prompt.
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from native_app import Bridge
+        shell = SimpleNamespace(sessionExit=review, windowActions=None,
+                                nativeControlsEnabled=False, isWayland=False,
+                                _panel='session-exit', _lastUsageWindow=None, _mru=[],
+                                _windows=[], _desktops=[], _outputWorkspaces={})
+        shell.dismiss = lambda: setattr(shell, '_panel', '')
+        with patch('native_app.native_session', return_value=False):
+            Bridge.applyWindowState(shell, {'locked': True, 'windows': [], 'desktops': []})
+        self.assertFalse(review.state['active'])
+        self.assertFalse(review.state['armed'])
+        self.assertEqual(review.windows, [])
+        self.assertEqual(shell._panel, '')
+        review.openReview()
+        review.closeAndWait()
+        self.assertEqual(exits, [])
+        # Even an empty list after unlocking requires new user consent.
+        review.setSnapshot([])
+        self.assertEqual(exits, [])
+        review.openReview()
+        review.closeAndWait()
+        self.assertEqual(exits, [True])
+
     def test_files_finishes_operation_then_closes_without_second_request(self):
         release = Event()
         with TemporaryDirectory() as directory:

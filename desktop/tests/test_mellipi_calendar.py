@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from mellipi_calendar import EventStore, occurrences, parse_ics
+from mellipi_calendar import EventConflict, EventStore, occurrences, parse_ics
 
 
 def calendar(*events):
@@ -27,14 +27,31 @@ class CalendarImportTests(unittest.TestCase):
             self.assertEqual(len(EventStore(path).events), 2)
             with self.assertRaises(ValueError):
                 first.save_personal('Invalid', '', day, time(10), time(9), key=meeting.key)
-            updated = first.save_personal('Day off', '', day, key=meeting.key)
+            updated = first.save_personal('Day off', '', day, key=meeting.key, expected=meeting)
             self.assertEqual(updated.span(), (day, day))
             self.assertTrue(EventStore(path).events[meeting.key].personal)
             imported_key = next(key for key, event in first.events.items() if not event.personal)
             with self.assertRaises(ValueError):
                 second.remove_personal(imported_key)
-            second.remove_personal(meeting.key)
+            second.remove_personal(meeting.key, expected=updated)
             self.assertEqual(set(EventStore(path).events), {imported_key})
+
+    def test_stale_window_cannot_overwrite_or_delete_newer_edit(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'local.json'
+            first = EventStore(path)
+            day = date(2026, 12, 1)
+            original = first.save_personal('Original', 'Room A', day)
+            second = EventStore(path)
+            current = first.save_personal('New title', 'Room A', day, key=original.key)
+            with self.assertRaises(EventConflict):
+                second.save_personal('Original', 'Room B', day, key=original.key)
+            # The same window still has its old dialog snapshot even though
+            # conflict detection refreshed the in-memory store.
+            with self.assertRaises(EventConflict):
+                second.remove_personal(original.key, expected=original)
+            saved_copy = second.save_personal('Original', 'Room B', day)
+            self.assertEqual(EventStore(path).events, {current.key: current, saved_copy.key: saved_copy})
 
     def test_unfolded_text_timezone_and_exclusive_end(self):
         changes, recurring, skipped = parse_ics(calendar(
@@ -145,6 +162,7 @@ class CalendarSpacingTests(unittest.TestCase):
     def test_large_text_at_minimum_width_keeps_the_last_weekday_visible(self):
         import os
         from unittest.mock import patch
+        from PyQt6.QtCore import QDate
         from PyQt6.QtWidgets import QApplication, QTableView
         from mellipi_calendar import Calendar
         from preferences import Preferences
@@ -164,6 +182,14 @@ class CalendarSpacingTests(unittest.TestCase):
                     table = window.month.findChild(QTableView, 'qt_calendar_calendarview')
                     self.assertEqual(table.horizontalHeader().count(), 7)
                     self.assertLessEqual(table.horizontalHeader().length(), table.viewport().width())
+                    self.assertLessEqual(table.verticalHeader().length(), table.viewport().height())
+                    selected = QDate(2026, 9, 22)
+                    window.store.save_personal('Design review', '', date(2026, 9, 22))
+                    window.month.setSelectedDate(selected)
+                    self.assertIn('2026', window.month_label.text())
+                    self.assertIn(selected.toJulianDay(), window.month.event_days)
+                    self.assertEqual(window.agenda_date.text(), '22')
+                    self.assertIn('Design review', window.event_list.item(0).text())
                     # At the smallest height the agenda can be below the fold.
                     # Its main action must still be visible, with no duplicate.
                     self.assertGreaterEqual(window.mode_row.indexOf(window.add_button), 0)

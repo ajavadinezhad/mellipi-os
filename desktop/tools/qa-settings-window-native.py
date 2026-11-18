@@ -10,12 +10,16 @@ def main():
     parent=native=None
     with tempfile.TemporaryDirectory(prefix='orbit-settings-native-') as temp,open('/tmp/orbit-settings-native-qa.log','w') as log:
         directory=Path(temp);settings=directory/'parent.json';settings.write_text(json.dumps(dict(profile='economy',desktopIcons=False,reducedMotion=True)))
-        config=directory/'config';config.mkdir();apps=directory/'share/applications';apps.mkdir(parents=True);(apps/'orbit-settings.desktop').write_text((ROOT/'orbit-settings.desktop').read_text())
+        config=directory/'config';config.mkdir();apps=directory/'share/applications';apps.mkdir(parents=True)
+        (apps/'orbit-settings.desktop').write_text(
+            '[Desktop Entry]\nType=Application\nName=Mellipi Settings\n'
+            'Exec=/usr/bin/mellipictl system-settings\nIcon=mellipi-settings\nStartupWMClass=orbit-settings\n'
+        )
         env=dict(os.environ,ORBIT_QA='1',ORBIT_SETTINGS_FILE=str(settings),ORBIT_DATA=str(directory/'parent-data'),XDG_CONFIG_HOME=str(config),PULSE_SERVER='unix:'+str(directory/'no-audio'),LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe')
         try:
             parent=subprocess.Popen([str(ROOT/'run-wayland-session.sh'),'--headless'],env=env,cwd=ROOT,stdout=log,stderr=log,start_new_session=True)
             _,parent_env=qa.wait(lambda:qa.native_process(settings),30)
-            settings=directory/'native.json';settings.write_text(json.dumps(dict(profile='economy',desktopIcons=False,reducedMotion=True,shellLayout='fold')))
+            settings=directory/'native.json';settings.write_text(json.dumps(dict(profile='economy',desktopIcons=False,reducedMotion=True,shellLayout='fold',windowPlacementEnabled=False)))
             env=dict(parent_env,ORBIT_SETTINGS_FILE=str(settings),ORBIT_DATA=str(directory/'native-data'),ORBIT_FOLD_DIR=str(directory),ORBIT_QA='1',XDG_CONFIG_HOME=str(config),XDG_DATA_HOME=str(apps.parent),PULSE_SERVER='unix:'+str(directory/'no-audio'),LIBGL_ALWAYS_SOFTWARE='1',GALLIUM_DRIVER='llvmpipe')
             native=subprocess.Popen([str(ROOT/'run-native-session.sh'),'--nested'],env=env,cwd=ROOT,stdout=log,stderr=log,start_new_session=True)
             _,child=qa.wait(lambda:base.process(settings),40)

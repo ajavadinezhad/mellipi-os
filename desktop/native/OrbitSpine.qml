@@ -107,10 +107,10 @@ Item {
 
     readonly property bool outlined: frame.fixedTop || frame.inset > 0 || Orbit.appearance.taskbarLength === "fit"
     readonly property color edgeInk: Theme.highContrast ? Theme.controlBorder
-        : Theme.legibleInk(Theme.separator, 1.8, [Theme.luminance(Theme.background)], true)
+        : Theme.legibleInk(Theme.frameTrim, 1.8, [Theme.luminance(Theme.barSurface)], true)
     Rectangle {
         anchors.fill: parent
-        color: Theme.background
+        color: Theme.barSurface
         radius: Theme.corner(12)
         border.width: spine.outlined ? 1 : 0
         border.color: spine.edgeInk
@@ -165,7 +165,8 @@ Item {
                 y: spine.horizontal ? 0 : selectionPosition-spaceList.contentY
                 Behavior on selectionPosition {
                     enabled: !Theme.reducedMotion && Orbit.appearance.workspaceMotion!==false
-                    NumberAnimation {duration: Theme.economy ? 180 : 240;easing.bezierCurve: [1/3,0,2/3,1,1,1]}
+                    onEnabledChanged:if(!enabled && spaceIndicatorMotion.running)spaceIndicatorMotion.complete()
+                    NumberAnimation {id:spaceIndicatorMotion;duration: Theme.economy ? 180 : 240;easing.bezierCurve: [1/3,0,2/3,1,1,1]}
                 }
                 Rectangle {
                     objectName: "workspacePositionIndicator"
@@ -246,14 +247,29 @@ Item {
                     border.width: task.activeFocus ? 2 : task.current && Theme.highContrast ? 1 : 0
                     border.color: task.activeFocus ? Theme.focusColor : Theme.controlBorder
                 }
-                Rectangle {objectName: "spineTaskRunningIndicator_"+modelData.id;x: spine.horizontal ? (task.current ? 10 : parent.width/2-2) : 0;y: spine.horizontal ? parent.height-2 : task.current ? 9 : parent.height/2-2;width: spine.horizontal ? (task.current ? parent.width-20 : 4) : 2;height: spine.horizontal ? 2 : task.current ? 23 : 4;color: task.current ? Theme.accentInk : Theme.muted;visible: task.running}
+                MotionValue {
+                    id: taskIndicator
+                    target: task.current ? 1 : 0
+                    duration: task.running && !Theme.economy ? Theme.desktopMotion : 0
+                }
+                Rectangle {
+                    objectName: "spineTaskRunningIndicator_"+modelData.id
+                    readonly property real activeAmount: taskIndicator.value
+                    x: spine.horizontal ? parent.width/2-2+(12-parent.width/2)*activeAmount : 0
+                    y: spine.horizontal ? parent.height-2 : parent.height/2-2+(11-parent.height/2)*activeAmount
+                    width: spine.horizontal ? 4+(parent.width-24)*activeAmount : 2
+                    height: spine.horizontal ? 2 : 4+19*activeAmount
+                    color: task.current ? Theme.accentInk : Theme.muted
+                    visible: task.running
+                }
+                MotionValue {id: taskPress;target: hit.pressed ? .7 : 1;duration:Math.min(100,Theme.desktopMotion)}
                 Image {
                     id: taskGlyph
                     anchors.centerIn: parent
                     width: Math.min(spine.appIconSize,parent.width-4,parent.height-4);height: width
                     source: modelData.icon ? Theme.taskbarIconSource(modelData.icon, modelData.internal===true) : ""
                     sourceSize: Qt.size(Math.max(24, width*2), Math.max(24, width*2));fillMode: Image.PreserveAspectFit
-                    opacity: hit.pressed ? .7 : 1
+                    opacity: taskPress.value
                 }
                 Rectangle {
                     objectName: "spineWindowBadge_"+modelData.id

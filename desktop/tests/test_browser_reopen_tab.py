@@ -1,4 +1,6 @@
 """Exercise closed-tab recovery using the actual Browser widgets, without networking."""
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock
@@ -7,7 +9,7 @@ from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QTabBar, QWidget
 
-from mellipi_browser import Browser
+from mellipi_browser import Browser, VisitHistory
 
 
 class ReopenTabTests(TestCase):
@@ -81,6 +83,41 @@ class ReopenTabTests(TestCase):
         browser.reopen_tab()
         self.assertIsNone(browser.tabs.currentWidget().view)
         self.assertEqual(browser.status.text(), 'No closed tabs to reopen.')
+
+    def test_unvisited_restored_tab_can_be_reopened(self):
+        browser = self.make_browser()
+        first = browser.tabs.currentWidget()
+        restored = browser.add_tab(QUrl('https://example.org/deferred'), foreground=False, deferred=True)
+        self.assertIsNone(restored.view)
+        browser.close_tab(browser.tabs.indexOf(restored))
+        browser.reopen_tab()
+        self.assertIs(browser.tabs.currentWidget(), first)
+        self.assertEqual(first.view.url().path(), '/deferred')
+
+    def test_history_is_persistent_bounded_and_excludes_private_and_failed_pages(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'history.sqlite'
+            history = VisitHistory(path)
+            history.LIMIT = 2
+            browser = self.make_browser()
+            tab = browser.tabs.currentWidget()
+            browser.open_url(tab, QUrl('https://example.org/private'))
+            tab.view.title = Mock(return_value='Example')
+            browser.loaded(tab, True)
+            self.assertFalse(path.exists())
+            browser.history_store = history  # Use the same fixture in public mode for disk effects.
+            browser.open_url(tab, QUrl('https://example.org/failed'))
+            browser.loaded(tab, False)
+            self.assertFalse(path.exists())
+            for name in ('oldest', 'previous', 'newest'):
+                browser.open_url(tab, QUrl(f'https://example.org/{name}'))
+                browser.loaded(tab, True)
+            restored = VisitHistory(path)
+            self.assertEqual([url.rsplit('/', 1)[-1] for url, _, _ in restored.rows()], ['newest', 'previous'])
+            restored.forget('https://example.org/previous')
+            self.assertEqual(len(restored.rows()), 1)
+            restored.clear()
+            self.assertEqual(restored.rows(), [])
 
     def test_narrow_address_reflows_and_themed_close_tracks_tab_after_reorder(self):
         browser = self.make_browser()

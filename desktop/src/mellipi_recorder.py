@@ -1,11 +1,15 @@
 """Mellipi Sound Recorder: capture on demand and save local WAV recordings."""
 import array
+from collections import deque
 from datetime import datetime
+import fcntl
 import os
 from pathlib import Path
 import stat
+import struct
 import sys
 import tempfile
+from threading import Condition
 import uuid
 import wave
 
@@ -13,18 +17,20 @@ os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt6.QtCore import QEvent, QFile, QSignalBlocker, QStandardPaths, Qt, QTimer, QUrl
+from PyQt6.QtCore import QEvent, QFile, QSignalBlocker, QStandardPaths, Qt, QThread, QTimer, QUrl
 from PyQt6.QtGui import QIcon
 from PyQt6.QtMultimedia import (QAudio, QAudioFormat, QAudioOutput, QAudioSource,
                                 QMediaDevices, QMediaPlayer)
-from PyQt6.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
+from PyQt6.QtWidgets import (QApplication, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout,
                              QLabel, QListWidget, QListWidgetItem, QMenu, QProgressBar,
                              QPushButton, QVBoxLayout)
 
 import icon_theme
 from app_palette import adjust_contrast
+from desktop_icons import rename_no_replace
 from file_chooser import FileChooser
-from qt_app import AppWindow, ThemedInput, themed_prompt
+from file_transfers import identity
+from qt_app import AppWindow, ThemedInput, exec_owned_dialog, style_dialog, themed_prompt
 
 
 RIFF_MAX_DATA_BYTES = (1 << 32) - 1 - 36
@@ -46,6 +52,8 @@ class Recording:
                                  + f' {uuid.uuid4().hex[:8]}.wav')
         self.stream = tempfile.NamedTemporaryFile(dir=directory, prefix='.recording-',
                                                  suffix='.part', delete=False)
+        self.lease = os.dup(self.stream.fileno())
+        fcntl.flock(self.lease, fcntl.LOCK_EX)
         self.staging = Path(self.stream.name)
         self.rate = rate
         self.frame_size = channels * 2
@@ -71,16 +79,90 @@ class Recording:
         return level(data[:end])
 
     def finish(self, *, preserve=True):
+        cleanup = False
         try:
             self.wav.close()
+            if preserve and self.frames:
+                self.stream.flush()
+                os.fsync(self.stream.fileno())
             self.stream.close()
             if preserve and self.frames:
                 os.link(self.staging, self.path)
+                cleanup = True
                 return self.path
+            cleanup = not preserve or self.staging.stat().st_size <= 44
             return None
         finally:
-            self.stream.close()
-            self.staging.unlink(missing_ok=True)
+            try:
+                self.stream.close()
+            finally:
+                # A failed close or publish must not unlink the last copy.
+                try:
+                    if cleanup:
+                        self.staging.unlink(missing_ok=True)
+                finally:
+                    os.close(self.lease)
+
+
+class CaptureWriter(QThread):
+    """Disk I/O owns its queue and never stalls the Qt audio callbacks."""
+    def __init__(self, recording, parent=None):
+        super().__init__(parent)
+        self.recording = recording
+        self.condition = Condition()
+        self.chunks = deque()
+        self.pending_bytes = self.peak = 0
+        self.ending = False
+        self.preserve = True
+        self.issue = self.error = ''
+        self.path = None
+
+    def submit(self, chunk):
+        with self.condition:
+            if self.ending:
+                return False
+            if self.pending_bytes + len(chunk) > 1024 * 1024:
+                self.stop('Storage could not keep up. The audio already captured will be saved.')
+                return False
+            if chunk:
+                self.chunks.append(chunk)
+                self.pending_bytes += len(chunk)
+                self.condition.notify()
+            return True
+
+    def stop(self, issue='', preserve=True):
+        with self.condition:
+            if not self.ending:
+                self.ending, self.issue, self.preserve = True, issue, preserve
+                self.condition.notify()
+
+    def take_peak(self):
+        with self.condition:
+            value, self.peak = self.peak, 0
+            return value
+
+    def run(self):
+        try:
+            while not self.recording.at_limit:
+                with self.condition:
+                    self.condition.wait_for(lambda: self.ending or self.chunks)
+                    if not self.chunks:
+                        break
+                    chunk = self.chunks.popleft()
+                    self.pending_bytes -= len(chunk)
+                peak = self.recording.append(chunk)
+                with self.condition:
+                    self.peak = max(peak, self.peak)
+            if self.recording.at_limit:
+                self.stop('Reached the WAV size limit.')
+        except (OSError, wave.Error) as error:
+            with self.condition:
+                self.ending = True
+                self.issue = f'Recording stopped after a write error: {error}'
+        try:
+            self.path = self.recording.finish(preserve=self.preserve)
+        except (OSError, wave.Error) as error:
+            self.error = str(error)
 
 
 def record_format(device):
@@ -112,6 +194,111 @@ def saved_recordings(directory):
     except FileNotFoundError:
         return []
     return [path for _, path in sorted(rows, reverse=True)]
+
+
+WAV_HEADER = struct.Struct('<4sI4s4sIHHIIHH4sI')
+
+
+def recover_recording(path):
+    """Repair the PCM header when an interruption left complete frames on disk."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError('Not a regular recording file.')
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError('This recording is still in use.') from error
+        header = stream.read(WAV_HEADER.size)
+        if len(header) != WAV_HEADER.size:
+            raise ValueError('No playable audio header. The original file has been kept.')
+        riff, riff_bytes, wav, fmt, fmt_len, pcm, channels, rate, byte_rate, align, bits, data, declared = WAV_HEADER.unpack(header)
+        if ((riff, wav, fmt, data) != (b'RIFF', b'WAVE', b'fmt ', b'data') or
+                (fmt_len, pcm, bits) != (16, 1, 16) or not 1 <= channels <= 64 or
+                not 1 <= rate <= 768000 or align != channels * 2 or byte_rate != rate * align):
+            raise ValueError('The audio format is not a supported recording. The original file has been kept.')
+        actual = min(info.st_size - WAV_HEADER.size, RIFF_MAX_DATA_BYTES)
+        actual -= actual % align
+        if not actual:
+            raise ValueError('No complete audio frames. The original file has been kept.')
+        destination = path.with_name(f'Recovered {uuid.uuid4().hex[:8]}.wav')
+        if (info.st_dev, info.st_ino) != (path.lstat().st_dev, path.lstat().st_ino):
+            raise ValueError('The recording changed. Try again.')
+        if declared == actual and riff_bytes == actual + 36 and info.st_size == actual + WAV_HEADER.size:
+            os.link(path, destination, follow_symlinks=False)
+        else:
+            # Copy only whole frames into a new private file. A failed recovery
+            # or power loss leaves the original staging file untouched.
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.recovering-') as repaired:
+                repaired.write(WAV_HEADER.pack(riff, actual + 36, wav, fmt, fmt_len, pcm,
+                                               channels, rate, byte_rate, align, bits, data, actual))
+                remaining = actual
+                while remaining:
+                    chunk = stream.read(min(remaining, 256 * 1024))
+                    if not chunk:
+                        raise OSError('The recovery file changed while reading it.')
+                    repaired.write(chunk)
+                    remaining -= len(chunk)
+                repaired.flush()
+                os.fsync(repaired.fileno())
+                os.link(repaired.name, destination)
+        # Keep the recovery source if the name changed during publication.
+        current = path.lstat()
+        if (info.st_dev, info.st_ino) == (current.st_dev, current.st_ino):
+            path.unlink()
+        return destination
+
+
+class RecoveryJob(QThread):
+    def __init__(self, path, parent, operation=None):
+        super().__init__(parent)
+        self.source, self.path, self.error = path, None, ''
+        self.operation = operation or (lambda: recover_recording(self.source))
+
+    def run(self):
+        try:
+            self.path = self.operation()
+        except (OSError, ValueError, wave.Error, EOFError) as error:
+            self.error = str(error)
+
+
+def trim_recording(source, destination, first, last, expected):
+    """Copy whole PCM frames into a new WAV; refuse stale sources and existing outputs."""
+    source, destination = Path(source), Path(destination)
+    if identity(source) != expected:
+        raise ValueError('This recording changed. Select it again before trimming.')
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError('Choose a regular WAV recording.')
+        if (info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns) != expected:
+            raise ValueError('This recording changed. Select it again before trimming.')
+        with wave.open(stream, 'rb') as original:
+            if not (type(first) is int and type(last) is int and 0 <= first < last <= original.getnframes()):
+                raise ValueError('Choose a start and end inside the recording.')
+            original.setpos(first)
+            frame_bytes = original.getnchannels() * original.getsampwidth()
+            with tempfile.TemporaryDirectory(prefix='.mellipi-trim-', dir=destination.parent) as directory:
+                draft = Path(directory) / 'trimmed.wav'
+                with draft.open('xb') as output:
+                    with wave.open(output, 'wb') as recording:
+                        recording.setparams(original.getparams())
+                        remaining = last - first
+                        while remaining:
+                            count = min(remaining, max(1, (256 * 1024) // frame_bytes))
+                            data = original.readframes(count)
+                            if len(data) != count * frame_bytes:
+                                raise ValueError('The recording ended before the selected range.')
+                            recording.writeframesraw(data)
+                            remaining -= count
+                    output.flush()
+                    os.fsync(output.fileno())
+                if identity(source) != expected:
+                    raise ValueError('This recording changed during export.')
+                rename_no_replace(draft, destination)
+    return destination
 
 
 class RecordingStatus(QLabel):
@@ -157,8 +344,9 @@ class Recorder(AppWindow):
         base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MusicLocation)
         self.directory = directory if directory is not None else (
             Path(base or (Path.home() / 'Music')) / 'Recordings')
-        self.source = self.audio_device = self.recording = self.current_file = None
-        self.peak = 0
+        self.source = self.audio_device = self.recording = self.writer = self.current_file = None
+        self.recovery_job = None
+        self.close_after_recording = False
 
         input_row = QHBoxLayout()
         label = QLabel('&Input')
@@ -219,9 +407,11 @@ class Recorder(AppWindow):
         self.library_menu.setProperty('mellipiSymbolicIcon', 'open-menu')
         menu = QMenu(self.library_menu)
         self.refresh_button = menu.addAction('Refresh recordings', self.refresh_library)
-        menu.addSeparator()
-        self.rename_button = menu.addAction('Rename selected recording…', self.rename_selected)
-        self.trash_button = menu.addAction('Move selected recording to Trash…', self.trash_selected)
+        menu.addAction('Recover unfinished recording…', self.recover_unfinished)
+        self.recording_menu = QMenu(self)
+        self.rename_button = self.recording_menu.addAction('Rename selected recording…', self.rename_selected)
+        self.trim_button = self.recording_menu.addAction('Export trimmed copy…', self.trim_selected)
+        self.trash_button = self.recording_menu.addAction('Move selected recording to Trash…', self.trash_selected)
         self.library_menu.setMenu(menu)
         for button in (self.play_button, self.open_button, self.library_menu):
             button.setMinimumSize(32, 32)
@@ -236,6 +426,12 @@ class Recorder(AppWindow):
         library_heading.setBuddy(self.library)
         self.library.currentItemChanged.connect(self.select_library_item)
         self.library.itemActivated.connect(self.play_library_item)
+        self.library.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.library.customContextMenuRequested.connect(self.recording_context)
+        for action, key in ((self.rename_button, 'F2'), (self.trash_button, 'Delete')):
+            action.setShortcut(key)
+            action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+            self.library.addAction(action)
         self.content.addWidget(self.library, 1)
         self.library_empty = QLabel('New recordings appear here.')
         self.library_empty.setObjectName('muted')
@@ -295,11 +491,13 @@ class Recorder(AppWindow):
         self.record_button.setIcon(symbolic_icon('stop' if active else 'microphone', tokens['accent_text']))
 
     def update_controls(self):
-        active = self.recording is not None
+        active = self.recording is not None or self.recovery_job is not None
+        finishing = self.recovery_job is not None or active and self.writer is not None and self.writer.ending
         playing = self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
         self.inputs.setEnabled(not active and self.inputs.count() > 0)
-        self.record_button.setEnabled(active or self.inputs.count() > 0)
-        self.record_button.setText('Stop recording' if active else 'Record')
+        self.record_button.setEnabled(not finishing and (active or self.inputs.count() > 0))
+        self.record_button.setText('Working…' if self.recovery_job else
+                                   'Saving…' if finishing else 'Stop recording' if active else 'Record')
         self.record_button.setProperty('mellipiSymbolicIcon', 'stop' if active else 'microphone')
         self.play_button.setEnabled(self.current_file is not None and not active)
         playback_label = 'Stop playback' if playing else 'Play selected recording'
@@ -311,6 +509,7 @@ class Recorder(AppWindow):
         self.library_menu.setEnabled(not active)
         selected = self.selected_recording()
         self.rename_button.setEnabled(not active and selected is not None)
+        self.trim_button.setEnabled(not active and selected is not None)
         self.trash_button.setEnabled(not active and selected is not None)
         self.refresh_icons()
         self.style_capture()
@@ -335,6 +534,9 @@ class Recorder(AppWindow):
         except OSError as exc:
             self.status.setText(f'Could not start recording: {exc}')
             return
+        writer = self.writer = CaptureWriter(self.recording, self)
+        writer.finished.connect(lambda: self.capture_finished(writer))
+        writer.start()
         source = QAudioSource(device, sample, self)
         self.source = source
         self.audio_device = source.start()
@@ -344,7 +546,6 @@ class Recorder(AppWindow):
         source.stateChanged.connect(self.capture_state)
         self.audio_device.readyRead.connect(self.read_audio)
         self.elapsed.setText('00:00')
-        self.peak = 0
         self.status.setText('Recording…')
         self.timer.start()
         self.update_controls()
@@ -356,58 +557,61 @@ class Recorder(AppWindow):
             self.finish_recording('The microphone stopped unexpectedly.')
 
     def read_audio(self):
-        if self.recording is None or self.audio_device is None:
+        if self.writer is None or self.audio_device is None:
             return
-        try:
-            self.peak = max(self.peak, self.recording.append(bytes(self.audio_device.readAll())))
-            if self.recording.at_limit:
-                self.finish_recording('Reached the WAV size limit.')
-        except (OSError, wave.Error) as exc:
-            self.finish_recording(f'Could not write recording: {exc}', preserve=False)
+        if not self.writer.submit(bytes(self.audio_device.readAll())):
+            self.finish_recording(drain=False)
 
     def update_meter(self):
         if self.recording is None:
             return
         self.show_time(self.recording.frames // self.recording.rate)
-        self.meter.setValue(self.peak)
-        self.peak = 0
+        self.meter.setValue(self.writer.take_peak())
 
     def show_time(self, seconds):
         self.elapsed.setText(f'{seconds // 60:02}:{seconds % 60:02}')
 
-    def finish_recording(self, error='', preserve=True):
-        if self.recording is None:
-            return True
-        recording, self.recording = self.recording, None
+    def finish_recording(self, error='', preserve=True, *, drain=True):
+        if self.writer is None:
+            return
+        io = self.audio_device
+        if io is not None and preserve and drain:
+            self.writer.submit(bytes(io.readAll()))
+        self.stop_input()
+        self.writer.stop(error, preserve)
+        self.status.setText('Saving recording…')
+        self.update_controls()
+
+    def stop_input(self):
         source, self.source = self.source, None
-        io, self.audio_device = self.audio_device, None
+        self.audio_device = None
         self.timer.stop()
-        try:
-            if io is not None and preserve and not recording.at_limit:
-                recording.append(bytes(io.readAll()))
-        except (OSError, wave.Error) as exc:
-            error = f'Could not finish recording: {exc}'
-            preserve = False
         if source is not None:
             source.stop()
             source.deleteLater()
-        try:
-            path = recording.finish(preserve=preserve)
-        except (OSError, wave.Error) as exc:
-            self.status.setText(f'Could not save recording: {exc}')
-            result = False
+
+    def capture_finished(self, writer):
+        self.stop_input()
+        recording, self.recording = self.recording, None
+        self.writer = None
+        path = writer.path
+        if writer.error:
+            self.status.setText(f'Could not save recording: {writer.error}\nRecovery file: {recording.staging}')
+        elif path is not None:
+            self.set_recording(path)
+            self.refresh_library()
+            self.status.setText(f'{writer.issue} Saved {path.name}' if writer.issue else f'Saved {path.name}')
+        elif recording.staging.exists():
+            self.status.setText(f'{writer.issue or "Recording could not be finalized."}\nRecovery file: {recording.staging}')
         else:
-            if path is not None:
-                self.set_recording(path)
-                self.refresh_library()
-                self.status.setText(f'{error} Saved {path.name}' if error else f'Saved {path.name}')
-            else:
-                self.status.setText(error or 'No audio was captured.')
-            result = bool(path or not error)
+            self.status.setText(writer.issue or 'No audio was captured.')
         self.show_time(recording.frames // recording.rate)
         self.meter.setValue(0)
         self.update_controls()
-        return result
+        pending, self.close_after_recording = self.close_after_recording, False
+        writer.deleteLater()
+        if pending and not writer.error and not recording.staging.exists():
+            QTimer.singleShot(0, self.close)
 
     def set_recording(self, path):
         self.player.stop()
@@ -418,6 +622,38 @@ class Recorder(AppWindow):
     def selected_recording(self):
         row = self.library.currentItem()
         return row.data(Qt.ItemDataRole.UserRole) if row else None
+
+    def recover_unfinished(self):
+        if self.recording is not None or self.recovery_job is not None:
+            return
+        try:
+            names = sorted((path.name for path in self.directory.glob('.recording-*.part')), reverse=True)[:100]
+            if not names:
+                self.status.setText('No unfinished recordings found.')
+                return
+            name, accepted = ThemedInput.getItem(self, 'Recover unfinished recording', 'Recording', names, 0, False)
+            if not accepted or name not in names:
+                return
+        except OSError as error:
+            self.status.setText(f'Could not recover recording: {error}')
+            return
+        job = self.recovery_job = RecoveryJob(self.directory / name, self)
+        job.finished.connect(lambda: self.recovery_finished(job))
+        self.status.setText('Recovering audio…')
+        self.update_controls()
+        job.start()
+
+    def recovery_finished(self, job):
+        self.recovery_job = None
+        job.deleteLater()
+        path = job.path
+        if path is None:
+            self.status.setText(f'Could not recover recording: {job.error}')
+            self.update_controls()
+            return
+        self.set_recording(path)
+        self.refresh_library()
+        self.status.setText(f'Recovered {path.name}')
 
     def refresh_library(self):
         if self.recording is not None:
@@ -452,9 +688,21 @@ class Recorder(AppWindow):
                 self.set_recording(path)
             self.player.play()
 
+    def recording_context(self, position):
+        item = self.library.itemAt(position)
+        if item is not None:
+            self.library.setCurrentItem(item)
+            self.recording_menu.popup(self.library.viewport().mapToGlobal(position))
+
     def rename_selected(self):
         path = self.selected_recording()
         if path is None or self.recording is not None:
+            return
+        try:
+            original = identity(path)
+        except OSError:
+            self.refresh_library()
+            self.status.setText('This recording is no longer available.')
             return
         name, accepted = ThemedInput.getText(self, 'Rename recording', 'Name', text=path.stem)
         if not accepted:
@@ -466,14 +714,82 @@ class Recorder(AppWindow):
         destination = path.with_name(name + ('' if name.lower().endswith('.wav') else '.wav'))
         if destination == path:
             return
+        try:
+            if identity(path) != original:
+                raise ValueError()
+        except (OSError, ValueError):
+            self.refresh_library()
+            self.status.setText('This recording changed. Select it again before renaming.')
+            return
         self.set_recording(None)
-        if not QFile(str(path)).rename(str(destination)):
+        try:
+            rename_no_replace(path, destination)
+        except (OSError, ValueError):
             self.set_recording(path)
             self.status.setText('Could not rename this recording. Check the name and folder permissions.')
             return
         self.set_recording(destination)
         self.refresh_library()
         self.status.setText(f'Renamed to {destination.name}')
+
+    def trim_selected(self):
+        source = self.selected_recording()
+        if source is None or self.recording is not None or self.recovery_job is not None:
+            return
+        try:
+            expected = identity(source)
+            fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as stream, wave.open(stream, 'rb') as recording:
+                rate, frames = recording.getframerate(), recording.getnframes()
+                if not rate or not frames:
+                    raise ValueError('This WAV has no playable audio.')
+        except (OSError, wave.Error, ValueError, EOFError) as error:
+            self.status.setText(f'Could not read recording: {error}')
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Export trimmed copy')
+        form = QFormLayout(dialog)
+        start, end = QDoubleSpinBox(), QDoubleSpinBox()
+        for control in (start, end):
+            control.setDecimals(3)
+            control.setRange(0, frames / rate)
+            control.setSuffix(' s')
+        end.setValue(frames / rate)
+        form.addRow('Start', start)
+        form.addRow('End', end)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        style_dialog(dialog, self)
+        accepted = exec_owned_dialog(dialog)
+        first = round(start.value() * rate)
+        last = frames if end.value() == end.maximum() else round(end.value() * rate)
+        dialog.deleteLater()
+        if accepted != QDialog.DialogCode.Accepted:
+            return
+        if last <= first:
+            self.status.setText('The end must be after the start.')
+            return
+        proposed = source.with_name(source.stem + ' — trimmed.wav')
+        value, _ = FileChooser.getSaveFileName(self, 'Save trimmed copy', str(proposed), 'WAV recordings (*.wav)',
+                                               options=FileChooser.Option.DontConfirmOverwrite)
+        if not value:
+            return
+        destination = Path(value)
+        if destination.suffix.lower() != '.wav':
+            destination = destination.with_name(destination.name + '.wav')
+        job = self.recovery_job = RecoveryJob(source, self, lambda: trim_recording(source, destination, first, last, expected))
+        self.status.setText('Exporting trimmed audio…')
+        def finished():
+            self.recovery_job = None
+            job.deleteLater()
+            self.refresh_library()
+            self.status.setText(f'Saved trimmed copy to {destination.name}' if job.path is not None
+                                else f'Could not export recording: {job.error}')
+        job.finished.connect(finished)
+        self.update_controls()
+        job.start()
 
     def trash_selected(self):
         path = self.selected_recording()
@@ -524,11 +840,19 @@ class Recorder(AppWindow):
             self.status.setText(f'Could not play recording: {message}')
 
     def closeEvent(self, event):
+        if self.recovery_job is not None:
+            self.status.setText('Wait for the file operation to finish before closing.')
+            event.ignore()
+            return
         if self.recording is not None:
-            if not themed_prompt(self, 'Stop recording?', 'Save the recording and close Sound Recorder?',
-                                 'Save and close', 'Keep recording') or not self.finish_recording():
-                event.ignore()
-                return
+            event.ignore()
+            if self.writer.ending:
+                self.close_after_recording = True
+            elif themed_prompt(self, 'Stop recording?', 'Save the recording and close Sound Recorder?',
+                               'Save and close', 'Keep recording'):
+                self.close_after_recording = True
+                self.finish_recording()
+            return
         self.player.stop()
         super().closeEvent(event)
 

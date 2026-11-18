@@ -12,7 +12,11 @@ ListView {
         border.width: Theme.surfaceOutline
         border.color: index===Orbit.switchIndex ? Theme.accent : Theme.border
         Rectangle { anchors.left: parent.left;anchors.verticalCenter: parent.verticalCenter;width: 2;height: parent.height / 2;color: Theme.accent;visible: index===Orbit.switchIndex }
-        Behavior on color { ColorAnimation { duration: Theme.motion } }
+        Behavior on color {
+                        enabled: Theme.controlMotionEnabled
+                        onEnabledChanged: if(!enabled && tintMotion.running)tintMotion.complete()
+                        ColorAnimation { id:tintMotion;duration:Theme.motion }
+                    }
         RowLayout {
             anchors.fill: parent;anchors.margins: 10;spacing: 12
             Image { source: Theme.iconSource(modelData.icon);Layout.preferredWidth: 32;Layout.preferredHeight: 32;sourceSize: Qt.size(32,32) }

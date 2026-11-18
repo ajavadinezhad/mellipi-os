@@ -122,8 +122,7 @@ class SettingsSearchTests(unittest.TestCase):
             QTest.qWait(20)
             rows = panel.property('searchResults')
             names = [row['name'] for row in (rows.toVariant() if hasattr(rows, 'toVariant') else rows)]
-            self.assertEqual(names[0], 'Brightness')
-            self.assertIn('Display brightness', names)
+            self.assertEqual(names, ['Display brightness'])
             self.assertNotIn('Shut down', names)
             self.assertTrue(confirmation.property('visible'))
             revert.forceActiveFocus()
@@ -140,6 +139,14 @@ class SettingsSearchTests(unittest.TestCase):
             self.assertEqual(self.orbit.activated, ['microphone'])
             self.assertEqual(search.property('text'), '')
             QTest.keyClick(window, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+            for query, expected in (
+                ('motion', 'Desktop animations'), ('text size', 'Desktop text size'),
+                ('high contrast', 'High contrast'), ('quick settings', 'Arrange Quick Settings'),
+                ('arrange controls', 'Arrange Quick Settings'),
+            ):
+                search.setProperty('text', query)
+                rows = panel.property('searchResults')
+                self.assertEqual([row['name'] for row in rows.toVariant()], [expected], query)
             search.setProperty('text', 'no such setting')
             self.assertEqual(results.property('count'), 0)
             QTest.keyClick(window, Qt.Key.Key_Escape)

@@ -8,7 +8,8 @@ os.environ['ORBIT_QT'] = '6'
 os.environ['QT_WAYLAND_SHELL_INTEGRATION'] = 'xdg-shell'
 os.environ.pop('QT_WAYLAND_DISABLE_WINDOWDECORATION', None)
 
-from PyQt6.QtCore import Qt, QEvent, QSize, QThread, QUrl, pyqtSignal
+from PyQt6.QtCore import Qt, QEvent, QSize, QThread, QTimer, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtDBus import QDBusConnection, QDBusMessage
 from PyQt6.QtGui import QShortcut, QDesktopServices, QIcon, QKeySequence
 from PyQt6.QtWidgets import (QApplication, QBoxLayout, QDialog, QFrame, QGridLayout,
                              QHeaderView, QLabel, QMenu, QProgressBar, QPushButton, QScrollArea,
@@ -16,9 +17,9 @@ from PyQt6.QtWidgets import (QApplication, QBoxLayout, QDialog, QFrame, QGridLay
 
 from file_chooser import FileChooser
 from files_icons import icon
-from disk_backend import UDisks
+from disk_backend import MGR, ROOT, SERVICE, UDisks
 import icon_theme
-from qt_app import BASE_STYLE, AppWindow, symbolic_icon, themed_prompt, widget_palette
+from qt_app import action_ink, BASE_STYLE, AppWindow, symbolic_icon, themed_prompt, widget_palette
 
 
 class Job(QThread):
@@ -27,19 +28,35 @@ class Job(QThread):
     def __init__(self, parent, kind, device=None, image=None):
         super().__init__(parent)
         self.kind, self.device, self.image = kind, device, image
-        self.rows, self.error = [], ''
+        self.rows, self.error, self.refresh_error = None, '', ''
+        self.verification = None
 
     def run(self):
         try:
             disks = UDisks()
             try:
-                if self.kind in ('mount', 'unmount'):
-                    disks.mount(self.device, unmount=self.kind == 'unmount')
-                if self.kind == 'format':
-                    disks.format(self.device)
-                if self.kind == 'image':
-                    disks.image(self.device, self.image, self.progress.emit)
-                self.rows = disks.list()
+                try:
+                    if self.kind in ('mount', 'unmount'):
+                        disks.mount(self.device, unmount=self.kind == 'unmount')
+                    elif self.kind == 'format':
+                        disks.format(self.device)
+                    elif self.kind == 'image':
+                        disks.image(self.device, self.image, self.progress.emit)
+                    elif self.kind == 'verify':
+                        self.verification = disks.verify_image(self.device, self.image, self.progress.emit,
+                                                               self.isInterruptionRequested)
+                    elif self.kind == 'remove':
+                        disks.safe_remove(self.device)
+                except Exception as error:
+                    self.error = str(error)[:320] or 'The system disk service could not complete the operation.'
+                # An unmount/format/write attempt can partly succeed. Refresh
+                # even on a failure without relying on UDisks signals.
+                try:
+                    self.rows = disks.list()
+                except Exception as error:
+                    if self.kind == 'list':
+                        raise
+                    self.refresh_error = str(error)[:160]
             finally:
                 disks.close()
         except Exception as error:
@@ -209,6 +226,8 @@ class Disks(AppWindow):
         menu = QMenu(self.more_button)
         self.format_action = menu.addAction('Format…', self.format_volume)
         self.image_action = menu.addAction('Write Image…', self.write_image)
+        self.verify_action = menu.addAction('Verify Image…', self.verify_image)
+        self.remove_action = menu.addAction('Safely remove drive…', self.safe_remove)
         self.more_button.setMenu(menu)
         self.action_buttons = (self.open_button, self.mount_button, self.details_button, self.more_button)
         self.actions = QGridLayout()
@@ -235,12 +254,42 @@ class Disks(AppWindow):
         self.progress = QProgressBar()
         self.progress.hide()
         self.content.addWidget(self.progress)
+        self.cancel_verification = QPushButton('Cancel verification')
+        self.cancel_verification.hide()
+        self.cancel_verification.clicked.connect(self.cancel_verify)
+        self.content.addWidget(self.cancel_verification)
         QShortcut(QKeySequence.StandardKey.Refresh, self).activated.connect(self.refresh)
         QShortcut(QKeySequence('Ctrl+I'), self).activated.connect(self.show_details)
         self.update_controls()  # Parents the volume actions before resolving their icons.
         self.refresh_icons()
         self.apply_device_appearance()
+        self.refresh_timer = QTimer(self, singleShot=True, interval=300)
+        self.refresh_timer.timeout.connect(self.refresh)
+        self.refresh_pending = False
+        self.close_pending = False
+        self.refresh_notice = ''
+        self.system_bus = QDBusConnection.systemBus()
+        for signal in ('InterfacesAdded', 'InterfacesRemoved'):
+            self.system_bus.connect(SERVICE, ROOT, MGR, signal, self.queue_hotplug_refresh)
+        self.system_bus.connect(SERVICE, '', 'org.freedesktop.DBus.Properties',
+                                'PropertiesChanged', self.queue_hotplug_refresh)
         self.refresh()
+
+    @pyqtSlot(QDBusMessage)
+    def queue_hotplug_refresh(self, message):
+        if self.close_pending:
+            return
+        if message.member() == 'PropertiesChanged':
+            args = message.arguments()
+            if not args or str(args[0]).rsplit('.', 1)[-1] not in ('Drive', 'Filesystem', 'Block'):
+                return
+            if len(args) >= 2 and isinstance(args[1], dict) and not (
+                    set(args[1]) & {'MountPoints', 'MediaAvailable', 'Size', 'ReadOnly'}):
+                return
+        if self.job is None:
+            self.refresh_timer.start()
+        else:
+            self.refresh_pending = True
 
     def apply_device_appearance(self):
         size = round(16 * self.theme['text_scale'])
@@ -249,7 +298,7 @@ class Disks(AppWindow):
             button.setIconSize(QSize(size, size))
             button.setMinimumHeight(max(32, size + 14))
         for action, name in ((self.format_action, 'edit-clear'), (self.image_action, 'media-optical')):
-            action.setIcon(symbolic_icon(name, self.theme['accent_ink']))
+            action.setIcon(symbolic_icon(name, action_ink(self.theme, name)))
         self.repaint_device_icons()
         self.reflow()
 
@@ -294,9 +343,8 @@ class Disks(AppWindow):
         while cursor.value():
             item = cursor.value()
             row = self.devices[item.data(0, Qt.ItemDataRole.UserRole)]
-            tint = '#e7ad76' if row.writable_usb else '#87abdf'
-            item.setIcon(0, icon('duotone', 'hard-drives', self.theme['text'], tint,
-                                 self.theme['text']))
+            item.setIcon(0, icon('duotone', 'hard-drives', self.theme['accent_ink'],
+                                 self.theme['accent'], self.theme['text'], semantic_tint=False))
             cursor += 1
 
     def button(self, icon, text, action, *, icon_only=False):
@@ -333,7 +381,9 @@ class Disks(AppWindow):
         self.format_action.setEnabled(bool(ready and row and row.writable_usb
                                            and (row.partition or not row.partitioned)))
         self.image_action.setEnabled(bool(ready and row and row.writable_usb and not row.partition))
-        self.more_button.setEnabled(self.format_action.isEnabled() or self.image_action.isEnabled())
+        self.verify_action.setEnabled(self.image_action.isEnabled() and not row.mounts)
+        self.remove_action.setEnabled(bool(ready and row and row.can_power_off and not row.partition and not row.system))
+        self.more_button.setEnabled(any(action.isEnabled() for action in (self.format_action, self.image_action, self.remove_action)))
         self.selection.setText(row.name if row else 'No drive selected')
         self.selection.setToolTip(f'{row.name}\n{row.node}' if row else '')
         self.describe_device(row)
@@ -396,35 +446,84 @@ class Disks(AppWindow):
             self.start('image', row, path)
             self.image = None
 
-    def start(self, kind, device=None, image=None):
-        if self.job is not None:
+    def verify_image(self):
+        row = self.current()
+        if not row or not self.verify_action.isEnabled():
             return
+        path = self.image or FileChooser.getOpenFileName(
+            self, 'Select the original disk image', '', 'Disk images (*.iso *.img);;All files (*)')[0]
+        if path:
+            self.start('verify', row, path)
+
+    def cancel_verify(self):
+        if self.job and self.job.kind == 'verify':
+            self.job.requestInterruption()
+            self.cancel_verification.setEnabled(False)
+            self.hint.setText('Stopping verification…')
+
+    def safe_remove(self):
+        row = self.current()
+        if row and self.remove_action.isEnabled() and themed_prompt(
+                self, 'Safely remove drive?', f'Unmount all volumes on {row.name} ({row.node}) and prepare the drive for unplugging?',
+                'Safely remove', 'Cancel'):
+            self.start('remove', row)
+
+    def start(self, kind, device=None, image=None):
+        if self.job is not None or self.close_pending:
+            return
+        if kind != 'list':
+            self.refresh_notice = ''
         self.job = Job(self, kind, device, image)
         self.job.finished.connect(self.done)
         self.job.progress.connect(self.progress.setValue)
         self.update_controls()
         self.hint.setText({'list': 'Looking for drives…', 'format': 'Formatting…',
-                           'image': 'Writing image…', 'mount': 'Mounting…',
-                           'unmount': 'Unmounting…'}[kind])
-        self.progress.setRange(0, 100 if kind == 'image' else 0)
-        if kind == 'image':
+                           'image': 'Writing image…', 'verify': 'Verifying image…', 'mount': 'Mounting…',
+                           'unmount': 'Unmounting…', 'remove': 'Safely removing drive…'}[kind])
+        self.progress.setRange(0, 100 if kind in ('image', 'verify') else 0)
+        if kind in ('image', 'verify'):
             self.progress.setValue(0)
+        self.cancel_verification.setVisible(kind == 'verify')
+        self.cancel_verification.setEnabled(kind == 'verify')
         self.progress.show()
         self.job.start()
 
     def done(self):
         job, self.job = self.job, None
+        if self.close_pending:
+            job.deleteLater()
+            QTimer.singleShot(0, self.close)
+            return
         previous = self.current()
         self.progress.hide()
-        if job.error:
-            self.update_controls()
-            self.hint.setText(job.error)
-        else:
+        self.cancel_verification.hide()
+        if job.rows is not None:
             self.populate(job.rows, previous)
-            if job.kind in ('format', 'image'):
-                self.hint.setText('Image written. Your USB is ready.' if job.kind == 'image'
-                                  else 'Volume formatted.')
+        else:
+            self.update_controls()
+        if job.error:
+            message = job.error
+        else:
+            messages = {'image': 'Image written.', 'format': 'Volume formatted.',
+                        'remove': 'It is now safe to unplug the drive.'}
+            message = messages.get(job.kind, '')
+            if job.kind == 'verify':
+                message = {'match': 'Verification passed. The USB matches the image.',
+                           'mismatch': 'Verification failed. The USB does not match the image.',
+                           'canceled': 'Verification canceled.'}.get(job.verification, '')
+        if job.refresh_error:
+            message = (message or 'Drive operation completed.') + ' Refresh failed: ' + job.refresh_error
+        if job.kind == 'list' and self.refresh_notice:
+            message = ' '.join(filter(None, (self.refresh_notice, message)))
+            self.refresh_notice = ''
+        if message:
+            self.hint.setText(message)
         job.deleteLater()
+        if self.refresh_pending:
+            self.refresh_pending = False
+            if job.kind != 'list':
+                self.refresh_notice = message
+            self.refresh_timer.start()
 
     def populate(self, devices, previous):
         self.volumes.clear()
@@ -433,11 +532,12 @@ class Disks(AppWindow):
         target = None
         for index in sorted(range(len(devices)), key=lambda n: devices[n].partition):
             row = devices[index]
-            item = QTreeWidgetItem([row.name, size_label(row.size), row.filesystem or '—', row.node])
+            name = row.name + ' · USB' if row.writable_usb and not row.partition else row.name
+            item = QTreeWidgetItem([name, size_label(row.size), row.filesystem or '—', row.node])
             item.setData(0, Qt.ItemDataRole.UserRole, index)
             for col in range(4):
                 item.setToolTip(col, item.text(col))
-            item.setToolTip(0, f'{row.name}\n{row.node}')
+            item.setToolTip(0, f'{name}\n{row.node}')
             if row.partition and row.drive in whole:
                 whole[row.drive].addChild(item)
             else:
@@ -455,15 +555,19 @@ class Disks(AppWindow):
         self.update_controls()
 
     def closeEvent(self, event):
-        if self.job and self.job.kind != 'list':
+        if self.job and self.job.kind not in ('list', 'verify'):
             self.hint.setText('Wait for the drive operation to finish before closing.')
             event.ignore()
             return
         if self.job:
-            self.job.wait(9000)
-            if self.job.isRunning():
-                event.ignore()
-                return
+            if self.job.kind == 'verify':
+                self.job.requestInterruption()
+            self.close_pending = True
+            self.refresh_timer.stop()
+            self.hide()
+            event.ignore()
+            return
+        self.refresh_timer.stop()
         super().closeEvent(event)
 
 

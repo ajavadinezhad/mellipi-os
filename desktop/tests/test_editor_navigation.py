@@ -3,10 +3,11 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QDialog, QPlainTextEdit
 
 from mellipi_editor import Editor
 
@@ -54,6 +55,91 @@ class EditorNavigationTests(TestCase):
         self.editor.resize(900, 440)
         self.app.processEvents()
         self.assertEqual(tuple(button.text() for button in self.editor.compact_actions), labels)
+
+    def test_reload_after_external_save_keeps_unsaved_buffer(self):
+        self.doc.insertPlainText('My unsaved edit ')
+        our_version = self.doc.plain_text()
+        self.source.write_bytes(b'The file changed outside Editor.\n')
+        with patch('mellipi_editor.themed_choice', return_value=2):
+            self.assertFalse(self.editor.save(self.doc))
+        self.assertEqual(self.doc.plain_text(), 'The file changed outside Editor.\n')
+        self.assertFalse(self.doc.document().isModified())
+        copied = self.editor.document()
+        self.assertIsNone(copied.path)
+        self.assertEqual(copied.plain_text(), our_version)
+        self.assertTrue(copied.document().isModified())
+        path = self.editor.draft_path(copied)
+        self.assertEqual(json.loads(path.read_text())['text'], our_version)
+        self.assertEqual(list(self.editor.recovery.glob('*.json')), [path])
+        copied.document().setModified(False)
+
+    def test_save_as_never_replaces_a_concurrently_created_file_without_consent(self):
+        target = self.source.with_name('destination.txt')
+        self.doc.insertPlainText('local changes')
+        def select(*args, **kwargs):
+            target.write_bytes(b'another application')
+            return str(target), ''
+        try:
+            with patch('mellipi_editor.FileChooser.getSaveFileName', side_effect=select), patch(
+                    'mellipi_editor.themed_prompt', return_value=False) as prompt:
+                self.assertFalse(self.editor.save(self.doc, force_dialog=True))
+            self.assertEqual(target.read_bytes(), b'another application')
+            self.assertEqual(self.doc.path, self.source)
+            self.assertTrue(self.doc.document().isModified())
+            self.assertEqual(prompt.call_args.args[1], 'Replace file?')
+        finally:
+            self.doc.document().setModified(False)
+
+    def test_compare_with_disk_is_read_only_and_keeps_unsaved_text(self):
+        self.doc.insertPlainText('unsaved change ')
+        ours = self.doc.plain_text()
+        self.source.write_bytes(b'changed outside Editor\r\n')
+        def compare(dialog):
+            view = dialog.findChild(QPlainTextEdit)
+            self.assertTrue(view.isReadOnly())
+            self.assertIn('-changed outside Editor', view.toPlainText())
+            self.assertIn('+unsaved change', view.toPlainText())
+            return QDialog.DialogCode.Rejected
+        try:
+            with patch('mellipi_editor.themed_choice', return_value=3), patch(
+                    'mellipi_editor.exec_owned_dialog', side_effect=compare) as preview:
+                self.assertFalse(self.editor.save(self.doc))
+            preview.assert_called_once()
+            self.assertEqual(self.doc.plain_text(), ours)
+            self.assertTrue(self.doc.document().isModified())
+            self.assertEqual(self.source.read_bytes(), b'changed outside Editor\r\n')
+        finally:
+            self.doc.document().setModified(False)
+
+    def test_reload_does_not_replace_buffer_if_recovery_write_fails(self):
+        self.doc.insertPlainText('Unsaved edit ')
+        original = self.doc.plain_text()
+        self.source.write_bytes(b'New disk contents\n')
+        try:
+            with patch('mellipi_editor.themed_choice', return_value=2), patch(
+                    'mellipi_editor.stage_draft', side_effect=OSError('disk full')), patch('mellipi_editor.themed_prompt'):
+                self.assertFalse(self.editor.save(self.doc))
+            self.assertEqual(self.doc.plain_text(), original)
+            self.assertTrue(self.doc.document().isModified())
+            self.assertEqual(self.editor.tabs.count(), 1)
+        finally:
+            self.doc.document().setModified(False)
+
+    def test_background_autosave_publishes_recovery_then_save_removes_it(self):
+        self.doc.insertPlainText('Recovery sample ')
+        self.editor.flush_drafts()
+        path = self.editor.draft_path(self.doc)
+        try:
+            for _ in range(100):
+                if path.exists():
+                    break
+                QTest.qWait(10)
+            self.assertTrue(path.exists())
+            self.assertEqual(json.loads(path.read_text())['text'], self.doc.plain_text())
+            self.assertTrue(self.editor.save(self.doc))
+            self.assertFalse(path.exists())
+        finally:
+            self.doc.document().setModified(False)
 
     def test_keyboard_jumps_to_last_empty_line_without_editing(self):
         QTest.keyClick(self.doc, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)

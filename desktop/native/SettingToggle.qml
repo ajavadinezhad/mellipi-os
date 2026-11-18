@@ -15,8 +15,7 @@ Switch {
         color: !toggle.enabled ? Theme.background : toggle.checked ? Theme.accent : toggle.down ? Theme.hover : Theme.raised
         border.color: toggle.activeFocus ? (toggle.checked ? Theme.accentText : Theme.focusColor) : toggle.enabled ? Theme.controlBorder : Theme.border
         border.width: toggle.activeFocus ? 2 : toggle.checked && toggle.enabled ? 0 : 1
-        Rectangle { x: toggle.checked ? 17 : 3;y: 3;width: 12;height: 12;radius: 6;color: !toggle.enabled ? Theme.disabled : toggle.checked ? Theme.accentText : Theme.muted
-            Behavior on x { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.motion;easing.type: Easing.OutCubic } }
-        }
+        MotionValue {id:thumbSlide;target:toggle.checked ? 17 : 3;duration:Theme.motion}
+        Rectangle { x: thumbSlide.value;y: 3;width: 12;height: 12;radius: 6;color: !toggle.enabled ? Theme.disabled : toggle.checked ? Theme.accentText : Theme.muted }
     }
 }

@@ -49,13 +49,15 @@ Item {
             onCurrentIndexChanged: {
                 if(!ready)return;
                 foldViewEnter.stop();
-                if(Theme.reducedMotion){opacity=1;foldPageShift.y=0;}
+                if(!Theme.panelMotionEnabled){opacity=1;foldPageShift.y=0;}
                 else foldViewEnter.restart();
             }
+            readonly property bool animateView: Theme.panelMotionEnabled
+            onAnimateViewChanged: if(!animateView){foldViewEnter.stop();opacity=1;foldPageShift.y=0;}
             ParallelAnimation {
                 id: foldViewEnter
-                NumberAnimation {target: foldPages;property: "opacity";from: .72;to: 1;duration: Theme.motion;easing.type: Easing.OutCubic}
-                NumberAnimation {target: foldPageShift;property: "y";from: 5;to: 0;duration: Theme.motion;easing.type: Easing.OutCubic}
+                NumberAnimation {target: foldPages;property: "opacity";from: .72;to: 1;duration: Theme.panelMotion;easing.type: Easing.OutCubic}
+                NumberAnimation {target: foldPageShift;property: "y";from: Theme.economy ? 0 : 5;to: 0;duration: Theme.panelMotion;easing.type: Easing.OutCubic}
             }
             Rectangle {
                 id: notesLeaf;objectName: "foldNotesLeaf"

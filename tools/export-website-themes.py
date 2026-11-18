@@ -12,9 +12,9 @@ def export(output):
     sys.path.insert(0,str(SOURCE))
     from preferences import DEFAULTS
     from theme_catalog import presets,PALETTE_KEYS,THEME_IDS
-    from PyQt5.QtGui import QGuiApplication
-    from PyQt5.QtQml import QQmlComponent,QQmlEngine
-    from PyQt5.QtCore import QUrl
+    from PyQt6.QtGui import QGuiApplication
+    from PyQt6.QtQml import QQmlComponent,QQmlEngine
+    from PyQt6.QtCore import QUrl
     app=QGuiApplication.instance() or QGuiApplication([])
     engine=QQmlEngine()
     qml=(DESKTOP/'native/Theme.qml').read_text().replace('pragma Singleton','',1)

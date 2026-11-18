@@ -11,7 +11,7 @@ class TitleBar(QFrame):
         self.owner = window
         self.setObjectName('titlebar')
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(2, 0, 0, 0)
+        layout.setContentsMargins(12, 0, 6, 0)
         layout.setSpacing(4)
         layout.addLayout(navigation, 1)
         layout.addSpacing(18)

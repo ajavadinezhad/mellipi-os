@@ -1,7 +1,9 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Window 2.15
 import "."
+import "SettingReveal.js" as SettingReveal
 ColumnLayout {
     id: quick;objectName: "quickPanel"
     property int section: typeof Orbit.quickSection!=="undefined" ? Orbit.quickSection : 0
@@ -11,30 +13,98 @@ ColumnLayout {
     property Item selectedNetworkItem: null
     property Item returnFocus: null
     property string audioPicker: ""
+    readonly property var defaultOrder: ["volume","brightness","connections","power"]
+    readonly property var controlOrder: (Orbit.appearance || {}).quickControlOrder || defaultOrder
+    readonly property var controlNames: ({volume:"Volume",brightness:"Brightness",connections:"Connections",power:"Power"})
+    property bool arranging: false
+    property string liftedControl: ""
+    property point dragPoint
+    property string refocusControl: ""
+    readonly property var insertion: liftedControl ? insertionAt(dragPoint,body.contentItem.contentY,body.height) : null
+    function dropCandidate(key,after,y) {
+        const order=controlOrder;
+        const from=order.indexOf(liftedControl),anchor=order.indexOf(key);
+        const to=anchor+(after ? 1 : 0)-(from<anchor ? 1 : 0);
+        return from===to ? null : {key:key,after:after,y:y};
+    }
+    function insertionAt(point, scrollY, viewportHeight) {
+        const local=body.mapFromItem(null,point.x,point.y);
+        if(local.x<0 || local.x>=body.width || local.y<0 || local.y>=viewportHeight)return null;
+        const onContent=content.mapFromItem(null,point.x,point.y);
+        for(let i=0;i<quickRows.count;i++){
+            const row=quickRows.itemAt(i);
+            if(row && row.visible && row.modelData!==liftedControl && onContent.y<=row.y+row.height/2)
+                return dropCandidate(row.modelData,false,row.y);
+        }
+        for(let i=quickRows.count-1;i>=0;i--){
+            const row=quickRows.itemAt(i);
+            if(row && row.visible && row.modelData!==liftedControl)
+                return dropCandidate(row.modelData,true,row.y+row.height);
+        }
+        return null;
+    }
+    function completeReorder(point) {
+        if(!liftedControl)return;
+        const key=liftedControl;
+        const target=insertionAt(point,body.contentItem.contentY,body.height);
+        liftedControl="";
+        if(target){
+            const row=quickRows.itemAt(controlOrder.indexOf(key));
+            if(row && row.grip.activeFocus)refocusControl=key;
+            Orbit.dropQuickControl(key,target.key,target.after);
+        }
+    }
+    onControlOrderChanged: if(refocusControl)Qt.callLater(function(){
+        const row=quickRows.itemAt(quick.controlOrder.indexOf(quick.refocusControl));
+        quick.refocusControl="";
+        if(row && row.visible && quick.section===0)row.grip.forceActiveFocus(Qt.TabFocusReason);
+    })
+    Timer {
+        interval:32;repeat:true;running:!!quick.liftedControl
+        onTriggered:{
+            const y=body.mapFromItem(null,quick.dragPoint.x,quick.dragPoint.y).y;
+            const x=body.mapFromItem(null,quick.dragPoint.x,quick.dragPoint.y).x;
+            if(x<0 || x>=body.width || y<0 || y>=body.height)return;
+            const step=y<20 ? -9 : y>body.height-20 ? 9 : 0;
+            const flick=body.contentItem;
+            if(step)flick.contentY=Math.max(0,Math.min(flick.contentY+step,Math.max(0,flick.contentHeight-flick.height)));
+        }
+    }
     readonly property string batteryStatus: Power.state.percentageAvailable
         ? Power.state.batteryPercent+"%"+(Power.state.charging ? " · Charging" : "")
-        : System.values.batteryPresent ? System.values.batteryPercent+"%" : "Power and session"
+        : System.values.batteryPresent ? System.values.batteryPercent+"%" : ""
     function openDetails(next, source) {
         returnFocus=source;
         section=next;
         Qt.callLater(function(){if(detailBack.visible)detailBack.forceActiveFocus(Qt.TabFocusReason);});
+    }
+    function setArranging(value) {
+        arranging=value;
+        if(value)Qt.callLater(function(){
+            const row=quickRows.itemAt(0);
+            if(quick.arranging && row && row.grip.visible)row.grip.forceActiveFocus();
+        });
+        else arrangeButton.forceActiveFocus(Qt.TabFocusReason);
     }
     function showOverview() {
         section=0;
         Qt.callLater(function(){if(returnFocus && returnFocus.visible) returnFocus.forceActiveFocus(Qt.TabFocusReason);});
     }
     Keys.onEscapePressed: event => {
-        event.accepted=quick.section!==0;
-        if(event.accepted)quick.showOverview();
+        event.accepted=!!quick.liftedControl || quick.arranging || quick.section!==0;
+        if(quick.liftedControl)quick.liftedControl="";
+        else if(quick.arranging)quick.setArranging(false);
+        else if(quick.section===1 && quick.selectedSsid && !quick.wifiBusy)quick.cancelNetwork();
+        else if(event.accepted)quick.showOverview();
     }
     function reveal(item) {
-        var flick=body.contentItem;
-        if(!flick || !flick.contentItem || !item)return;
-        var y=item.mapToItem(flick.contentItem,0,0).y;
-        var start=flick.contentY;
-        if(y<start+4)start=y-4;
-        else if(y+item.height>start+flick.height-4)start=y+item.height-flick.height+4;
-        flick.contentY=Math.max(0,Math.min(start,Math.max(0,flick.contentHeight-flick.height)));
+        SettingReveal.scrollTo(body,item,4);
+    }
+    Connections {
+        target:quick.Window.window
+        function onActiveFocusItemChanged() {
+            Qt.callLater(function(){var window=quick.Window.window;if(window)quick.reveal(window.activeFocusItem);});
+        }
     }
     onWifiBusyChanged: if(!wifiBusy && submitted) {
         submitted=false;
@@ -43,6 +113,18 @@ ColumnLayout {
     property bool contentReady: false
     readonly property bool wifiBusy: !!System.values.wifiConnecting
     readonly property bool wifiScanning: !!System.values.wifiScanning
+    function cancelNetwork() {
+        if(wifiBusy)return;
+        const row=selectedNetworkItem;
+        selectedNetworkItem=null;
+        selectedSsid="";
+        wifiPassword.text="";
+        Qt.callLater(function(){
+            if(quick.section!==1)return;
+            if(row && row.visible)row.forceActiveFocus(Qt.TabFocusReason);
+            else detailBack.forceActiveFocus(Qt.TabFocusReason);
+        });
+    }
     function chooseNetwork(row, item) {
         if(wifiBusy)return;
         selectedNetworkItem=item;
@@ -64,23 +146,27 @@ ColumnLayout {
     function animateTab() {
         if(!contentReady)return;
         tabFade.stop();content.opacity=1;
-        if(!Theme.reducedMotion)tabFade.start();
+        if(Theme.panelMotionEnabled)tabFade.start();
     }
-    Component.onCompleted: contentReady=true
+    Component.onCompleted: {
+        contentReady=true;
+        if(typeof Orbit.quickArrangeRequested!=="undefined" && Orbit.quickArrangeRequested===true)setArranging(true);
+    }
     NumberAnimation {
         id:tabFade;objectName:"quickTabFade";target:content;property:"opacity"
-        from:0.76;to:1;duration:Theme.economy ? 80 : 130;easing.type:Easing.OutCubic
+        from:0.76;to:1;duration:Theme.motionDuration(130,80);easing.type:Easing.OutCubic
     }
-    readonly property bool motionDisabled:Theme.reducedMotion
+    readonly property bool motionDisabled:!Theme.panelMotionEnabled
     onMotionDisabledChanged:if(motionDisabled){tabFade.stop();content.opacity=1;}
     readonly property int rowGap: Theme.extraCompact ? 6 : Theme.compact ? 8 : 10
     readonly property int surfaceInset: Theme.extraCompact || width<280 ? 6 : Theme.compact ? 8 : 10
     readonly property int networkRowHeight: Math.max(34, Math.ceil(networkMetrics.height) + 12)
     FontMetrics {id: networkMetrics;font.pixelSize: Theme.fontSize(11)}
     spacing: rowGap
-    implicitHeight: (detailHeader.visible ? detailHeader.implicitHeight+spacing : 0)+content.implicitHeight+settingsLink.implicitHeight+spacing
+    implicitHeight: (detailHeader.visible ? detailHeader.implicitHeight+spacing : 0)+content.implicitHeight+(settingsLink.visible ? settingsLink.implicitHeight+spacing : 0)
     onSectionChanged: {
         animateTab();
+        liftedControl="";refocusControl="";arranging=false;
         selectedSsid="";selectedNetworkItem=null;audioPicker="";if(sessionActions)sessionActions.confirmSleep=false;
         if(wifiPassword)wifiPassword.text="";
         if(body && body.contentItem)body.contentItem.contentY=0;
@@ -107,48 +193,71 @@ ColumnLayout {
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ColumnLayout {
             id: content;width: body.availableWidth;spacing: quick.rowGap
-        Rectangle {
-            visible: quick.section===0;Layout.fillWidth: true
-            implicitHeight: levels.implicitHeight+2*quick.surfaceInset
-            radius: Theme.corner(12);color: Theme.surface
-            border.color: Theme.controlBorder;border.width: Theme.surfaceOutline
-            ColumnLayout {
-                id: levels;x:quick.surfaceInset;y:quick.surfaceInset;width:Math.max(0,parent.width-2*quick.surfaceInset);spacing:quick.rowGap
-                QuickLevel {
-                    objectName:"quickSoundControls";title:"Volume";valueName:"Output volume"
-                    value: System.values.volume || 0; available: !!System.values.audioAvailable
-                    glyph: System.values.muted ? "mute" : "volume"
-                    glyphActionLabel: System.values.muted ? "Unmute" : "Mute"
-                    glyphObjectName:"soundMuteButton"
-                    onGlyphActivated: System.toggleMute()
-                    detailsHint: "Audio devices and microphone"
-                    linkObjectName:"audioDevicesLink"
-                    currentDevice: System.values.audioName || ""
-                    onDetailsActivated: source => quick.openDetails(3,source)
-                    onApplied: value => System.setVolume(value)
+        Repeater {
+            id:quickRows
+            model: quick.controlOrder
+            delegate: RowLayout {
+                id:controlRow
+                required property string modelData
+                required property int index
+                property alias grip: handle
+                spacing:2
+                visible:quick.section===0;Layout.fillWidth:true
+                opacity:quick.liftedControl===modelData ? .48 : 1
+                Loader {
+                    Layout.fillWidth:true;Layout.minimumWidth:0
+                    sourceComponent: ({volume:volumeControl,brightness:brightnessControl,connections:connectionsControl,power:powerControl})[controlRow.modelData]
                 }
-                Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.separator}
-                QuickLevel {
-                    title:"Brightness";valueName:"Display brightness";sliderObjectName:"brightnessSlider"
-                    value: Brightness.state.percent || 0;minimum:1;available:!!Brightness.state.available
-                    glyph:"display";currentDevice:Brightness.state.name || ""
-                    unavailable:Brightness.state.reason || "Brightness controls unavailable"
-                    detailsHint:"Brightness settings"
-                    onDetailsActivated: Orbit.openSettingsSection(15)
-                    onApplied: value => Brightness.setBrightness(value)
+                OrbitButton {
+                    id:handle
+                    objectName:"quickGrip_"+controlRow.modelData
+                    visible: quick.arranging
+                    bare:true;padding:0
+                    Layout.preferredWidth:26;Layout.minimumWidth:26
+                    Layout.preferredHeight:30;Layout.alignment:Qt.AlignTop
+                    hint:"Reorder "+quick.controlNames[controlRow.modelData]+" · ↑/↓"
+                    Accessible.name:hint
+                    contentItem: DragGrip {ink:handle.activeFocus || handle.hovered ? Theme.accentInk : Theme.muted}
+                    Keys.onPressed: event => {
+                        if(event.key!==Qt.Key_Up && event.key!==Qt.Key_Down)return;
+                        event.accepted=true;
+                        const step=event.key===Qt.Key_Up ? -1 : 1;
+                        if(!event.isAutoRepeat && controlRow.index+step>=0 && controlRow.index+step<quick.controlOrder.length){
+                            quick.refocusControl=controlRow.modelData;
+                            Orbit.moveQuickControl(controlRow.modelData,step);
+                        }
+                    }
+                    TapHandler {
+                        acceptedButtons:Qt.RightButton
+                        onTapped:defaultsMenu.popup()
+                    }
+                    Menu {
+                        id:defaultsMenu
+                        MenuItem {
+                            text:"Restore default order"
+                            enabled:quick.controlOrder.join(",")!==quick.defaultOrder.join(",")
+                            onTriggered:{quick.refocusControl=controlRow.modelData;Orbit.setPreference("quickControlOrder",quick.defaultOrder);}
+                        }
+                    }
+                    DragHandler {
+                        target:null
+                        acceptedButtons:Qt.LeftButton
+                        acceptedDevices:PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.Stylus | PointerDevice.TouchScreen
+                        cursorShape:active ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                        onGrabChanged:(transition,point)=>{
+                            if(transition===PointerDevice.GrabExclusive){
+                                quick.dragPoint=point.scenePosition;
+                                quick.liftedControl=controlRow.modelData;
+                                Orbit.hideTooltip();
+                            } else if(transition===PointerDevice.UngrabExclusive)
+                                quick.completeReorder(point.scenePosition);
+                            else if(transition===PointerDevice.CancelGrabExclusive)
+                                quick.liftedControl="";
+                        }
+                        onTranslationChanged:if(active)quick.dragPoint=centroid.scenePosition
+                    }
                 }
             }
-        }
-        QuickStatus {
-            id: connectionStatus;objectName:"quickConnectionStatus";visible:quick.section===0
-            glyph:"connections";heading:"Connections"
-            status:System.values.networkAvailable ? (System.values.networkState || "Wi-Fi") : "Network unavailable"
-            onClicked:quick.openDetails(1,connectionStatus)
-        }
-        QuickStatus {
-            id: powerStatus;objectName:"quickPowerStatus";visible:quick.section===0
-            glyph:"power";heading:"Power";status:quick.batteryStatus
-            onClicked:quick.openDetails(2,powerStatus)
         }
         ColumnLayout {
             visible: quick.section===1;Layout.fillWidth: true;spacing: quick.rowGap
@@ -168,7 +277,7 @@ ColumnLayout {
                         Text {text: "Join "+quick.selectedSsid;Layout.fillWidth:true;Layout.minimumWidth:0;elide:Text.ElideRight;color:Theme.text;font.pixelSize:Theme.fontSize(11);font.weight:Font.DemiBold;textFormat:Text.PlainText}
                         IconButton {
                             iconName:"close";hint:"Cancel joining this network"
-                            onClicked:{quick.selectedSsid="";wifiPassword.text="";Qt.callLater(function(){if(quick.selectedNetworkItem)quick.selectedNetworkItem.forceActiveFocus(Qt.TabFocusReason);});}
+                            onClicked:quick.cancelNetwork()
                         }
                     }
                     RowLayout {
@@ -254,6 +363,7 @@ ColumnLayout {
             SessionPanel {id: sessionActions;Layout.fillWidth: true}
             SettingsGroup {
                 title: "Battery"
+                visible: !!(Power.state.batteryPresent || Power.state.percentageAvailable || System.values.batteryPresent)
                 SettingRow {
                     label: Power.state.percentageAvailable ? Power.state.batteryPercent+"%"+(Power.state.charging ? " · Charging" : "") : System.values.batteryPresent ? System.values.batteryPercent+"%" : Power.state.batteryPresent ? "Battery level unavailable" : "No system battery"
                     IconButton {iconName: "battery";hint: "Battery health";onClicked: Orbit.showPanel("battery")}
@@ -265,7 +375,7 @@ ColumnLayout {
             Loader {
                 active:quick.section===3;Layout.fillWidth:true
                 sourceComponent:SettingsGroup {
-                    title:"Audio devices"
+                    Text {text:"Output";color:Theme.text;font.pixelSize:Theme.labelSize}
                     AudioDevicePicker {
                         objectName:"quickOutputPicker";accessibleLabel:"Output device"
                         devices:System.values.audioOutputs || [];selectedName:System.values.defaultOutput || ""
@@ -273,6 +383,7 @@ ColumnLayout {
                         onToggled:quick.audioPicker=expanded ? "" : "output"
                         onSelected:name=>{System.setOutputDevice(name);quick.audioPicker="";}
                     }
+                    Text {text:"Microphone";color:Theme.text;font.pixelSize:Theme.labelSize}
                     AudioDevicePicker {
                         objectName:"quickInputPicker";accessibleLabel:"Microphone"
                         devices:System.values.audioInputs || [];selectedName:System.values.defaultInput || ""
@@ -290,11 +401,18 @@ ColumnLayout {
         }
     }
     ColumnLayout {
-        id: settingsLink;Layout.fillWidth:true;spacing:Math.max(4,quick.rowGap-2)
+        id: settingsLink;visible:quick.section===0;Layout.fillWidth:true;spacing:Math.max(4,quick.rowGap-2)
         Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.separator}
         RowLayout {
             Layout.fillWidth:true;spacing:quick.rowGap
             readonly property bool showLabels: width>=240+Math.max(0,Theme.textScale-1)*80
+            IconButton {
+                id:arrangeButton;objectName:"quickArrange"
+                iconName:quick.arranging ? "check" : "view-grid"
+                hint:quick.arranging ? "Done arranging" : "Reorder Quick Settings"
+                visible:typeof Orbit.dropQuickControl==="function"
+                onClicked:quick.setArranging(!quick.arranging)
+            }
             IconButton {
                 objectName:"systemSettingsLink";iconName:"settings";hint:"Open Settings"
                 text:parent.showLabels ? "Settings" : ""
@@ -313,6 +431,14 @@ ColumnLayout {
         }
     }
 
+    Rectangle {
+        objectName:"quickDropMarker"
+        visible:!!quick.insertion
+        parent:body
+        x:0;width:content.width;height:2;radius:1
+        y:visible ? Math.max(0,quick.insertion.y-(quick.insertion.after ? 0 : quick.rowGap/2))-body.contentItem.contentY : 0
+        color:Theme.accentInk;z:10
+    }
     component QuickStatus: OrbitButton {
         id: tile
         required property string glyph
@@ -325,16 +451,16 @@ ColumnLayout {
         contentItem:RowLayout {
             id:statusRow;spacing:8
             Image {
-                Layout.preferredWidth:18;Layout.preferredHeight:18;sourceSize:Qt.size(24,24)
+                Layout.minimumWidth:18;Layout.maximumWidth:18;Layout.preferredHeight:18;sourceSize:Qt.size(24,24)
                 source:Theme.symbolicIconSource(tile.glyph,Theme.accentInk)
             }
             ColumnLayout {
                 Layout.fillWidth:true;Layout.minimumWidth:0;spacing:1
-                Text {text:tile.heading;font.pixelSize:Theme.fontSize(12);font.weight:Font.DemiBold;color:Theme.text}
-                Text {Layout.fillWidth:true;Layout.minimumWidth:0;text:tile.status;elide:Text.ElideRight;textFormat:Text.PlainText;color:Theme.muted;font.pixelSize:Theme.detailSize}
+                Text {Layout.fillWidth:true;Layout.minimumWidth:0;horizontalAlignment:Text.AlignLeft;elide:Text.ElideRight;text:tile.heading;font.pixelSize:Theme.fontSize(12);font.weight:Font.DemiBold;color:Theme.text}
+                Text {Layout.fillWidth:true;Layout.minimumWidth:0;visible:!!tile.status;text:tile.status;elide:Text.ElideRight;textFormat:Text.PlainText;color:Theme.muted;font.pixelSize:Theme.detailSize}
             }
             Image {
-                Layout.preferredWidth:16;Layout.preferredHeight:16;sourceSize:Qt.size(24,24)
+                Layout.minimumWidth:16;Layout.maximumWidth:16;Layout.preferredHeight:16;sourceSize:Qt.size(24,24)
                 source:Theme.symbolicIconSource("chevron-right")
             }
         }
@@ -355,6 +481,8 @@ ColumnLayout {
         property real value: 0
         property int minimum: 0
         property bool available: false
+        property bool applyOnRelease: false
+        property bool pending: false
         signal glyphActivated()
         signal detailsActivated(Item source)
         signal applied(int value)
@@ -388,8 +516,11 @@ ColumnLayout {
                 id:levelSlider;objectName:level.sliderObjectName;property bool userAdjusting:false
                 Accessible.name:level.valueName;Layout.fillWidth:true;Layout.minimumWidth:0
                 from:level.minimum;to:100;stepSize:1;value:level.value;enabled:level.available
-                onMoved:{userAdjusting=true;levelTimer.restart();}
-                onPressedChanged:if(!pressed && userAdjusting){levelTimer.stop();level.applied(Math.round(value));userAdjusting=false;}
+                onMoved:{userAdjusting=true;if(!level.applyOnRelease || !pressed)levelTimer.restart();}
+                onPressedChanged:{
+                    if(pressed && level.applyOnRelease)levelTimer.stop();
+                    else if(!pressed && userAdjusting){levelTimer.stop();level.applied(Math.round(value));userAdjusting=false;}
+                }
                 Timer {id:levelTimer;interval:120;onTriggered:{level.applied(Math.round(levelSlider.value));if(!levelSlider.pressed)levelSlider.userAdjusting=false;}}
             }
             Text {
@@ -399,8 +530,55 @@ ColumnLayout {
             }
         }
         Text {
+            visible:level.pending
+            Layout.fillWidth:true;text:"Applying brightness…";color:Theme.muted;font.pixelSize:Theme.fontSize(10)
+        }
+        Text {
             visible:!level.available;Layout.fillWidth:true;text:level.unavailable;textFormat:Text.PlainText
             color:Theme.muted;font.pixelSize:Theme.fontSize(10);wrapMode:Text.Wrap
         }
     }
+    Component {
+        id:volumeControl
+        QuickLevel {
+            objectName:"quickSoundControls";title:"Volume";valueName:"Output volume"
+            value:System.values.volume || 0;available:!!System.values.audioAvailable
+            glyph:System.values.muted ? "mute" : "volume"
+            glyphActionLabel:System.values.muted ? "Unmute" : "Mute"
+            glyphObjectName:"soundMuteButton";onGlyphActivated:System.toggleMute()
+            detailsHint:"Audio devices and microphone";linkObjectName:"audioDevicesLink"
+            currentDevice:System.values.audioName || ""
+            onDetailsActivated: source => quick.openDetails(3,source)
+            onApplied: value => System.setVolume(value)
+        }
+    }
+    Component {
+        id:brightnessControl
+        QuickLevel {
+            title:"Brightness";valueName:"Display brightness";sliderObjectName:"brightnessSlider"
+            value:(Brightness.state.pendingPercent!==undefined ? Brightness.state.pendingPercent : Brightness.state.percent) || 0
+            minimum:1;available:!!Brightness.state.available;applyOnRelease:Brightness.state.backend==="ddc"
+            pending:Brightness.state.pendingPercent!==undefined
+            glyph:"display";currentDevice:Brightness.state.name || ""
+            unavailable:"Unavailable on this display"
+            detailsHint:"Brightness settings";onDetailsActivated:Orbit.openSettingsSection(15)
+            onApplied: value => Brightness.setBrightness(value)
+        }
+    }
+    Component {
+        id:connectionsControl
+        QuickStatus {
+            id:connectionRow;objectName:"quickConnectionStatus";glyph:"network-wireless";heading:"Connections"
+            status:System.values.networkAvailable ? (System.values.networkState || "Wi-Fi") : "Network unavailable"
+            onClicked:quick.openDetails(1,connectionRow)
+        }
+    }
+    Component {
+        id:powerControl
+        QuickStatus {
+            id:powerRow;objectName:"quickPowerStatus";glyph:"system-shutdown";heading:"Power";status:quick.batteryStatus
+            onClicked:quick.openDetails(2,powerRow)
+        }
+    }
+
 }

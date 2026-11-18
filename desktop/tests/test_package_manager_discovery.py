@@ -21,7 +21,7 @@ class PackageManagerDiscoveryTests(unittest.TestCase):
   which=lambda name:'/usr/bin/'+name if name in ('mellipi-software','gnome-software','mintupdate') else None
   tools=discover_tools({},which)
   self.assertEqual(tools['software']['command'],['mellipi-software'])
-  self.assertEqual(tools['updates']['command'],['mintupdate'])
+  self.assertEqual(tools['updates']['command'],['mellipi-software','--updates'])
  def test_only_distro_synaptic_entry_gets_private_gio_launch_path(self):
   env={'ORBIT_NATIVE_CONTROL':'/private/native.sock','WAYLAND_DISPLAY':'wayland-1'};app={'id':'synaptic.desktop','path':'/usr/share/applications/synaptic.desktop'}
   with patch.object(desktop.Path,'is_file',return_value=True),patch.object(desktop.shutil,'which',side_effect=lambda n:'/usr/bin/'+n):

@@ -121,6 +121,8 @@ class Bridge(QObject):
     def __init__(self,app,preferences=None,store=None):
         super().__init__(); self.app=app; self.preferences=preferences or Preferences(); self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='orbit')
         self.store=store or PythonStore(); self.store.on_event=self.aiEvent.emit; self.aiEvent.connect(self.receiveAI); self._earlyAI=[]; self._undo=''; self._offset=0; self._total=0; self._search=[]; self._known={}
+        from launcher_files import LauncherFiles
+        self._launcherFiles=LauncherFiles(self);self._launcherFiles.opened.connect(self.dismiss)
         self._settingsOpen=False;self._settingsDestination='system-settings';self._settingsSection=0;self._nativePaletteSupported=False
         self._nativeSnapSupported=None;self._nativeSnapEnabled=None
         self._nativePlacementSupported=None;self._nativePlacementLayout=None;self._placementSeen=set();self._outputWorkspaces={};self._nativeWorkspaceMode=None;self._nativeWorkspaceSupported=None
@@ -136,7 +138,7 @@ class Bridge(QObject):
         self._launchPool=None
         self._eventSounds=EventSounds(ROOT/'native'/'sounds')
         self._launchTimer=QTimer(self);self._launchTimer.setInterval(90);self._launchTimer.timeout.connect(self.updateLaunchFeedback)
-        self._iconCache={}; self.desktopSnapshot.connect(self.applyWindowState); self.shortcutUpdate.connect(self.updateShortcuts)
+        self._appMatchCache={}; self.desktopSnapshot.connect(self.applyWindowState); self.shortcutUpdate.connect(self.updateShortcuts)
         self._apps=desktop.applications();self._dockApps=desktop.dock_groups(self._apps,[],self.preferences.values['pins']); self._windows=[]; self._desktops=[]; self._objects=[]; self._workspaces=[]; self._links=[]
         from app_usage import AppUsage
         self.usage=AppUsage(self.preferences.path.with_name('app-usage.json'),self._apps)
@@ -201,14 +203,18 @@ class Bridge(QObject):
         self.settingsChanged.emit();self.applyWindowTheme()
     @Slot('QVariantMap')
     def applyAppearance(self,changes):
-        studio_keys={
+        appearance_keys={
             'themePreset','mode','darkLevel','accent','backgroundColor','wallpaper','highContrast','textScale',
             'cursorAccent','panelPosition','taskbarLength','taskbarIconScale','taskbarFloating','density','corners',
             'output','desktopIcons','desktopIconScale','clock24','clockDate','profile','independentWorkspaces',
-            'workspaceMotion','matchApps','matchWindows','windowSnap','frameStyle','frameWidth',
+            'workspaceMotion','windowMotion','panelMotion','controlMotion','desktopMotion','motionPace',
+            'reducedMotion','matchApps','matchWindows','windowSnap','frameStyle','frameWidth',
         }
-        if not changes or not changes.keys() <= studio_keys:
+        if not changes or not changes.keys() <= appearance_keys:
             return self.notify('Could not save appearance settings')
+        current=self.preferences.values
+        if all(type(value) is type(current.get(key)) and value==current[key] for key,value in changes.items()):
+            return
         try:self.preferences.update(changes)
         except (TypeError,ValueError,OSError):return self.notify('Could not save appearance settings')
         if 'output' in changes:self.displays.setRequestedName(changes['output'])
@@ -278,7 +284,7 @@ class Bridge(QObject):
             if current!=ident:self.playEventSound('workspace')
             self.displays.setTransientName(output)
             if native_session():
-                self.windowTask('__workspace__','switch',lambda:self.windowActions.client.request('workspace',workspace=ident+1,output=output));return
+                self.windowTask(output,'workspace-output',lambda:self.windowActions.client.request('workspace',workspace=ident+1,output=output));return
             import sway_events
             current=next((d['id'] for d in self._desktops if d.get('output')==output and d.get('visible')),None)
             if current==ident:return
@@ -312,15 +318,25 @@ class Bridge(QObject):
             if self.xwaylandControls:self.xwaylandControls.restore_state(int(ident))
         self.windowTask(ident,action,lambda:self.arrangements.engine.record_action(action,change,[int(ident)]) if self.arrangements.engine else change(),lambda _:self.arrangements.changed.emit())
     def windowPalette(self):
-        return {key: value for key,value in self.appearance.get('themePalette',{}).items()
-                if key != 'focus'}
+        appearance=self.appearance
+        result={key:value for key,value in appearance.get('themePalette',{}).items() if key!='focus'}
+        if result and appearance.get('themeFrame'):
+            from app_palette import blend_color,colors
+            frame=colors(self.preferences)
+            result.update(surface=frame['chrome'],text=frame['chrome_text'])
+            if not appearance.get('highContrast'):
+                result['border']=blend_color(result['background'],frame['frame_trim'],.65)
+        return result
     @Slot()
     def applyNativePreferences(self):
         if not native_session() or not self.windowActions:return
         appearance=self.appearance
-        settings=dict(economy=appearance['profile']=='economy',reduced_motion=appearance['reducedMotion'],enabled=appearance['workspaceMotion'])
+        def motion(values):
+            return dict(economy=values['profile']=='economy',reduced_motion=values['reducedMotion'],
+                        enabled=values['workspaceMotion'],windows=values.get('windowMotion',True))
+        settings=motion(appearance)
         mode='light' if self.themeMode=='light' else 'black' if appearance['darkLevel']=='black' else 'dark'
-        accent=self.accentColor
+        accent=self.accentColor if appearance.get('highContrast') else appearance.get('themeFrame',{}).get('trim',self.accentColor)
         palette=Bridge.windowPalette(self)
         outline=appearance.get('matchWindows',True)
         snap_enabled=appearance['windowSnap']
@@ -371,7 +387,7 @@ class Bridge(QObject):
             if changed:self.interactionChanged.emit()
         def settled():
             current=self.appearance
-            latest=dict(economy=current['profile']=='economy',reduced_motion=current['reducedMotion'],enabled=current['workspaceMotion'])
+            latest=motion(current)
             latest_placement=current['windowPlacement'] if current['windowPlacementEnabled'] else 'off'
             if latest!=settings or outline!=current.get('matchWindows',True) or palette!=Bridge.windowPalette(self) or accent!=self.accentColor or mode!=('light' if self.themeMode=='light' else 'black' if current['darkLevel']=='black' else 'dark') or snap_enabled!=current['windowSnap'] or placement!=latest_placement or independent!=current['independentWorkspaces']:self.applyNativePreferences()
         self.windowTask('__motion__','configure',configure,configured,settled=settled)
@@ -390,6 +406,7 @@ class Bridge(QObject):
     dockApps=Property('QVariantList',dockTasks,notify=dockAppsChanged)
     centeredPanels=Property('QVariantList',lambda s:list(CENTERED_PANELS),constant=True)
     quickSection=Property(int,lambda s:getattr(s,'_quickSection',0),notify=interactionChanged)
+    quickArrangeRequested=Property(bool,lambda s:getattr(s,'_quickArrangeRequested',False),notify=interactionChanged)
     settingsSection=Property(int,lambda s:s._settingsSection,notify=interactionChanged)
     settingsTarget=Property('QVariantMap',lambda s:getattr(s,'_settingsTarget',{}),notify=interactionChanged)
     @Slot(int)
@@ -450,6 +467,11 @@ class Bridge(QObject):
             dict(id='do-not-disturb',name='Do not disturb',description='Open notification controls',icon='notifications-disabled',searchText='do not disturb dnd notifications quiet mute alerts',destination='panel:notifications'),
             dict(id='space-map',name='Space Map',description='Find and move windows, review checkpoints or resume a saved layout',icon='start-spaces',searchText='space map workspaces arrangement checkpoint saved layout undo',destination='panel:space-map'),
         ])
+        for space in self.namedDesktops():
+            if not space.get('customName'):continue
+            label=space['name'];number=space['id']+1
+            result.append(dict(id=f'space:{number}',name=label,description=f'Switch to space {number}',
+                               icon='start-spaces',searchText=f'{label} space {number} workspace {number}'.casefold(),destination=f'action:space:{number}'))
         return result
     @Slot(str, result=str)
     def launcherSearchSnapshot(self, section):
@@ -465,7 +487,7 @@ class Bridge(QObject):
         elif section=='windows':
             rows=dict(windows=[{key:row[key] for key in ('id','title','klass','icon','desktop','minimized') if key in row}
                                for row in self._windows],
-                      filter=self._windowFilter,desktops=[{key:row[key] for key in ('id','active') if key in row} for row in self._desktops],
+                      filter=self._windowFilter,desktops=[{key:row[key] for key in ('id','active','name') if key in row} for row in self.namedDesktops()],
                       dock=[dict(id=group['id'],name=group.get('name','')[:1024],icon=group.get('icon','')[:4096],
                                  windows=[{'id':window['id']} for window in group['windows']])
                             for group in self.dockTasks()])
@@ -476,6 +498,8 @@ class Bridge(QObject):
         else:
             return 'null'
         return json.dumps(rows,separators=(',',':'))
+
+    launcherFiles=Property(QObject,lambda self:self._launcherFiles,constant=True)
 
     @Slot(str, result=str)
     def launcherCalculation(self, query):
@@ -502,12 +526,16 @@ class Bridge(QObject):
     @Slot(str)
     def activateSystemAction(self,action):
         from action_targets import SETTING_TARGETS,BUILTIN_TOOLS
+        if action in ('space:1','space:2','space:3','space:4'):
+            self.dismiss();self.switchDesktopOn(int(action[-1])-1,self.selectedOutput);return
         if action in BUILTIN_TOOLS and getattr(self,'desktopTools',None):
             self.openSettingsSection(16);self.desktopTools.open(BUILTIN_TOOLS[action]);return
         if action=='install-apps' and any(app['id']=='mellipi-software.desktop' for app in self._apps):
             self.dismiss()
             self.launch('mellipi-software.desktop')
             return
+        if action=='arrange-quick-controls':
+            self.dismiss();self._quickArrangeRequested=True;self.interactionChanged.emit();return self.showPanel('quick')
         if action=='wifi-quick':
             self.dismiss();self._quickSection=1;self.interactionChanged.emit();return self.showPanel('quick')
         if action=='screen-reader':
@@ -544,7 +572,51 @@ class Bridge(QObject):
     apps=Property('QVariantList',lambda s:s._apps,notify=launcherChanged)
     launcherApps=Property('QVariantList',lambda s:s._launcherApps,notify=launcherChanged)
     windows=Property('QVariantList',lambda s:s._windows,notify=windowsChanged)
-    desktops=Property('QVariantList',lambda s:s._desktops,notify=windowsChanged)
+    def namedDesktops(self):
+        names=getattr(getattr(self,'preferences',None),'values',{}).get('spaceNames',{})
+        defaults={f'space {n}' for n in range(1,5)} | {f'workspace {n}' for n in range(1,5)}
+        named=[]
+        for row in getattr(self,'_desktops',()):
+            ident=row['id'];number=ident+1
+            label=names.get(str(ident),'')
+            same=label and sum(value.casefold()==label.casefold() for value in names.values())>1
+            name=f'{label} (Space {number})' if same or label.casefold() in defaults else label or row.get('name') or f'Space {number}'
+            named.append(dict(row,name=name,customName=label))
+        return named
+    desktops=Property('QVariantList',namedDesktops,notify=windowsChanged)
+    @Slot(int,str,result=bool)
+    def renameSpace(self,ident,label):
+        if not any(row['id']==ident for row in self._desktops):return False
+        label=label.strip()
+        names=dict(self.preferences.values.get('spaceNames',{}))
+        if label:names[str(ident)]=label
+        else:names.pop(str(ident),None)
+        try:self.preferences.set('spaceNames',names)
+        except (OSError,ValueError):
+            self.notify('Use a space name up to 32 characters');return False
+        self.windowsChanged.emit();self.systemActionsChanged.emit()
+        return True
+    @Slot('QVariantList')
+    def setQuickControlOrder(self,order):
+        try:self.preferences.set('quickControlOrder',order)
+        except (OSError,ValueError):self.notify('Could not save Quick Settings order');return
+        self.settingsChanged.emit()
+    @Slot(str,int)
+    def moveQuickControl(self,key,step):
+        order=self.preferences.values['quickControlOrder'].copy()
+        if key not in order or step not in (-1,1):return
+        start=order.index(key);end=start+step
+        if not 0<=end<len(order):return
+        order[start],order[end]=order[end],order[start]
+        self.setQuickControlOrder(order)
+    @Slot(str,str,bool)
+    def dropQuickControl(self,key,anchor,after):
+        order=self.preferences.values['quickControlOrder'].copy()
+        if key==anchor or key not in order or anchor not in order:return
+        previous=order.copy()
+        order.remove(key)
+        order.insert(order.index(anchor)+int(after),key)
+        if order!=previous:self.setQuickControlOrder(order)
     outputWorkspaces=Property('QVariantMap',lambda s:s._outputWorkspaces,notify=windowsChanged)
     objects=Property('QVariantList',lambda s:s._objects,notify=changed)
     searchResults=Property('QVariantList',lambda s:s._search,notify=changed)
@@ -585,7 +657,7 @@ class Bridge(QObject):
         if key=='launcherSort':self.recordAppInteraction()
         if key=='output':self.displays.setRequestedName(value)
         if key=='pins':
-            self._dockApps=desktop.dock_groups(self._apps,self._windows,self.preferences.values['pins']);self.windowsChanged.emit()
+            self._dockApps=desktop.dock_groups(self._apps,self._windows,self.preferences.values['pins'],self.matchWindowApplication);self.windowsChanged.emit()
         self.settingsChanged.emit()
         if key in ('mode','accent','matchWindows','frameStyle','frameWidth','matchApps','darkLevel'):self.applyWindowTheme()
     @Slot()
@@ -666,27 +738,28 @@ class Bridge(QObject):
             if settled:settled()
             return False
         if getattr(self,'_windowTasksClosed',False):return rejected()
-        if action in ('focus','workspace-intent'):
+        if action in ('focus','workspace-intent','workspace-output'):
             # Focus is an intent, unlike a close or maximize click. Keep one
-            # queue slot and replace its target so B/A/B cannot end on A.
-            prefix='_windowFocus' if action=='focus' else '_windowWorkspace'
-            queued=prefix+'Queued';request_key=prefix+'Request'
-            if not getattr(self,queued,False) and len(self._windowPending)>=64:return rejected()
-            previous=getattr(self,request_key,None)
+            # queue slot per independent destination and replace stale targets.
+            if not hasattr(self,'_windowIntents'):self._windowIntents={}
+            intents=self._windowIntents
+            key=(action,ident if action=='workspace-output' else '__global__')
+            previous=intents.get(key)
+            if previous is None and len(self._windowPending)>=64:return rejected()
             request=(ident,work,done,settled)
-            setattr(self,request_key,request)
-            if getattr(self,queued,False):
-                if previous and previous[3]:previous[3]()
+            intents[key]=request
+            if previous is not None:
+                if previous[3]:previous[3]()
                 return True
-            setattr(self,queued,True);running={}
+            running={}
             def focus_work():
-                request=getattr(self,request_key);running['request']=request
+                request=intents[key];running['request']=request
                 return request[1]()
             def focus_done(result):
                 callback=running['request'][2]
                 if callback:callback(result)
             def focus_settled():
-                latest=getattr(self,request_key);setattr(self,request_key,None);setattr(self,queued,False)
+                latest=intents.pop(key,None)
                 original=running.get('request')
                 if original is None:
                     if latest and latest[3]:latest[3]()
@@ -694,7 +767,7 @@ class Bridge(QObject):
                 if original and original[3] and latest is original:original[3]()
                 if latest is not running.get('request') and latest is not None:
                     Bridge.windowTask(self,latest[0],action,latest[1],latest[2],latest[3])
-            return Bridge.windowTask(self,'__focus__' if action=='focus' else '__workspace__',action+'-queue',focus_work,focus_done,focus_settled)
+            return Bridge.windowTask(self,key[1],action+'-queue',focus_work,focus_done,focus_settled)
         key=(ident,action)
         if action=='workarea' and key in self._windowPending:
             # A second geometry snapshot can arrive before the preceding
@@ -878,10 +951,10 @@ class Bridge(QObject):
             items.append(item)
         def add_workspace_moves(window):
             if self.windowActions and window:
-                for workspace in self._desktops:
+                for workspace in self.namedDesktops():
                     if workspace['id'] != window.get('desktop'):
                         number=workspace['id']+1
-                        add('Move to workspace '+str(number),'move-window',[window['id'],number])
+                        add('Move to '+(workspace['name'] if workspace.get('customName') else 'workspace '+str(number)),'move-window',[window['id'],number])
         def add_float(window):
             if self.nativePlacementSupported and window and not any(window.get(k) for k in ('transient','minimized','maximized','fullscreen')):
                 floating=not window.get('auto_floating',False)
@@ -1293,6 +1366,21 @@ class Bridge(QObject):
         if not self.windowActions or not any(row['id']==number-1 for row in self._desktops):return
         if not any(row['id']==ident for row in self._windows):return
         self.windowTask(ident,'move',lambda:self.arrangements.engine.record_action('Move to workspace '+str(number),lambda:self.windowActions.command(f'[con_id={int(ident)}] move container to workspace number {number}'),[int(ident)]),lambda _:self.arrangements.changed.emit())
+    @Slot(str,int,int,result=bool)
+    def moveSpaceWindow(self,ident,source,destination):
+        """Move once, only if the window still belongs to the drag source."""
+        if not self.windowActions or not self.arrangements.engine or self.arrangements.busy:
+            return False
+        if source==destination or not any(row['id']==destination for row in self._desktops):
+            return False
+        row=next((row for row in self._windows if row['id']==ident),None)
+        if not row or row.get('desktop')!=source or row.get('minimized') or row.get('transient'):
+            return False
+        number=destination+1
+        return self.windowTask(ident,'move',lambda:self.arrangements.engine.record_action(
+            f'Move to workspace {number}',
+            lambda:self.windowActions.command(f'[con_id={int(ident)}] move container to workspace number {number}'),
+            [int(ident)],expected_desktop=source+1),lambda _:self.arrangements.changed.emit())
     @Slot(str)
     def minimizeWindow(self,ident):
         if ident=="orbit-settings":self.dismiss();return
@@ -1451,11 +1539,12 @@ class Bridge(QObject):
         from arrangements import space_map
         selected=self._outputWorkspaces.get(self.selectedOutput,
                     next((row['id'] for row in self._desktops if row.get('active')),None))
-        return space_map(self._desktops,self._windows,selected)
+        return space_map(self.namedDesktops(),self._windows,selected)
     @Slot()
     def dismiss(self):
         self._launcherRefreshTimer.stop()
         self._quickSection=0
+        self._quickArrangeRequested=False
         self.sessionExit.cancel()
         self._panel='';self._switchActive=False
         if getattr(self,'foldController',None):self.foldController.setActive(False)
@@ -1542,10 +1631,16 @@ class Bridge(QObject):
     @Slot(object)
     def applyAppCatalog(self,apps):
         if not isinstance(apps,list):return
-        self._apps=apps;self.usage.set_catalog(apps);self._iconCache.clear()
-        self._dockApps=desktop.dock_groups(self._apps,self._windows,self.preferences.values['pins'])
+        self._apps=apps;self.usage.set_catalog(apps);self._appMatchCache.clear()
+        self._dockApps=desktop.dock_groups(self._apps,self._windows,self.preferences.values['pins'],self.matchWindowApplication)
         self._launcherApps=self.usage.rank(self._apps,self.preferences.values['launcherSort'])
         self.launcherChanged.emit();self.dockLayoutChanged.emit();self.changed.emit()
+    def matchWindowApplication(self,window):
+        key=window.get('klass','').casefold()
+        if key not in self._appMatchCache:
+            if len(self._appMatchCache)>=512:self._appMatchCache.pop(next(iter(self._appMatchCache)))
+            self._appMatchCache[key]=desktop.match_application(window,self._apps)
+        return self._appMatchCache[key]
     @Slot()
     def refreshAppCatalog(self):
         catalog=getattr(self,'appCatalog',None)
@@ -1643,12 +1738,14 @@ class Bridge(QObject):
         baseline=next((g['windows'] for g in self._dockApps if g['id']==ident),[])
         self._launchCue.begin(token,ident,[row['id'] for row in baseline])
         self._launchTimer.start()
+        # The child is running independently now. A slow GIO reply does not
+        # keep the launcher open; failures still reach the shell notice.
+        if self.panel=='launcher' and not keep_open:self.dismiss()
         def accepted(_):
             pending.pop(token,None)
             self.playEventSound('launch')
             self.recordAppInteraction(ident,'launch')
             if finished:finished()
-            if self.panel=='launcher' and not keep_open:self.dismiss()
         def rejected(error):
             pending.pop(token,None);self._launchCue.cancel(token);self.updateLaunchFeedback()
             self.playEventSound('error');self.notify('Could not start '+app['name']+': '+str(error)[:160])
@@ -1757,7 +1854,8 @@ class Bridge(QObject):
         if native_session() and self.windowActions:
             self.windowActions.update(state)
             if not state.get('locked'):self.applyRememberedPlacements(state)
-        self.sessionExit.setWindows(state['windows'])
+        self.sessionExit.setSnapshot(state['windows'],locked=bool(state.get('locked')))
+        if self.sessionExit.locked and self._panel=='session-exit':self.dismiss()
         if self.nativeControlsEnabled and self.xwaylandControls and any(w.get('xid') for w in state['windows']):self.xwaylandControls.start()
         if (self.nativeControlsEnabled or native_session()) and getattr(self,'legacyProxy',None) and any(w.get('xid') for w in state['windows']):self.legacyProxy.start()
         if hasattr(self,'backgroundApps'):self.backgroundApps.observe(self._apps,state['windows'])
@@ -1765,7 +1863,7 @@ class Bridge(QObject):
         if active!=self._lastUsageWindow:
             self._lastUsageWindow=active
             focused=next((w for w in state['windows'] if w['id']==active),None)
-            match=desktop.match_application(focused,self._apps) if focused else None
+            match=self.matchWindowApplication(focused) if focused else None
             if match:self.recordAppInteraction(match['id'],'focus')
         present={w['id'] for w in state['windows']}
         if not native_session() and self.isWayland and self.appearance['frameStyle']=='auto' and present-{w['id'] for w in self._windows}:
@@ -1773,15 +1871,12 @@ class Bridge(QObject):
             self.windowTask('__decorations__','auto',apply_auto_decorations)
         self._mru=([active] if active else [])+[i for i in self._mru if i in present and i!=active]
         for window in state['windows']:
-            klass=window['klass']
-            if klass not in self._iconCache:
-                match=desktop.match_application(window,self._apps)
-                self._iconCache[klass]=match['icon'] if match else 'application-x-executable'
-            window['icon']=self._iconCache[klass]
+            match=self.matchWindowApplication(window)
+            window['icon']=match['icon'] if match else 'application-x-executable'
         output_workspaces={o['name']:o['workspace'] for o in state.get('outputs',[]) if 'workspace' in o} if state.get('independent_workspaces') else {}
         if state['windows']!=self._windows or state['desktops']!=self._desktops or output_workspaces!=self._outputWorkspaces:
             self._outputWorkspaces=output_workspaces
-            self._windows=state['windows']; self._desktops=state['desktops']; self._dockApps=desktop.dock_groups(self._apps,self._windows,self.preferences.values['pins']); self.windowsChanged.emit()
+            self._windows=state['windows']; self._desktops=state['desktops']; self._dockApps=desktop.dock_groups(self._apps,self._windows,self.preferences.values['pins'],self.matchWindowApplication); self.windowsChanged.emit()
             self._launchCue.observe(self._dockApps)
             if not self._launchCue.requests:self.updateLaunchFeedback()
             if self.windowActions:
@@ -1829,6 +1924,7 @@ class Bridge(QObject):
             self.openExitReview('logout')
         else:self.finishQuit()
     def openExitReview(self,action):
+        if self.sessionExit.locked:return
         if not self.sessionExit.enabled:
             self.notify('Session exit is unavailable in this preview');return
         self.sessionExit.setWindows(self._windows)
@@ -2132,7 +2228,7 @@ def main():
     if events: events.close()
     signal_notifier.setEnabled(False); signal.set_wakeup_fd(previous_wakeup); os.close(signal_read); os.close(signal_write)
     if getattr(bridge,'settingsHost',None):bridge.settingsHost.close()
-    bridge.sessionExit.close();bridge.appCatalog.close()
+    bridge.sessionExit.close();bridge.appCatalog.close();bridge._launcherFiles.close()
     bridge.displays.close()
     secondary.close();hardware.close();inputs.close();idle.close();displayControls.close();shortcuts.close();network.close();powerProfiles.close()
     if bridge._launchPool:bridge._launchPool.shutdown(wait=True,cancel_futures=True)

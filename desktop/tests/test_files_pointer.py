@@ -16,6 +16,145 @@ class FilesPointerTests(unittest.TestCase):
     def setUpClass(cls):
         cls.application = QApplication.instance() or QApplication([])
 
+    def test_drop_on_inactive_folder_tab_uses_that_folder(self):
+        from PyQt6.QtCore import QMimeData, QPointF, QUrl
+        from PyQt6.QtGui import QDropEvent
+        with TemporaryDirectory() as directory:
+            root=Path(directory)
+            one,two=root/'one',root/'two'
+            one.mkdir()
+            two.mkdir()
+            source=two/'note.txt'
+            source.write_text('example')
+            window=Files(one)
+            try:
+                window.show()
+                window.new_folder_tab()
+                window.navigate(two)
+                self.application.processEvents()
+                mime=QMimeData()
+                mime.setUrls([QUrl.fromLocalFile(str(source))])
+                tabs=window.folder_tabs
+                event=QDropEvent(QPointF(tabs.tabRect(0).center()),Qt.DropAction.CopyAction,
+                                 mime,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier)
+                with patch.object(window,'transfer_paths') as transfer:
+                    window.eventFilter(tabs,event)
+                    self.assertTrue(event.isAccepted())
+                    transfer.assert_called_once_with([source],one,False)
+                self.assertEqual(window.folder,two)
+            finally:
+                window.close()
+
+    def test_folder_tabs_keep_location_search_and_selection_and_skip_deleted_history(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            one, two, three = (root / name for name in ('one', 'two', 'three'))
+            for path in (one, two, three):
+                path.mkdir()
+            match = one / 'report.txt'
+            match.write_text('sample')
+            window = Files(one)
+            try:
+                window.show()
+                window.show_search()
+                window.search.setText('report')
+                QTest.qWait(150)
+                index = window.proxy.mapFromSource(window.model.index(str(match)))
+                self.assertTrue(index.isValid())
+                window.view.setCurrentIndex(index)
+                self.assertEqual(window.selected(), [match])
+                window.new_folder_tab()
+                self.assertTrue(window.navigate(two))
+                self.assertTrue(window.navigate(three))
+                two.rmdir()
+                window.step(-1)
+                self.assertEqual(window.folder, one)
+                self.assertFalse(window.search_row.isVisible())
+                window.step(1)
+                self.assertEqual(window.folder, three)
+                window.folder_tabs.setCurrentIndex(0)
+                self.assertEqual(window.folder, one)
+                self.assertEqual(window.search.text(), 'report')
+                self.assertEqual(window.selected(), [match])
+                window.close_folder_tab(0)
+                self.assertEqual(window.folder_tabs.count(), 1)
+                self.assertEqual(window.folder, three)
+            finally:
+                window.close()
+                self.application.processEvents()
+
+    def test_deleted_history_is_removed_when_no_folder_remains_in_that_direction(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, current, last = (root / name for name in ('first', 'current', 'last'))
+            for folder in (first, current, last):
+                folder.mkdir()
+            window = Files(first)
+            try:
+                window.navigate(current)
+                window.navigate(last)
+                window.step(-1)
+                first.rmdir()
+                last.rmdir()
+                window.back.click()
+                self.assertEqual(window.folder, current)
+                self.assertFalse(window.back.isEnabled())
+                self.assertTrue(window.forward.isEnabled())
+                window.forward.click()
+                self.assertEqual(window.folder, current)
+                self.assertFalse(window.forward.isEnabled())
+                self.assertEqual(window.history, [current])
+            finally:
+                window.close()
+                self.application.processEvents()
+
+    def test_rename_does_not_move_a_replacement_created_during_confirmation(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected, incoming = root / 'selected.txt', root / 'incoming.txt'
+            selected.write_text('original')
+            incoming.write_text('written by another app')
+            window = Files(root)
+            def prompt(*_):
+                incoming.replace(selected)
+                return 'renamed.txt'
+            try:
+                with patch.object(window, 'selected', return_value=[selected]), \
+                     patch.object(window, 'ask_name', side_effect=prompt), \
+                     patch.object(window, 'run_job', side_effect=lambda operation: operation()):
+                    with self.assertRaisesRegex(ValueError, 'changed'):
+                        window.rename()
+                self.assertEqual(selected.read_text(), 'written by another app')
+                self.assertFalse((root / 'renamed.txt').exists())
+            finally:
+                window.close()
+                self.application.processEvents()
+
+    def test_trash_does_not_start_when_a_selected_file_was_replaced(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, selected, incoming = root / 'first.txt', root / 'selected.txt', root / 'incoming.txt'
+            first.write_text('keep first file')
+            selected.write_text('original')
+            incoming.write_text('written by another app')
+            window = Files(root)
+            def prompt(*_):
+                incoming.replace(selected)
+                return True
+            try:
+                with patch.object(window, 'selected', return_value=[first, selected]), \
+                     patch('mellipi_files.themed_prompt', side_effect=prompt), \
+                     patch('mellipi_files.Gio.File.new_for_path') as gio, \
+                     patch.object(window, 'run_job', side_effect=lambda operation: operation()):
+                    with self.assertRaisesRegex(ValueError, 'changed'):
+                        window.trash()
+                gio.assert_not_called()
+                self.assertEqual(first.read_text(), 'keep first file')
+                self.assertEqual(selected.read_text(), 'written by another app')
+            finally:
+                window.close()
+                self.application.processEvents()
+
     def test_moves_and_clicks_including_resize_margin_do_not_raise(self):
         with TemporaryDirectory() as directory:
             window = Files(Path(directory))
@@ -71,6 +210,51 @@ class FilesPointerTests(unittest.TestCase):
                 QTest.keyClick(window.places_menu, Qt.Key.Key_Down)
                 QTest.keyClick(window.places_menu, Qt.Key.Key_Return)
                 self.assertEqual(window.folder, Path.home())
+            finally:
+                window.close()
+                self.application.processEvents()
+
+    def test_subfolder_search_finds_nested_name_without_following_directory_symlink(self):
+        from threading import Event
+        from mellipi_files import find_nested_names
+        with TemporaryDirectory() as directory, TemporaryDirectory() as outside:
+            root = Path(directory)
+            project = root / 'Project'
+            project.mkdir()
+            match = project / 'Meeting.TXT'
+            match.touch()
+            (Path(outside) / 'Meeting outside.txt').touch()
+            (root / 'Linked').symlink_to(outside, target_is_directory=True)
+            stop = Event()
+            self.assertEqual(find_nested_names(root, 'meeting', stop), ([match], False, 0))
+            stop.set()
+            self.assertEqual(find_nested_names(root, 'meeting', stop), ([], False, 0))
+            window = Files(root)
+            try:
+                window.show()
+                window.show_search()
+                window.search.setText('meeting')
+                window.nested_button.click()
+                for _ in range(100):
+                    if window.nested_results.topLevelItemCount():
+                        break
+                    QTest.qWait(10)
+                self.assertEqual(window.nested_results.topLevelItemCount(), 1)
+                self.assertEqual(window.nested_results.topLevelItem(0).text(1), 'Project')
+                window.view.setCurrentIndex(window.proxy.index(0, 0, window.view.rootIndex()))
+                picked = window.nested_results.topLevelItem(0)
+                window.nested_results.setCurrentItem(picked)
+                open_action = next(action for action in window.actions if action.text() == 'Open')
+                with patch('mellipi_files.QDesktopServices.openUrl', return_value=True) as opening:
+                    open_action.trigger()
+                    self.assertEqual(opening.call_args.args[0].toLocalFile(), str(match))
+                    picked.setSelected(False)
+                    opening.reset_mock()
+                    open_action.trigger()
+                    opening.assert_not_called()
+                self.assertEqual(window.folder, root)
+                self.assertTrue(window.navigate(project))
+                self.assertFalse(window.nested_results.isVisible())
             finally:
                 window.close()
                 self.application.processEvents()

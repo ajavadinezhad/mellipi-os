@@ -70,6 +70,22 @@ class AppCatalogTests(unittest.TestCase):
 
 
 class InstalledSoftwareTests(unittest.TestCase):
+    @patch('software_sources.executable', return_value=True)
+    def test_mellipi_migration_is_hidden_from_inventory_but_still_updates(self, _):
+        from software_sources import apt_installed, apt_updates
+        with patch('software_sources.run', return_value=(
+            'abstract-shell\tinstalled\t0.1.20\tOld migration package\n'
+            'mellipi-shell\tinstalled\t0.1.35\tMellipi desktop\n'
+        )):
+            self.assertEqual([p.identifier for p in apt_installed().packages], ['mellipi-shell'])
+        with patch('software_sources.run', side_effect=[
+            '500 Local main amd64 Packages\n',
+            'Inst abstract-shell [0.1.20] (0.1.36 Local [all])\n',
+        ]):
+            row, = apt_updates().packages
+            self.assertEqual(row.identifier,'abstract-shell')
+            self.assertEqual(row.name,'Mellipi Shell compatibility')
+
     @patch('software_sources.executable', side_effect=lambda path: path == DPKG_QUERY)
     @patch('software_sources.run', return_value=(
         'hello:amd64\tinstalled\t2.10\tGreeter app\n'
@@ -244,6 +260,107 @@ class SoftwareManagementTests(unittest.TestCase):
 
 
 class TransactionPhasesTests(unittest.TestCase):
+    def test_replacement_search_is_not_blocked_or_overwritten_by_old_search(self):
+        from threading import Event
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QApplication
+        from mellipi_software import SoftwareWindow
+        from software_sources import Package, SourceResult
+        app = self.application = QApplication.instance() or QApplication([])
+        entered, hold = Event(), Event()
+        def search_for(term, sources, partial):
+            if term == 'old':
+                entered.set()
+                hold.wait(3)
+            result = SourceResult([Package('apt', term, term, '')], '')
+            partial('apt', result)
+            return {'apt': result}
+        with patch.object(SoftwareWindow, 'start_search'):
+            window = SoftwareWindow()
+            app.processEvents()
+        with patch('mellipi_software.search', side_effect=search_for):
+            try:
+                window.query.setText('old')
+                window.start_search()
+                self.assertTrue(entered.wait(1))
+                window.query.setText('new')
+                window.start_search()
+                for _ in range(100):
+                    QTest.qWait(10)
+                    if window.job is None:
+                        break
+                self.assertIsNotNone(window.retired_search)
+                self.assertEqual(window.list.topLevelItem(0).text(0), 'new')
+                hold.set()
+                window.retired_search.wait(3000)
+                app.processEvents()
+                self.assertEqual(window.list.topLevelItem(0).text(0), 'new')
+            finally:
+                hold.set()
+                for job in (window.retired_search, window.job):
+                    if job:
+                        job.wait(3000)
+                app.processEvents()
+                window.close()
+
+    def test_fast_update_source_is_visible_before_slow_source_finishes(self):
+        from threading import Event
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QApplication
+        from mellipi_software import SoftwareWindow
+        from software_sources import Package, SourceResult
+
+        app = self.application = QApplication.instance() or QApplication([])
+        hold = Event()
+        result = SourceResult([Package('apt', 'example-one', 'Example', '', installed=True)], 'APT ready', checked=True)
+        def check(on_result):
+            on_result('apt', result)
+            hold.wait(2)
+            return {'apt': result}
+        with patch('mellipi_software.available_updates', side_effect=check):
+            window = SoftwareWindow(show_updates=True)
+            window.show()
+            try:
+                for _ in range(100):
+                    if window.list.topLevelItemCount():
+                        break
+                    QTest.qWait(10)
+                self.assertEqual(window.list.topLevelItem(0).text(0), 'Example')
+                self.assertIn('Checking remaining', window.status.text())
+                self.assertIsNotNone(window.job)
+                self.assertTrue(window.list.isEnabled())
+            finally:
+                hold.set()
+                if window.job:
+                    window.job.wait(3000)
+                app.processEvents()
+                window.close()
+
+    def test_multiple_apt_updates_are_one_no_remove_transaction(self):
+        from software_sources import Package, manage_updates
+
+        packages = [Package('apt', key, key, '', installed=True) for key in ('example-one', 'example-two')]
+        with patch('software_sources.run', return_value='install installed'), patch('software_sources.transaction') as action:
+            self.assertEqual(manage_updates(packages), 2)
+            action.assert_called_once_with([PKEXEC, APT_GET, '-y', '--only-upgrade', '--no-remove',
+                                            'install', '--', 'example-one', 'example-two'], None)
+
+    def test_open_to_updates_skips_catalog_startup(self):
+        from PyQt6.QtWidgets import QApplication
+        from mellipi_software import SoftwareWindow
+        from software_sources import available_updates
+
+        app = self.application = QApplication.instance() or QApplication([])
+        with patch.object(SoftwareWindow, 'start_job') as launch, patch.object(SoftwareWindow, 'start_search') as search:
+            window = SoftwareWindow(show_updates=True)
+            try:
+                app.processEvents()
+                search.assert_not_called()
+                self.assertTrue(window.updates_only)
+                self.assertIs(launch.call_args.args[0], available_updates)
+            finally:
+                window.close()
+
     def test_distinguishes_declined_authorization_from_package_output(self):
         import sys
         from pathlib import Path

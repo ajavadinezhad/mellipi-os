@@ -4,7 +4,7 @@ Canvas {
     id: paper
     property real cornerRadius: Theme.radius
     onCornerRadiusChanged: requestPaint()
-    property color paperColor: Theme.background
+    property color paperColor: Theme.surface
     property color edgeColor: Theme.highContrast ? Theme.border : Theme.separator
     onVisibleChanged: if(visible)requestPaint()
     onAvailableChanged: if(available)requestPaint()

@@ -95,18 +95,28 @@ def launch_optional_services(launch):
     environment=os.environ
     existing=running_executables()
     polkit_running=bool(running_executables(environment=environment,names=POLKIT_EXECUTABLES))
-    for command in optional_service_commands():
+    commands=optional_service_commands()
+    # This short-lived helper is not an XDG service identity: reserving the
+    # interpreter would suppress unrelated Python autostart entries.
+    from mellipi_alarm_queue import ALARM_FILE
+    alarm_root=environment.get('ORBIT_DATA')
+    if not environment.get('ORBIT_NESTED') and alarm_root and (Path(alarm_root)/ALARM_FILE).is_file():
+        commands.append([sys.executable, str(SOURCE_ROOT/'mellipi_alarm_queue.py'), 'restore', '--login'])
+    for command in commands:
         if not command:continue
         name=Path(command[0]).name
+        alarm_restore=len(command)>1 and command[1]==str(SOURCE_ROOT/'mellipi_alarm_queue.py')
         if name in POLKIT_EXECUTABLES:
             if polkit_running:continue
-        elif name in existing:continue
+        elif name in existing and not alarm_restore:continue
         try:
             from desktop import application_environment
             from session.assistive import service_environment
             child_environment=service_environment(command,application_environment())
             if name=='mellipi-auth-agent' and environment.get('ORBIT_SETTINGS_FILE'):
                 child_environment['ORBIT_SETTINGS_FILE']=environment['ORBIT_SETTINGS_FILE']
+            if alarm_restore and environment.get('ORBIT_DATA'):
+                child_environment['ORBIT_DATA']=environment['ORBIT_DATA']
             launch(command,environment=child_environment)
             if name in POLKIT_EXECUTABLES:polkit_running=True
         except OSError as error:

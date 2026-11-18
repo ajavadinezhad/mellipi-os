@@ -32,6 +32,7 @@ class Process:
     ticks: int
     rss: int
     uid: int
+    ppid: int = 0
 
     @property
     def key(self):
@@ -44,7 +45,28 @@ def read_process(directory, page_size):
     fields = raw[end + 1:].split()
     return Process(int(directory.name), ' '.join(raw[begin + 1:end].split()),
                    int(fields[19]), int(fields[11]) + int(fields[12]),
-                   max(0, int(fields[21])) * page_size, directory.stat().st_uid)
+                   max(0, int(fields[21])) * page_size, directory.stat().st_uid, int(fields[1]))
+
+
+def process_parents(processes):
+    by_pid = {process.pid: process for process in processes.values()}
+    parents = {}
+    for key, process in processes.items():
+        parent = by_pid.get(process.ppid)
+        if parent and parent.key != key and parent.start <= process.start:
+            parents[key] = parent.key
+    # Partial snapshots or corrupt fixtures must not form a Qt item cycle.
+    done = set()
+    for key in parents.copy():
+        trail = set()
+        while key in parents and key not in done:
+            if key in trail:
+                parents.pop(key)
+                break
+            trail.add(key)
+            key = parents[key]
+        done.update(trail)
+    return parents
 
 
 def read_sample(root=Path('/proc')):
@@ -69,7 +91,7 @@ def read_sample(root=Path('/proc')):
             processes)
 
 
-def terminate_process(process):
+def terminate_process(process, *, force=False):
     """Signal an exact same-user process, never a replacement with a reused PID."""
     if process.pid <= 1 or process.pid == os.getpid() or process.uid != os.geteuid():
         raise PermissionError('You can only end your own processes.')
@@ -78,7 +100,7 @@ def terminate_process(process):
         current = read_process(Path('/proc') / str(process.pid), os.sysconf('SC_PAGE_SIZE'))
         if current.key != process.key or current.uid != process.uid:
             raise ProcessLookupError('That process is no longer running.')
-        signal.pidfd_send_signal(fd, signal.SIGTERM)
+        signal.pidfd_send_signal(fd, signal.SIGKILL if force else signal.SIGTERM)
     finally:
         os.close(fd)
 
@@ -179,6 +201,7 @@ class Monitor(AppWindow):
         super().__init__('System Monitor')
         self.resize(690, 520)
         self.previous = self.job = None
+        self.close_pending = False
         self.timer = QTimer(self, interval=SAMPLE_SECONDS * 1000)
         self.timer.timeout.connect(self.sample)
         metrics = QHBoxLayout()
@@ -196,10 +219,16 @@ class Monitor(AppWindow):
         process_controls = QHBoxLayout()
         self.space_controls(process_controls)
         process_controls.addWidget(self.search, 1)
+        self.tree_mode = QPushButton('Process tree', checkable=True)
+        self.tree_mode.toggled.connect(self.change_tree_mode)
+        process_controls.addWidget(self.tree_mode)
         self.end = QPushButton('End process…', enabled=False)
         self.end.clicked.connect(self.end_process)
         process_controls.addWidget(self.end)
         self.content.addLayout(process_controls)
+        self.rows_by_process = {}
+        self.parents = {}
+        self.end_requested = {}
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(['Process', 'PID', 'CPU', 'Memory'])
         self.tree.headerItem().setToolTip(2, '100% equals one fully used CPU core.')
@@ -284,7 +313,7 @@ class Monitor(AppWindow):
         self.update_columns()
 
     def eligible(self):
-        return self.isVisible() and not self.isMinimized()
+        return not self.close_pending and self.isVisible() and not self.isMinimized()
 
     def update_polling(self):
         if not hasattr(self, 'timer'):
@@ -324,6 +353,9 @@ class Monitor(AppWindow):
         result, error = self.job.result, self.job.error
         self.job.deleteLater()
         self.job = None
+        if self.close_pending:
+            QTimer.singleShot(0, self.close)
+            return
         if not self.eligible():
             return
         if error:
@@ -339,7 +371,10 @@ class Monitor(AppWindow):
     def closeEvent(self, event):
         self.timer.stop()
         if self.job is not None:
-            self.job.wait()
+            self.close_pending = True
+            self.hide()
+            event.ignore()
+            return
         super().closeEvent(event)
 
     def display(self, sample):
@@ -359,36 +394,80 @@ class Monitor(AppWindow):
         elapsed = (now - previous[0]) * os.sysconf('SC_CLK_TCK') if previous else 0
         self.tree.setUpdatesEnabled(False)
         self.tree.setSortingEnabled(False)
-        self.tree.clear()
-        rows = []
-        match = None
+        removed = self.rows_by_process.keys() - processes.keys()
+        parents = process_parents(processes) if self.tree_mode.isChecked() else {}
+        rebuild = parents != self.parents
+        expanded = {key for key, row in self.rows_by_process.items() if row.isExpanded()} if rebuild else set()
+        if rebuild:
+            for row in self.rows_by_process.values():
+                self.detach_row(row)
+        for key in removed:
+            row = self.rows_by_process.pop(key)
+            self.detach_row(row)
+        self.end_requested = {key: when for key, when in self.end_requested.items() if key in processes}
+        new_rows = []
         for process in processes.values():
             old = previous[5].get(process.key) if previous else None
             cpu = max(0, 100 * (process.ticks - old.ticks) / elapsed) if old and elapsed > 0 else -1
-            row = ProcessRow([process.name, str(process.pid), f'{cpu:.1f}%' if cpu >= 0 else '—',
-                              size_label(process.rss)])
-            for column in (1, 2, 3):
-                row.setTextAlignment(column, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            row = self.rows_by_process.get(process.key)
+            if row is None:
+                row = self.rows_by_process[process.key] = ProcessRow()
+                for column in (1, 2, 3):
+                    row.setTextAlignment(column, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                new_rows.append(row)
+            for col, label in enumerate((process.name, str(process.pid),
+                                         f'{cpu:.1f}%' if cpu >= 0 else '—', size_label(process.rss))):
+                if row.text(col) != label:
+                    row.setText(col, label)
             for col, value in enumerate((process.name.casefold(), process.pid, cpu, process.rss)):
-                row.setData(col, Qt.ItemDataRole.UserRole, value)
-            row.setData(0, Qt.ItemDataRole.UserRole + 1, process)
-            rows.append(row)
-            if selected and selected.key == process.key:
-                match = row
-        self.tree.addTopLevelItems(rows)
+                if row.data(col, Qt.ItemDataRole.UserRole) != value:
+                    row.setData(col, Qt.ItemDataRole.UserRole, value)
+            if row.data(0, Qt.ItemDataRole.UserRole + 1) != process:
+                row.setData(0, Qt.ItemDataRole.UserRole + 1, process)
+        if rebuild:
+            self.parents = parents
+            self.tree.addTopLevelItems([row for key, row in self.rows_by_process.items() if key not in parents])
+            for key, parent in parents.items():
+                self.rows_by_process[parent].addChild(self.rows_by_process[key])
+            for key in expanded & self.rows_by_process.keys():
+                self.rows_by_process[key].setExpanded(True)
+        else:
+            self.tree.addTopLevelItems(new_rows)
         self.tree.setSortingEnabled(True)
         self.filter_rows()
-        if match and not match.isHidden():
+        match = self.rows_by_process.get(selected.key) if selected else None
+        if match and not match.isHidden() and not match.isSelected():
             self.tree.setCurrentItem(match)
         self.tree.verticalScrollBar().setValue(scroll)
         self.tree.setUpdatesEnabled(True)
         self.update_action()
 
+    def detach_row(self, row):
+        if row.parent() is not None:
+            row.parent().removeChild(row)
+        elif (index := self.tree.indexOfTopLevelItem(row)) >= 0:
+            self.tree.takeTopLevelItem(index)
+
+    def change_tree_mode(self, enabled):
+        self.tree.setRootIsDecorated(enabled)
+        if self.previous:
+            sample, self.previous = self.previous, None
+            self.display(sample)
+
     def filter_rows(self):
         needle = self.search.text().strip().casefold()
-        for index in range(self.tree.topLevelItemCount()):
-            row = self.tree.topLevelItem(index)
-            hidden = needle not in row.text(0).casefold() and needle not in row.text(1)
+        visible = {key for key, row in self.rows_by_process.items()
+                   if needle in row.text(0).casefold() or needle in row.text(1)}
+        if needle:
+            for key in tuple(visible):
+                while key in self.parents:
+                    key = self.parents[key]
+                    self.rows_by_process[key].setExpanded(True)
+                    if key in visible:
+                        break
+                    visible.add(key)
+        for key, row in self.rows_by_process.items():
+            hidden = key not in visible
             row.setHidden(hidden)
             if hidden and row.isSelected():
                 row.setSelected(False)
@@ -397,19 +476,31 @@ class Monitor(AppWindow):
         rows = self.tree.selectedItems()
         return rows[0].data(0, Qt.ItemDataRole.UserRole + 1) if rows else None
 
+    def can_force(self, item):
+        when = self.end_requested.get(item.key) if item else None
+        return when is not None and time.monotonic() - when >= 3
+
     def update_action(self):
         item = self.selected_process()
         self.end.setEnabled(bool(item and item.uid == os.geteuid() and item.pid not in (0, 1, os.getpid())))
+        self.end.setText('Force quit…' if self.can_force(item) else 'End process…')
 
     def end_process(self):
         item = self.selected_process()
         if not item:
             return
-        if themed_prompt(self, 'End process?', f'End {item.name} (PID {item.pid})? Unsaved work may be lost.',
-                         'End process', 'Cancel'):
+        force = self.can_force(item)
+        action = 'Force quit' if force else 'End process'
+        prompt = (f'Force {item.name} (PID {item.pid}) to stop immediately?' if force else
+                  f'Ask {item.name} (PID {item.pid}) to exit?')
+        if themed_prompt(self, action + '?', prompt + ' Unsaved work may be lost.', action, 'Cancel'):
             try:
-                terminate_process(item)
-                self.status.setText(f'Asked {item.name} to exit.')
+                terminate_process(item, force=force)
+                if force:
+                    self.end_requested.pop(item.key, None)
+                else:
+                    self.end_requested.setdefault(item.key, time.monotonic())
+                self.status.setText(f'Force quit sent to {item.name}.' if force else f'Asked {item.name} to exit.')
                 self.sample()
             except (OSError, ValueError, IndexError) as error:
                 self.status.setText(f'Could not end the process: {error}')

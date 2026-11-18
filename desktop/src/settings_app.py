@@ -53,6 +53,7 @@ class Connection(QObject):
                         proxy.data=values
                         for signal in proxy.signal_names:getattr(proxy,signal).emit()
                 if self.window:
+                    self.send({'ready':True})
                     visible=self.window.isVisible() and self.window.visibility()!=QQuickWindow.Visibility.Minimized
                     self.setVisible(visible)
                     page=self.window.findChild(QObject,'systemSettingsPanel')

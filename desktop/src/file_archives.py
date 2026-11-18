@@ -272,7 +272,15 @@ def extract_here(path, rename):
     return destination
 
 
-def compress(paths, destination, rename):
+def archive_identity(info):
+    return info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def folder_identity(info):
+    return info.st_dev, info.st_ino
+
+
+def compress(paths, destination, rename, *, expected_sources=None, expected_folder=None):
     """Write one ZIP next to the selection and publish without overwriting."""
     paths = tuple(map(Path, paths))
     destination = Path(destination)
@@ -284,7 +292,7 @@ def compress(paths, destination, rename):
         raise ValueError('Choose a ZIP name outside the selected folders')
     total = count = index_size = 0
 
-    def add(parent, basename, name, depth):
+    def add(parent, basename, name, depth, expected=None):
         nonlocal count, total, index_size
         count += 1
         # Reserve central-directory filename bytes plus record/ZIP64 overhead
@@ -293,10 +301,15 @@ def compress(paths, destination, rename):
         if count > MAX_MEMBERS or depth > MAX_DEPTH or index_size > MAX_INDEX:
             raise ValueError('Selection exceeds the archive limit')
         _parts(name)
-        mode = os.stat(basename, dir_fd=parent, follow_symlinks=False).st_mode
+        info = os.stat(basename, dir_fd=parent, follow_symlinks=False)
+        if expected is not None and archive_identity(info) != expected:
+            raise ValueError('A selected item changed before compression.')
+        mode = info.st_mode
         if stat.S_ISDIR(mode):
             fd = os.open(basename, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
             try:
+                if archive_identity(os.fstat(fd)) != archive_identity(info):
+                    raise ValueError('A source folder changed before compression.')
                 archive.writestr(name + '/', b'')
                 with os.scandir(fd) as children:
                     for child in children:
@@ -306,22 +319,37 @@ def compress(paths, destination, rename):
         elif stat.S_ISREG(mode):
             source, size = _regular(basename, dir_fd=parent)
             with source:
+                if archive_identity(os.fstat(source.fileno())) != archive_identity(info):
+                    raise ValueError('A source file changed before compression.')
                 total += size
                 if total > MAX_BYTES:
                     raise ValueError('Selection exceeds the archive size limit')
                 with archive.open(name, 'w', force_zip64=size >= zipfile.ZIP64_LIMIT) as target:
                     _copy(source, target, size)
+                if archive_identity(os.fstat(source.fileno())) != archive_identity(info):
+                    raise ValueError('A source file changed during compression.')
         else:
             raise ValueError('Links and special files cannot be compressed')
 
-    with tempfile.TemporaryDirectory(prefix='.mellipi-compress-', dir=destination.parent) as directory:
-        temporary = Path(directory) / 'archive.zip'
-        with zipfile.ZipFile(temporary, 'x', compression=zipfile.ZIP_DEFLATED, compresslevel=3) as archive:
-            for path in paths:
-                fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-                try:
-                    add(fd, path.name, path.name, 1)
-                finally:
-                    os.close(fd)
-        rename(temporary, destination)
+    destfd = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        pinned_identity = folder_identity(os.fstat(destfd))
+        if expected_folder is not None and expected_folder != pinned_identity:
+            raise ValueError('The destination folder changed before compression.')
+        pinned = Path('/proc/self/fd') / str(destfd)
+        with tempfile.TemporaryDirectory(prefix='.mellipi-compress-', dir=pinned) as directory:
+            temporary = Path(directory) / 'archive.zip'
+            with zipfile.ZipFile(temporary, 'x', compression=zipfile.ZIP_DEFLATED, compresslevel=3) as archive:
+                for path in paths:
+                    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        add(fd, path.name, path.name, 1,
+                            expected_sources[path] if expected_sources is not None else None)
+                    finally:
+                        os.close(fd)
+            if folder_identity(destination.parent.stat()) != pinned_identity:
+                raise ValueError('The destination folder changed during compression.')
+            rename(temporary, pinned / destination.name)
+    finally:
+        os.close(destfd)
     return destination

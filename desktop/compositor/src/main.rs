@@ -18,6 +18,7 @@ mod window_snap;
 mod window_placement;
 mod window_capture;
 mod native_system;
+mod output_arrangement;
 mod protocols;
 mod state;
 mod winit;

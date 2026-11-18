@@ -11,6 +11,17 @@ RECT = dict(x=-600, y=46, width=400, height=277)
 
 
 class SpaceMapTests(unittest.TestCase):
+    def test_drop_does_not_move_a_window_that_left_its_source(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as directory:
+            engine = ArrangementEngine(Mock(lock=threading.RLock()), Path(directory) / 'layouts.json')
+            engine.capture = Mock(return_value=[dict(id=7, desktop=3)])
+            move = Mock()
+            with self.assertRaisesRegex(ValueError, 'no longer in the original workspace'):
+                engine.record_action('Move to workspace 2', move, [7], expected_desktop=1)
+            move.assert_not_called()
+            self.assertEqual(engine.history, [])
+
     def test_geometry_respects_each_output_and_includes_empty_spaces(self):
         windows = [dict(id='7', desktop=1, workarea=AREA, rect=RECT, title='Terminal'),
                    dict(id='8', desktop=1, workarea=AREA, rect=RECT, minimized=True),
