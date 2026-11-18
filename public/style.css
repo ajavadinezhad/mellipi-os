@@ -43,7 +43,7 @@ figcaption { display: grid; gap: 3px; padding-top: 10px; font-size: .88rem; }
 .screenshot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px 20px; }
 .theme-preview { margin-top: 18px; max-width: 740px; }
 .theme-preview img { border: 1px solid var(--line); }
-.theme-control { display: flex; align-items: center; gap: 12px; width: fit-content; }
+.theme-control { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; width: fit-content; }
 select, .copy-button { color: var(--ink); background: var(--surface); cursor: pointer; }
 select { font: inherit; min-height: 44px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; }
 .install-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 18px; }
@@ -57,7 +57,6 @@ pre { margin: 0; padding: 12px; border-radius: 8px; background: var(--bg); white
 .fingerprint { font-size: .8rem; overflow-wrap: anywhere; }
 .copy-button { justify-self: start; }
 .release-links { margin-block: 20px 10px; }
-.release-links > span:empty { position: absolute; }
 #install > a { display: inline-block; margin-top: 6px; font-size: .87rem; }
 .footer { border-top: 1px solid var(--line); flex-wrap: wrap; }
 .skip { position: absolute; top: -100px; left: 16px; padding: 8px 12px; background: var(--accent); color: var(--accent-text); }
