@@ -3,7 +3,7 @@
   const themePicker = document.getElementById("website-theme");
   const tourTheme = document.getElementById("desktop-tour-theme");
   const themeCaptures = document.querySelectorAll("[data-theme-capture]");
-  const imageRevision = "qt6";
+  const imageRevision = "desktop-037";
   const updateCaptures = theme => {
     tourTheme.textContent = `${theme.name} theme · High contrast`;
     document.getElementById("desktop-preview-theme").textContent = `${theme.name} desktop · High contrast`;

@@ -13,7 +13,7 @@ Set `site-config.json` at release time:
 
 Repository setup is shown only when the publication config contains a valid HTTPS address and full fingerprint.
 
-The hero, app tour, and theme preview use real screenshots from a private Mellipi Wayland session. Capture all views (launcher, Files, Quick Settings, Terminal, and desktop) for every ID in `themes.json`, using identical display dimensions, taskbar layout, and contrast settings. Use sample files and keep personal windows, notifications, and user data out. Save lossless WebP images under `assets/themes/` as `<theme>-<view>.webp`. When refreshing them, update the explicit dimensions and cache revision in the HTML and JavaScript together.
+The hero, app tour, and theme preview use real screenshots from a private Mellipi Wayland session. Capture all views (launcher, Files, Quick Settings, Terminal, and desktop) for every ID in `themes.json`, at 1600 × 1000 with high contrast and the floating bottom taskbar set to Fit contents. The app tour shows closer views of the windows and links to the full screenshots. Use sample files and keep personal windows, notifications, and user data out. Save lossless WebP images under `assets/themes/` as `<theme>-<view>.webp`. When refreshing them, update the explicit dimensions and cache revision in the HTML and JavaScript together.
 
 Serve locally with `python3 -m http.server 8765 --directory website` (configuration uses fetch, so opening as `file://` is not supported). View at 1440px, 768px and 375px widths; verify keyboard focus, copy failure feedback and reduced motion.
 

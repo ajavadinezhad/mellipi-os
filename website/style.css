@@ -1,8 +1,8 @@
 :root {
   color-scheme: dark;
-  --bg: #182428; --surface: #202e32; --ink: #e1e8ed; --muted: #a2b0bb;
-  --line: #536b6d; --accent: #a9d9c3; --accent-ink: #a9d9c3;
-  --accent-text: #000; --focus: #a9d9c3;
+  --bg: #080f1c; --surface: #101c2e; --ink: #edf4ff; --muted: #b5c6dd;
+  --line: #3d5574; --accent: #78b7ff; --accent-ink: #78b7ff;
+  --accent-text: #000; --focus: #78b7ff;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, sans-serif; }
@@ -41,6 +41,9 @@ figcaption { display: grid; gap: 3px; padding-top: 10px; font-size: .88rem; }
 .section-heading > p:last-child { max-width: 58ch; }
 .shot-heading { margin-bottom: 14px; }
 .screenshot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px 20px; }
+.screenshot-grid figure > a { overflow: hidden; }
+.screenshot-grid img { width: 100%; border-radius: 0; transform: scale(1.62); transform-origin: 12% 12%; }
+.screenshot-grid [data-theme-capture="quick-settings"] img { transform: scale(2.6); transform-origin: 100% 0; }
 .theme-preview { margin-top: 18px; max-width: 740px; }
 .theme-preview img { border: 1px solid var(--line); }
 .theme-control { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; width: fit-content; }

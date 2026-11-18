@@ -32,7 +32,7 @@ def export(output):
     rows.extend({key:row[key] for key in ('id','name','mode','accent','palette')} for row in presets())
     if len(rows)!=3+len(THEME_IDS):raise ValueError('Desktop theme catalog is incomplete')
     output=Path(output);output.parent.mkdir(parents=True,exist_ok=True)
-    output.write_text(json.dumps({'defaultTheme':'dark','themes':rows},indent=2)+'\n')
+    output.write_text(json.dumps({'defaultTheme':'midnight','themes':rows},indent=2)+'\n')
     return rows
 
 def main():
